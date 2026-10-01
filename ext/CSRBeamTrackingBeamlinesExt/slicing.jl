@@ -46,6 +46,11 @@ function scale_integrated(bm::BMultipoleParams, frac)
   return BMultipoleParams(bm.n .* sc, bm.s .* sc, copy(bm.tilt), bm.order, bm.normalized, bm.integrated)
 end
 
+function scale_integrated(em::EMultipoleParams, frac)
+  sc = [i ? frac : one(frac) for i in em.integrated]
+  return EMultipoleParams(em.n .* sc, em.s .* sc, copy(em.etilt), em.order, em.integrated)
+end
+
 function slice_aperture(dp::ApertureParams, first, last)
   at_in = dp.aperture_at == ApertureAt.Entrance || dp.aperture_at == ApertureAt.BothEnds
   at_out = dp.aperture_at == ApertureAt.Exit || dp.aperture_at == ApertureAt.BothEnds
@@ -56,10 +61,14 @@ function slice_aperture(dp::ApertureParams, first, last)
   return dp
 end
 
+function CSR.csr_sliceable(ele::LineElement; context = Beamlines.NULL_CONTEXT)
+  return deval(ele.UniversalParams, context).L != 0 && !isactive(ele.MapParams)
+end
+
 function CSR.slice_element(ele::LineElement, L_slice, first::Bool, last::Bool;
                            context = Beamlines.NULL_CONTEXT)
-  for (pg, name) in ((:AlignmentParams, "alignment"), (:PatchParams, "patch"), (:MapParams, "map"),
-                     (:RFParams, "RF"), (:FourPotentialParams, "four-potential"), (:EMultipoleParams, "electric multipole"))
+  for (pg, name) in ((:AlignmentParams, "alignment"), (:PatchParams, "patch"), (:RFParams, "RF"),
+                     (:FourPotentialParams, "four-potential"))
     isactive(getproperty(ele, pg)) && error("slice_element: elements with $name parameters are not supported")
   end
   up = deval(ele.UniversalParams, context)
@@ -68,13 +77,23 @@ function CSR.slice_element(ele::LineElement, L_slice, first::Bool, last::Bool;
   frac = L_slice / L
   bp = deval(ele.BendParams, context)
   bm = deval(ele.BMultipoleParams, context)
+  em = deval(ele.EMultipoleParams, context)
+  mp = deval(ele.MapParams, context)
   dp = deval(ele.ApertureParams, context)
 
   s = LineElement()
-  s.UniversalParams = UniversalParams(up.kind, up.name, L_slice,
-                                      slice_tracking_method(up.tracking_method, frac, first, last, bp, bm))
+  if isactive(mp)
+    # A map cannot be split: only the whole element is allowed (tracked without CSR, as Bmad does for Taylor).
+    (first && last && L_slice == L) || error("slice_element: map elements cannot be sliced")
+    s.UniversalParams = up
+    s.MapParams = mp
+  else
+    s.UniversalParams = UniversalParams(up.kind, up.name, L_slice,
+                                        slice_tracking_method(up.tracking_method, frac, first, last, bp, bm))
+  end
   isactive(bp) && (s.BendParams = bp)
   isactive(bm) && (s.BMultipoleParams = scale_integrated(bm, frac))
+  isactive(em) && (s.EMultipoleParams = scale_integrated(em, frac))
   if isactive(dp)
     dps = slice_aperture(dp, first, last)
     isnothing(dps) || (s.ApertureParams = dps)

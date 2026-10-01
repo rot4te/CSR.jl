@@ -117,6 +117,41 @@ slice_maxdiff(b1, b2) = maximum(abs, b1.coords.v .- b2.coords.v)
     @test ele.aperture_at == ApertureAt.BothEnds  # original untouched
   end
 
+  @testset "Electric dipole" begin
+    # 1 MV/m horizontal field, integrated and non-integrated forms.
+    for (name, ele) in (("En0", LineElement(L = 0.4, En0 = 1e6, tracking_method = sym8)),
+                        ("En0L", LineElement(L = 0.4, En0L = 4e5, tracking_method = sym8)),
+                        ("SciBmadStandard", LineElement(L = 0.4, En0 = 1e6)))
+      b1 = track_unsliced(ele)
+      b2 = track_sliced(ele, 4)
+      d = slice_maxdiff(b1, b2)
+      @test d <= 1e-15
+      @test b1.t_ref ≈ b2.t_ref rtol = 1e-15
+      # Field acts: differs from a drift of the same length.
+      @test slice_maxdiff(b1, track_unsliced(Drift(L = 0.4))) > 1e-6
+    end
+    ele = LineElement(L = 0.4, En0L = 4e5)
+    @test CSR.slice_element(ele, 0.1, true, false).En0L ≈ 1e5
+    @test CSR.slice_element(ele, 0.1, true, false).tracking_method.fringe_at == Fringe.EntranceEnd
+    @test CSR.slice_element(ele, 0.1, false, false).tracking_method.fringe_at == Fringe.NoEnd
+  end
+
+  @testset "Map elements: whole only, no CSR" begin
+    shear(v, q, p) = ((v[1] + p * v[2], v[2], v[3], v[4], v[5], v[6]), q)
+    ele = LineElement(L = 0.5, transport_map = shear, transport_map_params = 0.5)
+    b1 = track_unsliced(ele)
+    b2 = track_sliced(ele, 1)
+    @test slice_maxdiff(b1, b2) == 0
+    @test b1.t_ref == b2.t_ref
+    @test b1.coords.v[1, 1] ≈ 1e-3 + 0.5 * -2e-4
+    @test_throws ErrorException CSR.slice_element(ele, 0.25, true, false)
+    @test !CSR.csr_sliceable(ele)
+    @test !CSR.csr_sliceable(Marker())
+    @test !CSR.csr_sliceable(Quadrupole(L = 0.0, Kn1L = 0.1))
+    @test CSR.csr_sliceable(Drift(L = 1.0))
+    @test CSR.csr_sliceable(SBend(; bend_kw...))
+  end
+
   @testset "Unsupported elements" begin
     @test_throws ErrorException CSR.slice_element(Quadrupole(L = 0.3, Kn1 = 1.0, x_offset = 1e-3), 0.1, true, false)
     @test_throws ErrorException CSR.slice_element(RFCavity(L = 0.3, voltage = 1e6), 0.1, true, false)
