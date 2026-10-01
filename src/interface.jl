@@ -1,11 +1,12 @@
 # Functions whose methods are defined in package extensions.
 
 """
-    slice_element(ele, L_slice, first::Bool, last::Bool; context) -> LineElement
+    slice_element(ele, s0, L_slice, first::Bool, last::Bool; context) -> LineElement
 
-Detached copy of the Beamlines `LineElement` `ele` with length `L_slice`, for tracking one slice with
-`BeamTracking.track!` (pass `_p_over_q_ref`, since the copy is not in a `Beamline`).
+Copy of the Beamlines `LineElement` `ele` restricted to `[s0, s0 + L_slice]` (relative to the element
+entrance), for tracking one slice with `BeamTracking.track!` (pass `_p_over_q_ref`).
 `first`/`last` mark the slice at the element entrance/exit. Requires BeamTracking and Beamlines.
+Slice rules follow Bmad's `create_element_slice` / `makeup_super_slave1`:
 
 - Parameter groups are evaluated with `deval(…, context)`.
 - Integrated magnetic and electric multipole strengths are scaled by `L_slice / L`.
@@ -15,11 +16,16 @@ Detached copy of the Beamlines `LineElement` `ele` with length `L_slice`, for tr
 - `n_steps` of a `Symplectic`-family method is scaled to `max(1, round(n_steps * L_slice / L))`;
   `ds_step` is kept.
 - Apertures are kept only on the end slices, at the ends where the element has them.
+- Alignment: each slice gets offsets/rotations such that the slices compose to the misaligned element.
+- Patch: the first slice holds the patch transform (exit face moved back by `L - L_slice`); the other
+  slices are drifts.
+- Four-potential: evaluated at `s + s0` and `t + s0/(β₀c)`, so the slice sees the element's field.
+  Needs `ele` in a `Beamline` (reference species and energy).
+- RF: voltage scaled by `L_slice / L`; the rate is converted to a frequency. The returned slice sits in
+  a one-element `Beamline` that carries the reference species. Needs `ele` in a `Beamline`.
+  `SaganCavity` tracking is not supported.
 - Map elements (`MapParams`) cannot be split: only the whole element (`first && last`, `L_slice == L`)
   is allowed. See `csr_sliceable`.
-
-Unsupported (errors): alignment, patch, RF and four-potential parameters, and tracking methods other
-than `SciBmadStandard`, `Symplectic`-family and `Exact`.
 """
 function slice_element end
 
