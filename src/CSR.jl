@@ -16,5 +16,6 @@ include("wake.jl")
 include("convolve.jl")
 include("kick.jl")
 include("step.jl")
+include("interface.jl")
 
 end
