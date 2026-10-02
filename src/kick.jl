@@ -1,6 +1,6 @@
 # Apply the binned kick to particles. Port of the CSR-only branch of Bmad's csr_and_sc_apply_kicks.
 
-@kernel function csr_apply_kicks_kernel!(pz, n_outside, @Const(z), @Const(alive), @Const(z_center), @Const(kick), dz)
+@kernel function csr_apply_kicks_kernel!(pz, n_outside, @Const(z), @Const(alive), @Const(z_center), @Const(kick), dz, pz_scale)
   i = @index(Global)
   @inbounds if alive[i]
     n_bin = length(kick)
@@ -10,7 +10,7 @@
       r1 = (zp - z_center[i0]) / dz
       if -0.01 <= r1 <= 1.01
         r0 = 1 - r1
-        pz[i] += r0 * kick[i0] + r1 * kick[i0+1]
+        pz[i] += pz_scale * (r0 * kick[i0] + r1 * kick[i0+1])
       else
         Atomix.@atomic n_outside[1] += 1
       end
@@ -21,16 +21,17 @@
 end
 
 """
-    csr_apply_kicks!(pz, z, alive, bins, kick)
+    csr_apply_kicks!(pz, z, alive, bins, kick; pz_scale = 1)
 
-Add the kick, linearly interpolated between bin centers, to `pz` of each live particle.
+Add the kick, linearly interpolated between bin centers and multiplied by `pz_scale`, to `pz` of each live particle.
 As in Bmad's CSR-only branch, `z` is not rescaled for the change in velocity.
 One work item per particle, on the backend of `pz`.
 """
-function csr_apply_kicks!(pz::AbstractVector, z::AbstractVector, alive::AbstractVector{Bool}, bins::CSRBins, kick::AbstractVector)
+function csr_apply_kicks!(pz::AbstractVector, z::AbstractVector, alive::AbstractVector{Bool}, bins::CSRBins, kick::AbstractVector;
+                          pz_scale = 1)
   backend = get_backend(pz)
   n_outside = KernelAbstractions.zeros(backend, Int, 1)
-  csr_apply_kicks_kernel!(backend)(pz, n_outside, z, alive, bins.z_center, kick, bins.dz; ndrange = length(pz))
+  csr_apply_kicks_kernel!(backend)(pz, n_outside, z, alive, bins.z_center, kick, bins.dz, pz_scale; ndrange = length(pz))
   KernelAbstractions.synchronize(backend)
   Array(n_outside)[1] == 0 || error("csr_apply_kicks!: particle outside the bin range (internal error)")
   return pz

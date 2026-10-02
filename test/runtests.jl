@@ -19,4 +19,5 @@ include("utils.jl")
   include("kernels_test.jl")
   include("slicing_test.jl")
   include("track_csr_test.jl")
+  include("lcavity_test.jl")
 end

@@ -1,0 +1,270 @@
+# SaganCavity (lcavity) slices. A slice [s0, s1] runs the part of the whole cavity's kernel sequence that lies in
+# the window: outer drifts, entrance/exit fringe, cell kicks with their reference-energy steps, cell drifts.
+# Built from BeamTracking's internal Sagan kernels (ext/BeamTrackingBeamlinesExt/sagan_cavity_bl.jl,
+# src/kernels/sagan_cavity.jl), since SaganCavity has no fringe_at and cannot be split with track!.
+# Point events (kicks, fringes) at position p belong to the slice with s0 <= p < s1 (p <= s1 for the last slice).
+# Consecutive slices must share their boundary exactly (s0 + L_slice of one == s0 of the next), or an event on a
+# boundary can be dropped or applied twice.
+
+bt_ext() = Base.get_extension(BeamTracking, :BeamTrackingBeamlinesExt)
+
+"""
+    SaganSlice
+
+Slice `[s0, s1]` of a SaganCavity element of length `L` (`csr_n_step` slicing), with the cavity constants
+BeamTracking computes for the whole element. `ele` holds the slice length, alignment, aperture and multipoles.
+"""
+struct SaganSlice{E,TM,M,K}
+  ele::E
+  tm::TM                  # The cavity's SaganCavity
+  species::Species
+  mass::Float64
+  q::Float64
+  a::Float64              # Gyromagnetic anomaly
+  traveling_wave::Bool
+  E0::Float64             # Reference energy at the cavity entrance (E_ref - dE_ref)
+  dE_ref::Float64
+  P0c0::Float64           # Reference momentum at the cavity entrance [eV]
+  p_over_q_ref::Float64   # Reference p_over_q of the cavity's beamline (exit energy)
+  rf_omega::Float64
+  t_phi0::Float64
+  q_gradient::Float64
+  q_voltage::Float64
+  n_cells::Float64
+  L_active::Float64
+  L::Float64
+  m_order::M
+  Bn::K                   # Multipole field strengths (BeamTracking: Kn * p_over_q at the entrance energy)
+  Bs::K
+  has_mult::Bool
+  has_sol::Bool
+  s0::Float64
+  s1::Float64
+  first::Bool
+  last::Bool
+end
+
+@inline sagan_kick_factor(i_step, n_cells) = (i_step == 0 || i_step == n_cells) ? 2 : 1
+
+# Length of segment [a, b] (nominal length len) inside [s0, s1]; the nominal length if it is fully inside.
+@inline sagan_overlap(a, b, len, s0, s1) = (a >= s0 && b <= s1) ? len : max(zero(len), min(b, s1) - max(a, s0))
+@inline sagan_in_window(p, s0, s1, last) = p >= s0 && (p < s1 || last)
+
+# Reference momentum after the cell kicks at p < s (p <= s if inclusive), applied as in sagan_cavity_thick!.
+function sagan_P0c_at(c::SaganSlice, s, inclusive)
+  P0c = c.P0c0
+  before(p) = p < s || (inclusive && p <= s)
+  Lo = (c.L - c.L_active) / 2
+  if c.n_cells == 0
+    before(Lo + c.L_active / 2) && (P0c += BeamTracking.dpc_given_dE(P0c, c.dE_ref, c.mass))
+  else
+    for i_step in 0:c.n_cells
+      before(Lo + i_step * c.L_active / c.n_cells) || continue
+      P0c += BeamTracking.dpc_given_dE(P0c, c.dE_ref / (c.n_cells * sagan_kick_factor(i_step, c.n_cells)), c.mass)
+    end
+  end
+  return P0c
+end
+
+# Reference time from the cavity entrance to s, with BeamTracking's per-segment reference velocities
+# (universal! for SaganCavity). sagan_dt_ref(c, c.L) is the whole-cavity value.
+function sagan_dt_ref(c::SaganSlice, s)
+  sp = c.species
+  E1 = c.E0 + c.dE_ref
+  Lo = (c.L - c.L_active) / 2
+  part(a, b) = sagan_overlap(a, b, b - a, 0.0, s)
+  dt = part(0.0, Lo) / BeamTracking.E_to_v(sp, c.E0) + part(c.L - Lo, c.L) / BeamTracking.E_to_v(sp, E1)
+  if c.n_cells == 0
+    h = c.L_active / 2
+    dt += part(Lo, Lo + h) / BeamTracking.E_to_v(sp, c.E0) + part(Lo + h, Lo + c.L_active) / BeamTracking.E_to_v(sp, E1)
+  else
+    lc = c.L_active / c.n_cells
+    for i in 1:c.n_cells
+      E_now = c.E0 + (i - 1/2) * c.dE_ref / c.n_cells
+      dt += part(Lo + (i - 1) * lc, Lo + i * lc) / BeamTracking.E_to_v(sp, E_now)
+    end
+  end
+  return dt
+end
+
+# Kernel: the window [s0, s1] of sagan_cavity_thick! / sagan_cavity_zero_L_active!. Branches only on scalars
+# (BeamTracking may call it with SIMD lanes).
+function sagan_slice_kernel!(i, coords, val_rad_damping_on, val_rad_fluctuations_on, val_traveling_wave,
+                             mass, q, P0c, dE_ref, t_ref, n_cells, val_has_mult, val_has_sol, m_order, Bn, Bs,
+                             a, q_gradient, q_voltage, rf_omega, t_phi0, L_active, L, s0, s1, last)
+  c_l = BeamTracking.c_light(eltype(coords.v))
+  Lo = (L - L_active) / 2
+  qp = q * c_l / P0c
+
+  d = sagan_overlap(0.0, Lo, Lo, s0, s1)
+  if d > 0
+    BeamTracking.sagan_cavity_outside_drift!(i, coords, val_rad_damping_on, val_rad_fluctuations_on,
+      val_has_mult, val_has_sol, m_order, Bn .* qp, Bs .* qp, q, a, mass, P0c, d)
+  end
+  if L_active > 0 && sagan_in_window(Lo, s0, s1, last)
+    BeamTracking.sagan_cavity_fringe!(i, coords, a, q_gradient, rf_omega, t_phi0, t_ref, mass, P0c, +1)
+  end
+
+  if n_cells == 0
+    h = L_active / 2
+    if L_active > 0
+      d = sagan_overlap(Lo, Lo + h, h, s0, s1)
+      d > 0 && BeamTracking.sagan_cavity_inside_drift!(i, coords, val_rad_damping_on, val_rad_fluctuations_on,
+        val_traveling_wave, val_has_mult, val_has_sol, m_order, Bn .* qp, Bs .* qp, q, q_gradient, a, mass, P0c, d)
+    end
+    if sagan_in_window(Lo + h, s0, s1, last)
+      BeamTracking.sagan_cavity_kick!(i, coords, a, L_active > 0 ? q_gradient * L_active : q_voltage,
+                                      rf_omega, t_phi0, t_ref, mass, P0c)
+      dP0c = BeamTracking.dpc_given_dE(P0c, dE_ref, mass)
+      BeamTracking.reference_momentum_shift!(i, coords, P0c, dP0c, Val{true}())
+      P0c += dP0c
+      qp = q * c_l / P0c
+    end
+    if L_active > 0
+      d = sagan_overlap(Lo + h, Lo + L_active, h, s0, s1)
+      d > 0 && BeamTracking.sagan_cavity_inside_drift!(i, coords, val_rad_damping_on, val_rad_fluctuations_on,
+        val_traveling_wave, val_has_mult, val_has_sol, m_order, Bn .* qp, Bs .* qp, q, q_gradient, a, mass, P0c, d)
+    end
+  else
+    lc = L_active / n_cells
+    for i_step in 0:n_cells
+      p = Lo + i_step * lc
+      if sagan_in_window(p, s0, s1, last)
+        kf = sagan_kick_factor(i_step, n_cells)
+        BeamTracking.sagan_cavity_kick!(i, coords, a, q_gradient * L_active / (n_cells * kf), rf_omega, t_phi0,
+                                        t_ref, mass, P0c)
+        dP0c = BeamTracking.dpc_given_dE(P0c, dE_ref / (n_cells * kf), mass)
+        BeamTracking.reference_momentum_shift!(i, coords, P0c, dP0c, Val{true}())
+        P0c += dP0c
+        qp = q * c_l / P0c
+      end
+      i_step == n_cells && break
+      d = sagan_overlap(p, p + lc, lc, s0, s1)
+      d > 0 && BeamTracking.sagan_cavity_inside_drift!(i, coords, val_rad_damping_on, val_rad_fluctuations_on,
+        val_traveling_wave, val_has_mult, val_has_sol, m_order, Bn .* qp, Bs .* qp, q, q_gradient, a, mass, P0c, d)
+    end
+  end
+
+  if L_active > 0 && sagan_in_window(Lo + L_active, s0, s1, last)
+    BeamTracking.sagan_cavity_fringe!(i, coords, a, q_gradient, rf_omega, t_phi0, t_ref, mass, P0c, -1)
+  end
+  d = sagan_overlap(L - Lo, L, Lo, s0, s1)
+  if d > 0
+    BeamTracking.sagan_cavity_outside_drift!(i, coords, val_rad_damping_on, val_rad_fluctuations_on,
+      val_has_mult, val_has_sol, m_order, Bn .* qp, Bs .* qp, q, a, mass, P0c, d)
+  end
+  return nothing
+end
+
+function slice_sagan(ele::LineElement, up, s0, L_slice, first, last, context)
+  bte = bt_ext()
+  tm = up.tracking_method
+  L = float(up.L)
+  for (P, name) in ((ele.MapParams, "MapParams"), (ele.PatchParams, "PatchParams"), (ele.BendParams, "BendParams"),
+                    (ele.FourPotentialParams, "FourPotentialParams"), (ele.EMultipoleParams, "EMultipoleParams"))
+    isactive(deval(P, context)) && error("slice_element: SaganCavity with $name is not supported (as in BeamTracking)")
+  end
+  rp = deval(ele.RFParams, context)
+  isactive(rp) || error("slice_element: SaganCavity without RFParams is not supported (as in BeamTracking)")
+  lp = deval(ele.BeamlineParams, context)
+  isactive(lp) || error("slice_element: a SaganCavity element must be in a Beamline (reference energy and dE_ref)")
+  p_over_q_ref = lp.beamline.p_over_q_ref
+  p_over_q_ref isa Number || error("slice_element: time-dependent reference energy is not supported")
+
+  species = lp.beamline.species_ref
+  mass = massof(species)
+  q = chargeof(species)
+  E1 = R_to_E(species, p_over_q_ref)
+  dE_ref = float(lp.dE_ref)
+  E0 = E1 - dE_ref
+  rf_omega = bte.rf_omega_calc(rp, lp)
+  t_phi0 = bte.rf_phi0_calc(rp, species) / rf_omega
+  n_cells, L_active = bte.rf_step_calc(tm.n_cells, tm.L_active, rf_omega, L)
+  L_active <= L * (1 + eps(L)) || error("slice_element: SaganCavity L_active ($L_active) is greater than L ($L)")
+
+  bm = deval(ele.BMultipoleParams, context)
+  p0q = BeamTracking.E_to_R(species, E0)
+  if isactive(bm)
+    m_order = bm.order
+    Kn, Ks = bte.get_strengths(bm, L, p0q)
+    Bn, Bs = Kn .* p0q, Ks .* p0q
+    has_mult = length(m_order) > 0
+    has_sol = has_mult && m_order[1] == 0
+  else
+    m_order, Bn, Bs, has_mult, has_sol = SA{Int32}[], SA{Float64}[], SA{Float64}[], false, false
+  end
+
+  s = LineElement()
+  s.UniversalParams = UniversalParams(up.kind, up.name, L_slice, tm)
+  ap = deval(ele.AlignmentParams, context)
+  isactive(ap) && (s.AlignmentParams = slice_alignment(ap, nothing, L, s0, L_slice))
+  dp = deval(ele.ApertureParams, context)
+  if isactive(dp)
+    dps = slice_aperture(dp, first, last)
+    isnothing(dps) || (s.ApertureParams = dps)
+  end
+
+  return SaganSlice(s, tm, species, float(mass), float(q), float(gyromagnetic_anomaly(species)), rp.traveling_wave,
+                    float(E0), dE_ref, sqrt(E0^2 - mass^2), float(p_over_q_ref), float(rf_omega), float(t_phi0),
+                    L_active > 0 ? q * rp.voltage / L_active : 0.0, float(q * rp.voltage), float(n_cells),
+                    float(L_active), L, m_order, Bn, Bs, has_mult, has_sol, float(s0), float(s0 + L_slice), first, last)
+end
+
+# Reference momentum [eV] at the slice exit and the linearly ramped one used for the CSR kick there.
+sagan_exit_P0c(c::SaganSlice) = c.last ? sagan_P0c_at(c, c.L, true) : sagan_P0c_at(c, c.s1, false)
+
+"""
+    track_slice!(bunch, slice, p_over_q_ref)
+
+Track `bunch` through a slice made by `CSR.slice_element`.
+"""
+track_slice!(bunch, s::LineElement, p_over_q_ref) = track!(bunch, s; _p_over_q_ref = p_over_q_ref)
+
+function track_slice!(bunch, c::SaganSlice, p_over_q_ref = c.p_over_q_ref)
+  bte = bt_ext()
+  bunch.species == c.species || error("track_slice!: bunch species differs from the cavity's reference species")
+  coords = bunch.coords
+  tm = c.tm
+  L_slice = c.s1 - c.s0
+  ap = c.ele.AlignmentParams
+  dp = c.ele.ApertureParams
+  P0c = c.first ? c.P0c0 : sagan_P0c_at(c, c.s0, false)
+
+  t_enter = bunch.t_ref
+  bg = R_to_beta_gamma(c.species, c.p_over_q_ref)
+  # BeamTracking sets t_ref = dt_ref of the whole cavity at its exit (drops the entrance t_ref).
+  t_exit = c.last ? sagan_dt_ref(c, c.L) : t_enter - sagan_dt_ref(c, c.s0) + sagan_dt_ref(c, c.s1)
+  kc = BeamTracking.KernelChain(Val{10}(), BeamTracking.RefState{eltype(coords.v)}(; t_enter, beta_gamma_enter = bg,
+                                t_exit, beta_gamma_exit = bg, L = L_slice, g = (0, 0), ds_step = L_slice))
+
+  # Entrance aperture and alignment, as universal! for SaganCavity
+  kc = sagan_ends(bte, tm, kc, c, ap, dp, L_slice, true)
+  body = (Val{tm.radiation_damping_on}(), Val{tm.radiation_fluctuations_on}(), Val{c.traveling_wave}(),
+          c.mass, c.q, P0c, c.dE_ref, 0, c.n_cells, Val{c.has_mult}(), Val{c.has_sol}(), c.m_order, c.Bn, c.Bs,
+          c.a, c.q_gradient, c.q_voltage, c.rf_omega, c.t_phi0, c.L_active, c.L, c.s0, c.s1, c.last)
+  kc = BeamTracking.push(kc, BeamTracking.make_kernel_call(sagan_slice_kernel!, body))
+  kc = sagan_ends(bte, tm, kc, c, ap, dp, L_slice, false)
+  BeamTracking.launch!(coords, kc)
+  bunch.t_ref = t_exit
+  return bunch
+end
+
+function sagan_ends(bte, tm, kc, c, ap, dp, L_slice, entering)
+  pq = c.p_over_q_ref
+  if isactive(ap)
+    if isactive(dp)
+      if dp.aperture_shifts_with_body == entering
+        kc = bte.alignment(tm, kc, pq, nothing, ap, nothing, L_slice, entering)
+        kc = bte.aperture(tm, kc, pq, nothing, dp, entering)
+      else
+        kc = bte.aperture(tm, kc, pq, nothing, dp, entering)
+        kc = bte.alignment(tm, kc, pq, nothing, ap, nothing, L_slice, entering)
+      end
+    else
+      kc = bte.alignment(tm, kc, pq, nothing, ap, nothing, L_slice, entering)
+    end
+  elseif isactive(dp)
+    kc = bte.aperture(tm, kc, pq, nothing, dp, entering)
+  end
+  return kc
+end

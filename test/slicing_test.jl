@@ -286,8 +286,9 @@ end
     @test s.voltage ≈ 1.25e6
     @test s.rf_frequency == 1.3e9
     @test s.tracking_method.order == 2
-    e = slice_test_line([RFCavity(; rf_kw..., rf_frequency = 1.3e9, tracking_method = SaganCavity())]).line[1]
-    @test_throws ErrorException CSR.slice_element(e, 0.0, 0.1, true, false)
+    # SaganCavity: sliced with its own kernels (test/lcavity_test.jl). Not first in its Beamline, so dE_ref = 0.
+    e = slice_test_line([Drift(L = 0.1), RFCavity(; rf_kw..., rf_frequency = 1.3e9, tracking_method = SaganCavity())]).line[2]
+    @test CSR.slice_element(e, 0.0, 0.1, true, false) isa ext.SaganSlice
   end
 
   @testset "Map elements: whole only, no CSR" begin

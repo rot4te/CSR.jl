@@ -33,8 +33,8 @@ struct CSRStepResult{Z<:AbstractVector,C<:AbstractVector,K<:AbstractVector,I<:Ab
 end
 
 """
-    csr_kick!(pz, z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor = 1.0)
-        -> CSRStepResult
+    csr_kick!(pz, z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor = 1.0,
+              pz_scale = 1.0) -> CSRStepResult
 
 Apply one 1D CSR kick at reference position `s_kick` [m] from the entrance of element `ix_ele_kick`.
 
@@ -42,6 +42,9 @@ Apply one 1D CSR kick at reference position `s_kick` [m] from the entrance of el
 - `q`: macroparticle charges [C]. `alive`: live-particle mask.
 - `gamma`: Lorentz factor of the reference particle at the kick point.
 - `kick_factor`: `1/2` at the first and last step of an element, `1` otherwise.
+- `pz_scale`: multiplies the Δpz applied to the particles (not the returned diagnostics). Used where the particles'
+  reference momentum differs from the one the kick is computed for (inside a SaganCavity, whose reference momentum
+  steps at each cell while γ ramps linearly).
 
 The kick covers one step, `ds = L / n_step` (see `csr_n_step`) scaled by `L_chord / L`, as in Bmad.
 
@@ -51,7 +54,7 @@ phase 1 version.
 """
 function csr_kick!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool},
                    geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma, species::Species,
-                   params::CSRParams; kick_factor = 1.0)
+                   params::CSRParams; kick_factor = 1.0, pz_scale = 1.0)
   n_bin = params.n_bin
   params.bmad_compat == geom.bmad_compat || error("csr_kick!: params.bmad_compat and geom.bmad_compat differ")
   count(alive) >= n_bin || error("csr_kick!: number of live particles ($(count(alive))) is less than n_bin ($n_bin)")
@@ -69,7 +72,7 @@ function csr_kick!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, ali
   edge = bins.edge_dcharge_density_dz
   kick = KernelAbstractions.zeros(backend, promote_type(typeof(coef), eltype(I_int), eltype(edge)), n_bin)
   csr_convolve!(kick, I_int, edge, coef)
-  csr_apply_kicks!(pz, z, alive, bins, kick)
+  csr_apply_kicks!(pz, z, alive, bins, kick; pz_scale)
 
   ds_kick = kick_factor * actual_track_step
   return CSRStepResult(bins.z_center, bins.charge ./ bins.dz, kick ./ ds_kick, I_csr ./ ds_kick, s_source)

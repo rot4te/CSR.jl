@@ -33,11 +33,25 @@ function macro_weights(bunch)
   return collect(float.(wt))
 end
 
+# Reference energies at the entrance and exit of an element. Only SaganCavity tracking uses dE_ref (BeamTracking),
+# so only there does the reference energy change inside the element (lcavity).
+function csr_ref_energies(ele, species, p_over_q_ref, context)
+  E_end = R_to_E(species, p_over_q_ref)
+  deval(ele.UniversalParams, context).tracking_method isa SaganCavity || return E_end, E_end
+  return E_end - float(deval(ele.BeamlineParams, context).dE_ref), E_end
+end
+
+# Reference momentum [eV] of the particles after slice `s` (and at s = 0), when it differs from p_over_q_ref.
+csr_slice_P0c(s::SaganSlice) = sagan_exit_P0c(s)
+csr_slice_P0c(_) = nothing
+
 """
     CSR.track_csr!(bunch, bl::Beamline; params, csr_on = ele -> true, centroid_start = nothing,
                    diagnostics = nothing) -> bunch
+    CSR.track_csr!(bunch, br::Branch; ...) -> bunch
 
-Track `bunch` through `bl` with 1D CSR kicks between slices of each element (Bmad `csr_method = one_dim`).
+Track `bunch` through `bl` (or the Beamlines of `br` in order) with 1D CSR kicks between slices of each element
+(Bmad `csr_method = one_dim`).
 
 - `params::CSRParams` (`ds_step` must be set).
 - `csr_on(ele)`: elements for which it returns `false` are tracked whole without CSR, like Bmad's per-element
@@ -48,16 +62,28 @@ Track `bunch` through `bl` with 1D CSR kicks between slices of each element (Bma
 - `diagnostics(ix_ele, i_step, s_kick, result::CSRStepResult)` is called after each kick.
 
 Macroparticle charge: `weight × |charge of species|` [C] (`weight = nothing` means 1).
-The reference energy is constant inside every BeamTracking element, so γ is constant within an element
-(`csr_ref_energy` with equal end energies).
+
+Reference energy: constant inside elements, except SaganCavity elements with `dE_ref` (lcavity), where γ for
+the CSR kick ramps linearly from `E_ref - dE_ref` to `E_ref` (`csr_ref_energy`, Bmad). The particles' reference
+momentum there steps at each RF cell (BeamTracking), so the applied Δpz is rescaled from the linearly ramped
+reference momentum to the stepped one.
 """
-function CSR.track_csr!(bunch::Bunch, bl::Beamline; params::CSRParams, csr_on = ele -> true,
-                        centroid_start = nothing, diagnostics = nothing)
-  line = bl.line
+function CSR.track_csr!(bunch::Bunch, bl::Beamline; kwargs...)
+  isempty(bl.line) && return bunch
+  bt_ext().check_bl_bunch!(bunch, bl)
+  return track_csr_line!(bunch, bl.line, bl.context; kwargs...)
+end
+
+function CSR.track_csr!(bunch::Bunch, br::Branch; kwargs...)
+  bls = filter(bl -> !isempty(bl.line), br.beamlines)
+  isempty(bls) && return bunch
+  bt_ext().check_bl_bunch!(bunch, first(bls))
+  return track_csr_line!(bunch, reduce(vcat, [bl.line for bl in bls]), br.context; kwargs...)
+end
+
+function track_csr_line!(bunch::Bunch, line, context; params::CSRParams, csr_on = ele -> true,
+                         centroid_start = nothing, diagnostics = nothing)
   n = length(line)
-  n == 0 && return bunch
-  Base.get_extension(BeamTracking, :BeamTrackingBeamlinesExt).check_bl_bunch!(bunch, bl)
-  context = bl.context
   species = bunch.species
   q_abs = abs(chargeof(species; C = true))
 
@@ -100,18 +126,26 @@ function CSR.track_csr!(bunch::Bunch, bl::Beamline; params::CSRParams, csr_on = 
     end
     p_over_q_ref = ele.p_over_q_ref
     p_over_q_ref isa Number || error("track_csr!: time-dependent reference energy is not supported (element $i)")
-    E_ref = R_to_E(species, p_over_q_ref)
+    E_start, E_end = csr_ref_energies(ele, species, p_over_q_ref, context)
+    mass = massof(species)
     n_step, ds = csr_n_step(L[i], params)
+    P0c = E_start == E_end ? nothing : sqrt(E_start^2 - mass^2)   # Particles' reference momentum (lcavity)
     for i_step in 0:n_step
       if i_step != 0
-        s = CSR.slice_element(ele, (i_step - 1) * ds, ds, i_step == 1, i_step == n_step; context)
-        track!(bunch, s; _p_over_q_ref = p_over_q_ref)
+        # s0 + L_slice equals the next slice's s0 exactly (Sterbenz), so SaganCavity cell kicks on a boundary
+        # fall in exactly one slice.
+        s0 = (i_step - 1) * ds
+        s = CSR.slice_element(ele, s0, i_step * ds - s0, i_step == 1, i_step == n_step; context)
+        track_slice!(bunch, s, p_over_q_ref)
+        isnothing(P0c) || (P0c = csr_slice_P0c(s))
       end
       s_kick = i_step * ds
-      gamma = CSR.csr_ref_energy(E_ref, E_ref, s_kick, L[i]; bmad_compat = params.bmad_compat) / massof(species)
+      E_kick = CSR.csr_ref_energy(E_start, E_end, s_kick, L[i]; bmad_compat = params.bmad_compat)
+      gamma = E_kick / mass
+      pz_scale = isnothing(P0c) ? 1.0 : sqrt(E_kick^2 - mass^2) / P0c
       alive = bunch.coords.state .== BeamTracking.STATE_ALIVE
       kick_factor = (i_step == 0 || i_step == n_step) ? 0.5 : 1.0
-      result = csr_kick!(pz, z, q, alive, geom, i, s_kick, gamma, species, params; kick_factor)
+      result = csr_kick!(pz, z, q, alive, geom, i, s_kick, gamma, species, params; kick_factor, pz_scale)
       isnothing(diagnostics) || diagnostics(i, i_step, s_kick, result)
     end
   end

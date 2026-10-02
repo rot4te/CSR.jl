@@ -160,7 +160,7 @@ function CSR.slice_element(ele::LineElement, s0, L_slice, first::Bool, last::Boo
   fp = deval(ele.FourPotentialParams, context)
   ef = deval(ele.EMFieldParams, context)
   dp = deval(ele.ApertureParams, context)
-  isactive(rp) && up.tracking_method isa SaganCavity && error("slice_element: SaganCavity tracking is not supported")
+  up.tracking_method isa SaganCavity && return slice_sagan(ele, up, s0, L_slice, first, last, context)
 
   s = LineElement()
   if isactive(mp)
