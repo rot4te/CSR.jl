@@ -22,14 +22,14 @@ end
 
 Diagnostics for one kick, per bin (mirrors Bmad's `diagnostic_output_file` columns):
 `z_center`, `charge_per_meter` [C/m], `kick_per_meter` (Δpz per meter), `I_csr_per_meter`,
-`s_source` (reference s of the source point).
+`s_source` (reference s of the source point). Arrays are on the backend of the particle coordinates.
 """
-struct CSRStepResult
-  z_center::Vector{Float64}
-  charge_per_meter::Vector{Float64}
-  kick_per_meter::Vector{Float64}
-  I_csr_per_meter::Vector{Float64}
-  s_source::Vector{Float64}
+struct CSRStepResult{Z<:AbstractVector,C<:AbstractVector,K<:AbstractVector,I<:AbstractVector,S<:AbstractVector}
+  z_center::Z
+  charge_per_meter::C
+  kick_per_meter::K
+  I_csr_per_meter::I
+  s_source::S
 end
 
 """
@@ -44,6 +44,10 @@ Apply one 1D CSR kick at reference position `s_kick` [m] from the entrance of el
 - `kick_factor`: `1/2` at the first and last step of an element, `1` otherwise.
 
 The kick covers one step, `ds = L / n_step` (see `csr_n_step`) scaled by `L_chord / L`, as in Bmad.
+
+Runs as KernelAbstractions kernels on the backend of `pz` (deposit, edge gradient, wake table, convolution,
+kick). Only the CPU backend is supported (the wake table needs it). `csr_kick_reference!` is the serial
+phase 1 version.
 """
 function csr_kick!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool},
                    geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma, species::Species,
@@ -51,6 +55,7 @@ function csr_kick!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, ali
   n_bin = params.n_bin
   params.bmad_compat == geom.bmad_compat || error("csr_kick!: params.bmad_compat and geom.bmad_compat differ")
   count(alive) >= n_bin || error("csr_kick!: number of live particles ($(count(alive))) is less than n_bin ($n_bin)")
+  backend = get_backend(pz)
 
   e = geom.ele[ix_ele_kick]
   _, ds_step = csr_n_step(e.L, params)
@@ -58,25 +63,12 @@ function csr_kick!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, ali
 
   bins = csr_bin_particles(z, q, alive, params)
   kp = CSRKickPoint(geom, ix_ele_kick, s_kick, gamma; kick_factor)
-
-  # Kick table for lags i*dz, i = 1:n_bin. Each search starts in the element where the previous one ended.
-  I_int = zeros(n_bin)
-  I_csr = zeros(n_bin)
-  s_source = zeros(n_bin)
-  k = CSRKick1()
-  k.ix_ele_source = ix_ele_kick
-  for i in 1:n_bin
-    k.dz_particles = i * bins.dz
-    s_chord = s_source_calc!(k, geom, kp)
-    I_csr!(k, i, bins.dz, geom, kp, i == 1 ? 0.0 : I_csr[i-1])
-    I_csr[i] = k.I_csr
-    I_int[i] = k.I_int_csr
-    s_source[i] = k.ix_ele_source == 0 ? s_chord : geom.ele[k.ix_ele_source].s_start + s_chord
-  end
+  I_csr, I_int, s_source = csr_wake_table(geom, kp, bins.dz, n_bin, backend)
 
   coef = csr_kick_coef(species, gamma, actual_track_step)
-  kick = zeros(n_bin)
-  csr_convolve!(kick, I_int, bins.edge_dcharge_density_dz, coef)
+  edge = bins.edge_dcharge_density_dz
+  kick = KernelAbstractions.zeros(backend, promote_type(typeof(coef), eltype(I_int), eltype(edge)), n_bin)
+  csr_convolve!(kick, I_int, edge, coef)
   csr_apply_kicks!(pz, z, alive, bins, kick)
 
   ds_kick = kick_factor * actual_track_step

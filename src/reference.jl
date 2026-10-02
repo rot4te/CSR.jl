@@ -1,0 +1,109 @@
+# Serial reference implementation (phase 1): plain loops, Float64, one lag after another with the source search
+# starting where the previous lag's search ended (as in Bmad). The kernel versions in binning.jl, wake.jl,
+# convolve.jl, kick.jl and step.jl are tested against these.
+
+function csr_bin_particles_reference(z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool}, params::CSRParams)
+  n_bin = params.n_bin
+  pbs = params.particle_bin_span
+  n_bin_eff = n_bin - 2 - (pbs + 1)
+
+  any(alive) || error("csr_bin_particles: no live particles")
+  z_maxval = maximum(z[i] for i in eachindex(z) if alive[i])
+  z_minval = minimum(z[i] for i in eachindex(z) if alive[i])
+  z_maxval > z_minval || error("csr_bin_particles: longitudinal width of beam is zero")
+
+  dz = 1.0000001 * (z_maxval - z_minval) / n_bin_eff   # 1.0000001 prevents round-off problems (Bmad)
+  z_center = (z_maxval + z_minval) / 2
+  z_min = z_center - n_bin * dz / 2
+  dz_particle = pbs * dz
+
+  z0_edge = [z_min + (i - 1) * dz for i in 1:n_bin]
+  bins = CSRBins(dz, z0_edge, z0_edge .+ dz / 2, zeros(n_bin), zeros(n_bin), zeros(n_bin))
+
+  for i in eachindex(z)
+    alive[i] || continue
+    zp = z[i]
+    zp0 = zp - dz_particle / 2
+    ix0 = round(Int, (zp0 - z_min) / dz, RoundNearestTiesAway)   # Fortran nint
+    for j in 0:pbs+1
+      ib = j + ix0
+      1 <= ib <= n_bin || error("csr_bin_particles: particle outside bin range (internal error)")
+      overlap = triangle_overlap(zp, dz_particle, z0_edge[ib], z0_edge[ib] + dz)
+      bins.n_particle[ib] += overlap
+      bins.charge[ib] += overlap * q[i]
+    end
+  end
+
+  for ib in 2:n_bin
+    bins.edge_dcharge_density_dz[ib] = (bins.charge[ib] - bins.charge[ib-1]) / dz^2
+  end
+  return bins
+end
+
+function csr_convolve_reference!(kick::AbstractVector, I_int::AbstractVector, edge_grad::AbstractVector, coef)
+  n = length(kick)
+  for i in 1:n
+    acc = zero(eltype(kick))
+    for k in 1:i
+      acc += I_int[k] * edge_grad[i+1-k]
+    end
+    kick[i] = coef * acc
+  end
+  return kick
+end
+
+function csr_apply_kicks_reference!(pz::AbstractVector, z::AbstractVector, alive::AbstractVector{Bool}, bins::CSRBins, kick::AbstractVector)
+  n_bin = length(kick)
+  dz = bins.dz
+  zc1 = bins.z_center[1]
+  for i in eachindex(pz)
+    alive[i] || continue
+    zp = z[i]
+    i0 = trunc(Int, (zp - zc1) / dz) + 1   # Fortran int() truncates toward zero
+    r1 = (zp - bins.z_center[i0]) / dz
+    r0 = 1 - r1
+    if r1 < -0.01 || r1 > 1.01 || i0 < 1 || i0 >= n_bin
+      error("csr_apply_kicks!: particle outside the bin range (internal error)")
+    end
+    pz[i] += r0 * kick[i0] + r1 * kick[i0+1]
+  end
+  return pz
+end
+
+function csr_kick_reference!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool},
+                             geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma, species::Species,
+                             params::CSRParams; kick_factor = 1.0)
+  n_bin = params.n_bin
+  params.bmad_compat == geom.bmad_compat || error("csr_kick!: params.bmad_compat and geom.bmad_compat differ")
+  count(alive) >= n_bin || error("csr_kick!: number of live particles ($(count(alive))) is less than n_bin ($n_bin)")
+
+  e = geom.ele[ix_ele_kick]
+  _, ds_step = csr_n_step(e.L, params)
+  actual_track_step = ds_step * (e.L_chord / e.L)
+
+  bins = csr_bin_particles_reference(z, q, alive, params)
+  kp = CSRKickPoint(geom, ix_ele_kick, s_kick, gamma; kick_factor)
+
+  # Kick table for lags i*dz, i = 1:n_bin. Each search starts in the element where the previous one ended.
+  I_int = zeros(n_bin)
+  I_csr = zeros(n_bin)
+  s_source = zeros(n_bin)
+  k = CSRKick1()
+  k.ix_ele_source = ix_ele_kick
+  for i in 1:n_bin
+    k.dz_particles = i * bins.dz
+    s_chord = s_source_calc!(k, geom, kp)
+    I_csr!(k, i, bins.dz, geom, kp, i == 1 ? 0.0 : I_csr[i-1])
+    I_csr[i] = k.I_csr
+    I_int[i] = k.I_int_csr
+    s_source[i] = k.ix_ele_source == 0 ? s_chord : geom.ele[k.ix_ele_source].s_start + s_chord
+  end
+
+  coef = csr_kick_coef(species, gamma, actual_track_step)
+  kick = zeros(n_bin)
+  csr_convolve_reference!(kick, I_int, bins.edge_dcharge_density_dz, coef)
+  csr_apply_kicks_reference!(pz, z, alive, bins, kick)
+
+  ds_kick = kick_factor * actual_track_step
+  return CSRStepResult(bins.z_center, bins.charge ./ bins.dz, kick ./ ds_kick, I_csr ./ ds_kick, s_source)
+end

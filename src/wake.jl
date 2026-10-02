@@ -65,6 +65,54 @@ function I_csr!(k::CSRKick1, i_bin, dz_slice, geom::CSRGeometry, kp::CSRKickPoin
   return k
 end
 
+# One work item per block of `n_lag` consecutive lags i (separation i*dz). Within a block each source search
+# starts where the previous lag's ended (as in Bmad); the first lag of a block starts in the kick element.
+# Searches end in the same element, and call zbrent on the same bracket, whatever the start element.
+# For i > 1, I_int is overwritten by csr_trapezoid_kernel!.
+@kernel function csr_wake_kernel!(I_csr, I_int, s_source, geom, kp, dz, n_lag)
+  b = @index(Global)
+  k = CSRKick1()
+  k.ix_ele_source = kp.ix_ele_kick
+  for i in (b - 1) * n_lag + 1:min(b * n_lag, length(I_csr))
+    k.dz_particles = i * dz
+    s_chord = s_source_calc!(k, geom, kp)
+    I_csr!(k, i, dz, geom, kp, 0.0)
+    @inbounds begin
+      I_csr[i] = k.I_csr
+      I_int[i] = k.I_int_csr
+      s_source[i] = k.ix_ele_source == 0 ? s_chord : geom.ele[k.ix_ele_source].s_start + s_chord
+    end
+  end
+end
+
+@kernel function csr_trapezoid_kernel!(I_int, @Const(I_csr), dz)
+  j = @index(Global)
+  i = j + 1
+  @inbounds I_int[i] = (I_csr[i] + I_csr[i-1]) * dz / 2
+end
+
+"""
+    csr_wake_table(geom, kp, dz, n_bin, backend) -> (I_csr, I_int, s_source)
+
+Kick integral `I_csr`, its integral over each bin `I_int`, and the reference s of the source point, for lags
+`i * dz`, `i = 1:n_bin`, at kick point `kp`. The lags are split into `n_block` blocks (one work item and
+workgroup each); a block reuses the previous lag's source element as the start of the next search.
+Default: 4 blocks per thread. CPU backend only: the source search uses a mutable work struct and the
+non-isbits `CSRGeometry`.
+"""
+function csr_wake_table(geom::CSRGeometry, kp::CSRKickPoint, dz, n_bin, backend;
+                        n_block = min(n_bin, 4 * Threads.nthreads()))
+  I_csr = KernelAbstractions.zeros(backend, Float64, n_bin)
+  I_int = KernelAbstractions.zeros(backend, Float64, n_bin)
+  s_source = KernelAbstractions.zeros(backend, Float64, n_bin)
+  n_lag = cld(n_bin, n_block)
+  csr_wake_kernel!(backend, 1)(I_csr, I_int, s_source, geom, kp, dz, n_lag; ndrange = cld(n_bin, n_lag))
+  KernelAbstractions.synchronize(backend)
+  csr_trapezoid_kernel!(backend)(I_int, I_csr, dz; ndrange = n_bin - 1)
+  KernelAbstractions.synchronize(backend)
+  return I_csr, I_int, s_source
+end
+
 """
     I_csr_integral(z0, z1, geom, kp; n = 16)
 

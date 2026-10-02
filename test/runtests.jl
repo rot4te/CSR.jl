@@ -16,6 +16,7 @@ include("utils.jl")
   include("binning_test.jl")
   include("wake_test.jl")
   include("kick_test.jl")
+  include("kernels_test.jl")
   include("slicing_test.jl")
   include("track_csr_test.jl")
 end
