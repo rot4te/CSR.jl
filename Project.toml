@@ -12,8 +12,8 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [weakdeps]
 AbstractFFTs = "621f4979-c628-5d54-868e-fcf4e3e8185c"
-BeamTracking = "8ef5c10a-4ca3-437f-8af5-b84d8af36df0"
 Beamlines = "5bb90b03-0719-46b8-8ce4-1ef3afd3cd4b"
+BeamTracking = "8ef5c10a-4ca3-437f-8af5-b84d8af36df0"
 ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
 GTPSA = "b27dd330-f138-47c5-815b-40db9dd9b6e8"
 
@@ -28,14 +28,12 @@ AbstractFFTs = "1.5.0"
 Adapt = "4.7.1"
 AtomicAndPhysicalConstants = "0.11.5"
 Atomix = "1.2.1"
-BeamTracking = "0.8.4"
-Beamlines = "0.10.4"
 ChainRulesCore = "1.26.1"
 GTPSA = "1.5.6"
-julia = "1.9"
 KernelAbstractions = "0.9.42"
 StaticArrays = "1.9.22"
 Test = "1"
+julia = "1.10"
 
 [extras]
 AbstractFFTs = "621f4979-c628-5d54-868e-fcf4e3e8185c"
