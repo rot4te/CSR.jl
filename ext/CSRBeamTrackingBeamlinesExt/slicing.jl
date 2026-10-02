@@ -1,6 +1,7 @@
 # Element slicing for route (a): track each CSR step with BeamTracking.track! on a detached slice.
 # Slice rules follow Bmad's create_element_slice / makeup_super_slave1 (bmad/modules/bookkeeper_mod.f90),
-# expressed in Beamlines parameters. Uses BeamTracking 0.8.4 internals (quaternion and alignment helpers).
+# expressed in Beamlines parameters. Uses BeamTracking internals (quaternion and alignment helpers), checked
+# against BeamTracking dev after v0.8.4 (RungeKutta, Beamlines EMFieldParams).
 
 has_fringe_in(f::Fringe.T) = f == Fringe.BothEnds || f == Fringe.EntranceEnd
 has_fringe_out(f::Fringe.T) = f == Fringe.BothEnds || f == Fringe.ExitEnd
@@ -13,7 +14,7 @@ function fringe_at_ends(fin::Bool, fout::Bool)
 end
 
 # Symplectic order that SciBmadStandard uses for this element
-# (mirrors ext/BeamTrackingBeamlinesExt/scibmadstandard_bl.jl, BeamTracking 0.8.4).
+# (mirrors ext/BeamTrackingBeamlinesExt/scibmadstandard_bl.jl, unchanged since BeamTracking v0.8.4).
 function sbs_order(bp, bm, rp)
   isactive(rp) && return isactive(bm) ? 4 : 2              # bmultipole_rf, pure_rf
   isactive(bm) || return 2                                  # drift, bend without field, pure_edipole
@@ -40,6 +41,11 @@ function slice_tracking_method(tm, frac, first, last, bp, bm, rp)
       implicit_use_newton = tm.implicit_use_newton, use_optimized_schemes = tm.use_optimized_schemes)
   elseif tm isa Exact
     return Exact(; fringe_at = fringe_at_ends(has_fringe_in(tm.fringe_at) && first, has_fringe_out(tm.fringe_at) && last))
+  elseif tm isa RungeKutta
+    # No fringe kernels: only the step count is rescaled (ds_step is kept as is).
+    n_steps = tm.n_steps > 0 ? max(1, round(Int, tm.n_steps * frac)) : nothing
+    ds_step = tm.n_steps > 0 ? nothing : tm.ds_step
+    return RungeKutta(; ds_step, n_steps, ibs_damping_on = tm.ibs_damping_on, ibs_fluctuations_on = tm.ibs_fluctuations_on)
   end
   error("slice_element: tracking method $(typeof(tm)) not supported")
 end
@@ -102,8 +108,8 @@ function slice_patch(p::PatchParams, L, Ls, first)
   return PatchParams(p.dt, p.dx - dl * ez[1], p.dy - dl * ez[2], p.dz - dl * ez[3], p.dx_rot, p.dy_rot, p.dz_rot)
 end
 
-# Four-potential evaluated at element coordinates: the integrator passes s and t relative to the slice
-# entrance (t = (s/β₀ - z)/c), so shift both by the slice start.
+# Four-potential or EM field evaluated at element coordinates: the integrator passes s and t relative to the
+# slice entrance (t = (s/β₀ - z/β)/c), so shift both by the slice start.
 struct ShiftedPotential{F,T} <: Function
   f::F
   s0::T
@@ -111,11 +117,20 @@ struct ShiftedPotential{F,T} <: Function
 end
 (p::ShiftedPotential)(x, y, s, t, pp = nothing) = p.f(x, y, s + p.s0, t + p.t0, pp)
 
-function slice_four_potential(fp::FourPotentialParams, ele, s0)
+function shifted_to_slice(f, ele, s0)
   bg = R_to_beta_gamma(ele.species_ref, ele.p_over_q_ref)
   beta_0 = bg / sqrt(1 + bg^2)
-  f = ShiftedPotential(fp.four_potential, float(s0), s0 / (beta_0 * C_LIGHT))
+  return ShiftedPotential(f, float(s0), s0 / (beta_0 * C_LIGHT))
+end
+
+function slice_four_potential(fp::FourPotentialParams, ele, s0)
+  f = shifted_to_slice(fp.four_potential, ele, s0)
   return FourPotentialParams(f, fp.four_potential_params, fp.four_potential_normalized)
+end
+
+# EM field (used by RungeKutta tracking).
+function slice_em_field(ef::EMFieldParams, ele, s0)
+  return EMFieldParams(shifted_to_slice(ef.em_field, ele, s0), ef.em_field_params, ef.em_field_normalized)
 end
 
 # RF slice: voltage ∝ length (Bmad), rate converted to a frequency (the harmonic number refers to the
@@ -143,6 +158,7 @@ function CSR.slice_element(ele::LineElement, s0, L_slice, first::Bool, last::Boo
   pp = deval(ele.PatchParams, context)
   rp = deval(ele.RFParams, context)
   fp = deval(ele.FourPotentialParams, context)
+  ef = deval(ele.EMFieldParams, context)
   dp = deval(ele.ApertureParams, context)
   isactive(rp) && up.tracking_method isa SaganCavity && error("slice_element: SaganCavity tracking is not supported")
 
@@ -162,6 +178,7 @@ function CSR.slice_element(ele::LineElement, s0, L_slice, first::Bool, last::Boo
   isactive(em) && (s.EMultipoleParams = scale_integrated(em, frac))
   isactive(pp) && (s.PatchParams = slice_patch(pp, L, L_slice, first))
   isactive(fp) && (s.FourPotentialParams = slice_four_potential(fp, ele, s0))
+  isactive(ef) && (s.EMFieldParams = slice_em_field(ef, ele, s0))
   if isactive(dp)
     dps = slice_aperture(dp, first, last)
     isnothing(dps) || (s.ApertureParams = dps)

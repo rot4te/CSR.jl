@@ -52,6 +52,13 @@ function slice_test_potential(x, y, s, t, p = nothing)
            -k * x, k * y, -k0 * k1 / 2 * (x^2 - y^2), 0.0))
 end
 
+# s- and t-dependent physical EM field (V/m, T): Ex = e0 cos(ω t), By = k(s) x, Bx = k(s) y.
+function slice_test_em_field(x, y, s, t, p = nothing)
+  k0, k1, e0, w = 10.0, 2.0, 1e7, 2e9
+  k = k0 * (1 + k1 * s)
+  return (e0 * cos(w * t), 0.0, 0.0, k * y, k * x, 0.0)
+end
+
 @testset "Element slicing (CSR off)" begin
   sym8 = Symplectic(order = 4, n_steps = 8)
   bend_kw = (L = 0.5, g_ref = 0.4, Kn0 = 0.4, e1 = 0.1, e2 = -0.07)
@@ -216,6 +223,49 @@ end
     end
     @test slice_maxdiff(b, b1) > 1e-6
     @test_throws Exception CSR.slice_element(ele, 0.0, 0.125, true, false)  # detached: no reference energy
+  end
+
+  @testset "RungeKutta" begin
+    # n_steps divisible by the slice count: the slices take the same RK steps as the whole element.
+    rk8 = RungeKutta(n_steps = 8)
+    @testset "Gate: $name" for (name, ele) in (
+        ("drift", Drift(L = 1.0, tracking_method = rk8)),
+        ("quadrupole", Quadrupole(L = 0.3, Kn1 = 1.2, tracking_method = rk8)),
+        ("quadrupole integrated", Quadrupole(L = 0.3, Kn1L = 0.36, tracking_method = rk8)),
+        ("sbend", SBend(L = 0.5, g_ref = 0.4, Kn0 = 0.4, Kn1 = -0.8, tracking_method = rk8)),
+        ("ds_step", Quadrupole(L = 0.4, Kn1 = 1.2, tracking_method = RungeKutta(ds_step = 0.05))),
+      )
+      b1 = track_unsliced(ele)
+      test_gate(b1, track_sliced(ele, 4); tol = 1e-14)
+      @test slice_maxdiff(b1, slice_test_bunch()) > 1e-5
+    end
+
+    @testset "EM field seen at element s and t" begin
+      ele = LineElement(L = 0.5, em_field = slice_test_em_field, tracking_method = rk8)
+      b1 = track_unsliced(ele)
+      test_gate(b1, track_sliced(ele, 4); tol = 1e-14)
+      @test slice_maxdiff(b1, track_unsliced(Drift(L = 0.5, tracking_method = rk8))) > 1e-4
+      # Control: without the t shift the slices see the wrong field phase.
+      e = slice_test_line([ele]).line[1]
+      b = slice_test_bunch()
+      for k in 1:4
+        s = CSR.slice_element(e, (k - 1) * 0.125, 0.125, k == 1, k == 4)
+        f = s.em_field
+        s.em_field = ext.ShiftedPotential(f.f, f.s0, 0.0)
+        track!(b, s; _p_over_q_ref = SLICE_PQ)
+      end
+      @test slice_maxdiff(b, b1) > 1e-6
+    end
+
+    @testset "Slice tracking method" begin
+      q = Quadrupole(L = 0.4, Kn1 = 1.0, tracking_method = RungeKutta(n_steps = 8, ibs_damping_on = true))
+      tm = CSR.slice_element(q, 0.0, 0.1, true, false).tracking_method
+      @test tm isa RungeKutta && tm.n_steps == 2 && tm.ibs_damping_on && !tm.ibs_fluctuations_on
+      @test CSR.slice_element(q, 0.0, 0.01, true, false).tracking_method.n_steps == 1
+      q = Quadrupole(L = 0.4, Kn1 = 1.0, tracking_method = RungeKutta(ds_step = 0.05))
+      tm = CSR.slice_element(q, 0.0, 0.1, true, false).tracking_method
+      @test tm.ds_step == 0.05 && tm.n_steps == -1
+    end
   end
 
   @testset "RF cavity" begin
