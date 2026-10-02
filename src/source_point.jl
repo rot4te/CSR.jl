@@ -245,6 +245,10 @@ function s_source_calc!(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
     # Root is bracketed
     s_source, ok = zbrent(ddz, 0.0, es.L_chord, 1e-12, 1e-8)
     ok || error("s_source_calc!: root finder failed in element $(k.ix_ele_source)")
+    # zbrent leaves k describing its last evaluation, not the returned root (Bmad does the same). These differ
+    # by up to the tolerance, or completely when the root is an endpoint with ddz exactly 0 (zbrent then
+    # returns without evaluating there). Re-evaluate at the root (planning/PLAN.md, V7).
+    geom.bmad_compat || ddz(s_source)
     k.s_chord_source = s_source
     return s_source
   end

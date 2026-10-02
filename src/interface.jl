@@ -36,3 +36,12 @@ function slice_element end
 (`MapParams`; Bmad does the same for Taylor elements). Requires BeamTracking and Beamlines.
 """
 function csr_sliceable end
+
+"""
+    track_csr!(bunch, bl; params::CSRParams, csr_on = ele -> true, centroid_start = nothing,
+               diagnostics = nothing) -> bunch
+
+Track a BeamTracking `Bunch` through a Beamlines `Beamline` with 1D CSR (Bmad `csr_method = one_dim`).
+Requires BeamTracking and Beamlines; see the method docstring for details.
+"""
+function track_csr! end

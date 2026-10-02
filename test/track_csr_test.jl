@@ -1,0 +1,137 @@
+# track_csr!: Beamline tracking with 1D CSR (phase 2).
+
+const TC_EXT = Base.get_extension(CSR, :CSRBeamTrackingBeamlinesExt)
+const TC_E = Species("electron")
+
+# p_over_q_ref for electrons with Lorentz factor gamma
+tc_pq(gamma) = BeamTracking.E_to_R(TC_E, gamma * massof(TC_E))
+
+# Line bunch: n particles on a z grid over ±6σ, Gaussian weights for a total charge Q [C].
+function tc_line_bunch(sigma, Q, n, pq; x = 0.0)
+  z = collect(range(-6sigma, 6sigma; length = n))
+  w = gaussian.(z, sigma)
+  w .*= (Q / E_CHARGE) / sum(w)
+  v = zeros(n, 6)
+  v[:, 1] .= x
+  v[:, 5] .= z
+  return Bunch(v, nothing, w; species = TC_E, p_over_q_ref = pq)
+end
+
+@testset "track_csr!" begin
+  @testset "Floor conventions match BeamTracking (field-free particle stays on a straight line)" begin
+    # With no fields a particle moves on a straight floor line; its floor position at each element exit,
+    # built from the reference survey and its coordinates, must stay on that line.
+    pq = tc_pq(1e3)
+    line = [Drift(L = 0.3),
+            SBend(L = 0.5, g_ref = 0.4),
+            Drift(L = 0.2),
+            LineElement(L = 0.6, dx = 1e-3, dz = 0.55, dy_rot = 0.05),
+            SBend(L = 0.4, g_ref = 0.3, tilt_ref = pi),
+            LineElement(L = 0.3, dx = -2e-3, dz = 0.3, dy_rot = -0.08),
+            Drift(L = 0.5)]
+    bl = Beamline(line; p_over_q_ref = pq, species_ref = TC_E)
+    b = Bunch(zeros(1, 6); species = TC_E, p_over_q_ref = pq)
+    f = FloorPosition()
+    for (i, ele) in enumerate(bl.line)
+      track!(b, ele)
+      L = float(ele.L)
+      pp = ele.PatchParams
+      g = isnothing(pp) ? TC_EXT.csr_ref_curvature(ele.BendParams, i) : 0.0
+      f = TC_EXT.csr_ref_exit(f, L, g, pp)
+      cf = CSR.centroid_floor(f, b.coords.v[1, 1], b.coords.v[1, 2], b.coords.v[1, 6])
+      @test abs(cf.r[1]) < 1e-14
+      @test abs(cf.theta) < 1e-14
+    end
+    @test f.theta ≈ -0.4 * 0.5 + 0.05 + 0.3 * 0.4 - 0.08
+    @test_throws ErrorException TC_EXT.csr_ref_curvature(Beamlines.BendParams(0.4, pi / 2, 0.0, 0.0, 0.0, 0.0), 1)
+  end
+
+  @testset "CSR off: identical to track!" begin
+    pq = tc_pq(200)
+    line = [Drift(L = 0.3), SBend(L = 0.5, g_ref = 0.4, Kn0 = 0.4, e1 = 0.1, e2 = 0.1), Quadrupole(L = 0.2, Kn1 = 2.0),
+            Marker(), Drift(L = 0.4)]
+    b1 = tc_line_bunch(1e-3, 1e-9, 101, pq; x = 1e-4)
+    b2 = tc_line_bunch(1e-3, 1e-9, 101, pq; x = 1e-4)
+    track!(b1, Beamline(line; p_over_q_ref = pq, species_ref = TC_E))
+    track_csr!(b2, Beamline(line; p_over_q_ref = pq, species_ref = TC_E);
+               params = CSRParams(n_bin = 40, ds_step = 0.05), csr_on = ele -> false)
+    @test b1.coords.v == b2.coords.v
+    @test b1.t_ref == b2.t_ref
+  end
+
+  @testset "Steady state in a long bend" begin
+    # As the csr_kick! test (kick_test.jl): ρ = 10 m, 80 bends of 0.1 m, γ = 1e4, kick in the last bend.
+    rho = 10.0; L_ele = 0.1; n_ele = 80; gamma = 1e4; sigma = 1e-3; Q = 1e-9
+    pq = tc_pq(gamma)
+    bl = Beamline([SBend(L = L_ele, g_ref = 1 / rho, Kn0 = 1 / rho) for _ in 1:n_ele]; p_over_q_ref = pq, species_ref = TC_E)
+    b = tc_line_bunch(sigma, Q, 1201, pq)
+    params = CSRParams(n_bin = 200, particle_bin_span = 2, ds_step = L_ele / 2)
+    results = Dict{Tuple{Int,Int},CSRStepResult}()
+    track_csr!(b, bl; params, diagnostics = (i, i_step, s, r) -> (results[(i, i_step)] = r))
+    @test length(results) == n_ele * 3
+
+    res = results[(n_ele, 1)]
+    N = Q / E_CHARGE
+    expected(x) = steady_state_dpz_ds(x, x -> dgaussian(x, sigma), rho, N, gamma; u_max = (12sigma)^(2/3))
+    core = findall(x -> abs(x) <= 2sigma, res.z_center)
+    W = expected.(res.z_center[core])
+    @test maximum(abs.(res.kick_per_meter[core] .- W)) / maximum(abs, W) < 2e-2
+    @test sum(res.charge_per_meter) * (res.z_center[2] - res.z_center[1]) ≈ Q rtol = 1e-10
+
+    # Energy loss: the bunch-averaged Δpz is negative (CSR radiates).
+    @test sum(b.coords.v[:, 6] .* b.coords.weight) < 0
+  end
+
+  @testset "Per-element selection, zero-length elements, weights" begin
+    pq = tc_pq(100)
+    line = [Drift(L = 0.2), SBend(L = 0.3, g_ref = 1.0, Kn0 = 1.0), Marker(), SBend(L = 0.3, g_ref = 1.0, Kn0 = 1.0)]
+    params = CSRParams(n_bin = 40, ds_step = 0.1)
+    calls = Tuple{Int,Int}[]
+    bl = Beamline(line; p_over_q_ref = pq, species_ref = TC_E)
+    b = tc_line_bunch(1e-3, 1e-9, 201, pq)
+    track_csr!(b, bl; params, csr_on = ele -> ele.kind == "SBend", diagnostics = (i, j, s, r) -> push!(calls, (i, j)))
+    @test calls == [(2, 0), (2, 1), (2, 2), (2, 3), (4, 0), (4, 1), (4, 2), (4, 3)]
+
+    # Linear in charge: doubling the weights doubles the first kick.
+    kicks = Float64[]
+    for scale in (1, 2)
+      b = tc_line_bunch(1e-3, scale * 1e-9, 201, pq)
+      track_csr!(b, Beamline(line[2:2]; p_over_q_ref = pq, species_ref = TC_E); params,
+                 diagnostics = (i, j, s, r) -> j == 1 && push!(kicks, maximum(abs, r.kick_per_meter)))
+    end
+    @test kicks[2] ≈ 2kicks[1] rtol = 1e-10
+
+    # weight = nothing: one electron per macroparticle.
+    b = Bunch(hcat(zeros(201, 4), collect(range(-6e-3, 6e-3; length = 201)), zeros(201)); species = TC_E, p_over_q_ref = pq)
+    qtot = Ref(0.0)
+    track_csr!(b, Beamline(line[2:2]; p_over_q_ref = pq, species_ref = TC_E); params,
+               diagnostics = (i, j, s, r) -> j == 0 && (qtot[] = sum(r.charge_per_meter) * (r.z_center[2] - r.z_center[1])))
+    @test qtot[] ≈ 201 * E_CHARGE rtol = 1e-10
+  end
+
+  @testset "Patch and misaligned elements inside a CSR line" begin
+    pq = tc_pq(100)
+    line = [SBend(L = 0.3, g_ref = 1.0, Kn0 = 1.0), LineElement(L = 0.2, dx = 1e-4, dz = 0.2, dy_rot = 1e-3),
+            SBend(L = 0.3, g_ref = 1.0, Kn0 = 1.0, x_offset = 1e-4), Drift(L = 0.3)]
+    b = tc_line_bunch(1e-3, 1e-9, 201, pq)
+    track_csr!(b, Beamline(line; p_over_q_ref = pq, species_ref = TC_E); params = CSRParams(n_bin = 40, ds_step = 0.1))
+    @test all(==(BeamTracking.STATE_ALIVE), b.coords.state)
+    @test all(isfinite, b.coords.v)
+  end
+
+  @testset "Errors" begin
+    pq = tc_pq(100)
+    bl = Beamline([SBend(L = 0.3, g_ref = 1.0, Kn0 = 1.0)]; p_over_q_ref = pq, species_ref = TC_E)
+    @test_throws ErrorException track_csr!(tc_line_bunch(1e-3, 1e-9, 20, pq), bl; params = CSRParams(n_bin = 40, ds_step = 0.1))
+    @test_throws ErrorException track_csr!(tc_line_bunch(1e-3, 1e-9, 201, pq), bl; params = CSRParams(n_bin = 40))
+    blv = Beamline([SBend(L = 0.3, g_ref = 1.0, Kn0 = 1.0, tilt_ref = pi / 2)]; p_over_q_ref = pq, species_ref = TC_E)
+    @test_throws ErrorException track_csr!(tc_line_bunch(1e-3, 1e-9, 201, pq), blv; params = CSRParams(n_bin = 40, ds_step = 0.1))
+  end
+
+  @testset "csr_ref_energy" begin
+    @test CSR.csr_ref_energy(1.0, 3.0, 0.0, 2.0) == 1.0
+    @test CSR.csr_ref_energy(1.0, 3.0, 2.0, 2.0) == 3.0
+    @test CSR.csr_ref_energy(1.0, 3.0, 0.0, 2.0; bmad_compat = true) == 3.0   # Bmad's reversed weights (V6)
+    @test CSR.csr_ref_energy(1.0, 3.0, 0.5, 2.0) ≈ 1.5
+  end
+end

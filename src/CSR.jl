@@ -7,6 +7,7 @@ using AtomicAndPhysicalConstants
 
 export CSRParams, FloorPosition, CSRGeometry, CSRElementInfo, CSRBins, CSRKickPoint, CSRStepResult
 export planar_survey, csr_bin_particles, csr_kick!, csr_kick_coef, csr_n_step, dspline_len
+export track_csr!
 
 include("params.jl")
 include("geometry.jl")

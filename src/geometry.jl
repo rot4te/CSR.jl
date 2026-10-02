@@ -22,6 +22,35 @@ x_axis(theta) = SVector(cos(theta), 0.0, -sin(theta))
 z_axis(theta) = SVector(sin(theta), 0.0, cos(theta))
 
 """
+    advance_floor(f, L, g) -> FloorPosition
+
+Reference floor position after an element of length `L` and reference curvature `g`, entered at `f`.
+"""
+function advance_floor(f::FloorPosition, L, g)
+  angle = g * L
+  if angle == 0
+    dx = 0.0
+    dz = float(L)
+  else
+    dx = -2 * sin(angle / 2)^2 / g   # (cos(angle) - 1) / g
+    dz = sin(angle) / g
+  end
+  return FloorPosition(f.r + dx * x_axis(f.theta) + dz * z_axis(f.theta), f.theta - angle)
+end
+
+"""
+    advance_floor_patch(f, dr, ez) -> FloorPosition
+
+Reference floor position after a patch entered at `f`. `dr` is the exit origin and `ez` the exit z axis,
+both in the entrance coordinates `(x, y, z)`. Projected on the horizontal plane (the `y` parts are dropped,
+as for all CSR geometry).
+"""
+function advance_floor_patch(f::FloorPosition, dr, ez)
+  r = f.r + dr[1] * x_axis(f.theta) + dr[3] * z_axis(f.theta)
+  return FloorPosition(r, f.theta + atan(ez[1], ez[3]))
+end
+
+"""
     planar_survey(L, g; start = FloorPosition()) -> Vector{FloorPosition}
 
 Reference floor positions at the exit of each element, for elements of length `L[i]` and
@@ -32,15 +61,7 @@ function planar_survey(L::AbstractVector, g::AbstractVector; start::FloorPositio
   floors = Vector{FloorPosition}(undef, length(L))
   f = start
   for i in eachindex(L)
-    angle = g[i] * L[i]
-    if angle == 0
-      dx = 0.0
-      dz = float(L[i])
-    else
-      dx = -2 * sin(angle / 2)^2 / g[i]   # (cos(angle) - 1) / g
-      dz = sin(angle) / g[i]
-    end
-    f = FloorPosition(f.r + dx * x_axis(f.theta) + dz * z_axis(f.theta), f.theta - angle)
+    f = advance_floor(f, L[i], g[i])
     floors[i] = f
   end
   return floors
@@ -154,9 +175,20 @@ start of the lattice, row `i+1` at the exit of element `i` (Bmad's `centroid(0:n
 """
 function CSRGeometry(L::AbstractVector, g::AbstractVector, centroid::AbstractMatrix;
                      ref_start::FloorPosition = FloorPosition(), bmad_compat::Bool = false)
+  return CSRGeometry(L, g, planar_survey(L, g; start = ref_start), centroid; ref_start, bmad_compat)
+end
+
+"""
+    CSRGeometry(L, g, ref_exit, centroid; ref_start = FloorPosition(), bmad_compat = false)
+
+As above, with the reference floor positions `ref_exit[i]` at the exit of each element given
+(e.g. for lattices with patches; see `advance_floor`, `advance_floor_patch`).
+"""
+function CSRGeometry(L::AbstractVector, g::AbstractVector, ref_exit::AbstractVector{FloorPosition},
+                     centroid::AbstractMatrix; ref_start::FloorPosition = FloorPosition(), bmad_compat::Bool = false)
   n = length(L)
+  length(g) == n && length(ref_exit) == n || error("CSRGeometry: L, g and ref_exit must have the same length")
   size(centroid) == (n + 1, 6) || error("CSRGeometry: centroid must be an (n+1) × 6 matrix with n = length(L)")
-  ref_exit = planar_survey(L, g; start = ref_start)
 
   cfloor(ref, row) = centroid_floor(ref, centroid[row, 1], centroid[row, 2], centroid[row, 6])
   start = cfloor(ref_start, 1)

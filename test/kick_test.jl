@@ -51,7 +51,8 @@
     params_c = CSRParams(n_bin = 200, particle_bin_span = 2, ds_step = L_ele, bmad_compat = true)
     geom_c = CSRGeometry(circle_lattice(rho, L_ele, n_ele)...; bmad_compat = true)
     res2 = csr_kick!(pz2, z, q, alive, geom_c, n_ele, L_ele / 2, gamma, electron, params_c)
-    @test res2.I_csr_per_meter ≈ res.I_csr_per_meter rtol = 1e-12
+    # Differs only by the source fields at zbrent's last evaluation vs. the root (V7; tolerance 1e-8 m)
+    @test res2.I_csr_per_meter ≈ res.I_csr_per_meter rtol = 1e-7
     err_c = maximum(abs.(res2.kick_per_meter[core] .- W)) / scale
     @test err_c > err
 

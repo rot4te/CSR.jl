@@ -76,4 +76,24 @@ using CSR: CSRKickPoint, CSRKick1, s_source_calc!, ddz_calc_csr!, I_csr!, zbrent
     beta = sqrt(1 - 1 / 50.0^2)
     @test (k.L + k.dL) - beta * k.L ≈ 1e-3 rtol = 1e-8
   end
+  @testset "Source fields match the returned root (V7)" begin
+    # At dz = zz the root is the kick element's entrance with ddz(0) == 0 exactly; zbrent returns s = 0 without
+    # evaluating there. k must still describe the source at s = 0, not zbrent's last evaluation.
+    c = zeros(3, 6); c[2, 2] = -1.7e-18   # round-off level centroid angle, as from tracking
+    geom = CSRGeometry([0.1, 0.1], [0.1, 0.1], c)
+    kp = CSR.CSRKickPoint(geom, 2, 0.1, 1e4)
+    spl = geom.ele[2].spline
+    L = kp.s_chord_kick
+    zz = L / (2kp.gamma2) + dspline_len(0.0, L, spl, spl[2] + spl[3] * L + spl[4] * L^2)
+    k = CSR.CSRKick1(); k.ix_ele_source = 2; k.dz_particles = zz
+    s = CSR.s_source_calc!(k, geom, kp)
+    @test k.ix_ele_source == 2 && s == 0
+    @test k.L ≈ L rtol = 1e-6
+    # Kick insensitive to the round-off centroid angle
+    z, q, alive = gaussian_line_bunch(1e-3, 1e-9, 201)
+    p = CSRParams(n_bin = 40, ds_step = 0.05)
+    r0 = csr_kick!(zeros(201), z, q, alive, CSRGeometry([0.1, 0.1], [0.1, 0.1], zeros(3, 6)), 2, 0.1, 1e4, Species("electron"), p)
+    r1 = csr_kick!(zeros(201), z, q, alive, geom, 2, 0.1, 1e4, Species("electron"), p)
+    @test r1.kick_per_meter ≈ r0.kick_per_meter rtol = 1e-8
+  end
 end

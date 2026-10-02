@@ -84,6 +84,20 @@ function csr_kick!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, ali
 end
 
 """
+    csr_ref_energy(E_start, E_end, s, L; bmad_compat = false)
+
+Reference total energy at `s` in an element of length `L` with entrance/exit reference energies
+`E_start`/`E_end`, linearly interpolated as in Bmad's `track1_bunch_csr` ("linear energy gain in a cavity").
+
+Bmad's code (csr_and_space_charge_mod.f90:330–331) weights the two ends the other way round, giving the exit
+energy at `s = 0` (`planning/PLAN.md`, V6); `bmad_compat = true` reproduces that.
+"""
+function csr_ref_energy(E_start, E_end, s, L; bmad_compat::Bool = false)
+  f1 = s / L
+  return bmad_compat ? f1 * E_start + (1 - f1) * E_end : (1 - f1) * E_start + f1 * E_end
+end
+
+"""
     csr_n_step(L, params) -> (n_step, ds_step)
 
 Number of CSR steps in an element of length `L` and the true step length, as in Bmad:
