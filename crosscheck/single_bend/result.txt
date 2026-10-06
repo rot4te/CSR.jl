@@ -1,0 +1,76 @@
+
+=== CSR off: tracking baseline, max |BeamTracking − Bmad| per coordinate
+           sliced    unsliced   max|Bmad|
+  x     4.147e-08   2.788e-07   2.489e-04
+  px    1.322e-07   1.810e-06   5.204e-04
+  y     3.258e-08   2.004e-07   3.110e-04
+  py    3.535e-07   1.713e-06   2.051e-03
+  z     2.608e-09   2.939e-08   2.785e-03
+  pz    1.204e-36   0.000e+00   0.000e+00
+
+=== free_space: per-step wake, max |CSR.jl − Bmad| / max |Bmad| per column
+  ele  step         s           z    charge/m      kick/m     I_csr/m    s_source
+    1     0   0.00000    3.20e-08    1.57e-07    0.00e+00    0.00e+00    0.00e+00
+    1     1   0.01000    4.41e-08    1.54e-07    9.89e-05    1.23e-04    4.47e-08
+    1     2   0.02000    8.53e-08    2.10e-07    6.38e-05    1.12e-04    8.53e-08
+    1     3   0.03000    1.20e-07    2.97e-07    3.13e-05    1.03e-04    1.40e-07
+    1     4   0.04000    1.54e-07    2.91e-07    3.88e-06    9.67e-05    2.61e-07
+    1     5   0.05000    1.78e-07    3.24e-07    2.66e-05    9.45e-05    3.94e-07
+    1     6   0.06000    2.00e-07    2.70e-07    4.50e-05    9.78e-05    5.32e-07
+    1     7   0.07000    2.33e-07    4.64e-07    4.59e-05    1.06e-04    6.41e-07
+    1     8   0.08000    2.54e-07    3.86e-07    2.29e-05    9.78e-05    6.73e-07
+    1     9   0.09000    2.82e-07    6.07e-07    5.30e-05    4.98e-06    5.77e-07
+    1    10   0.10000    3.01e-07    4.71e-07    8.13e-05    2.82e-05    2.74e-07
+worst                    3.01e-07    6.07e-07    9.89e-05    1.23e-04    6.73e-07
+CSR-induced change of the final coordinates (on − off), max |CSR.jl − Bmad| / max |Bmad|:
+  x   max|Δ_Bmad| = 4.147e-10   rel. diff = 2.51e-04
+  px  max|Δ_Bmad| = 2.508e-08   rel. diff = 3.61e-05
+  y   max|Δ_Bmad| = 3.090e-11   rel. diff = 5.00e-04
+  py  max|Δ_Bmad| = 2.374e-11   rel. diff = 3.19e-01
+  z   max|Δ_Bmad| = 4.318e-12   rel. diff = 3.99e-04
+  pz  max|Δ_Bmad| = 1.204e-06   rel. diff = 4.80e-05
+
+=== shielded: per-step wake, max |CSR.jl − Bmad| / max |Bmad| per column
+(Bmad kick/m and I_csr/m multiplied by 2.0; s_source not comparable with images)
+  ele  step         s           z    charge/m      kick/m     I_csr/m    s_source
+    1     0   0.00000    3.20e-08    1.57e-07    3.95e-07    0.00e+00    0.00e+00
+    1     1   0.01000    4.41e-08    1.55e-07    1.19e-05    1.23e-04    0.00e+00
+    1     2   0.02000    8.53e-08    2.10e-07    5.64e-05    1.13e-04    0.00e+00
+    1     3   0.03000    1.20e-07    2.97e-07    8.62e-05    1.03e-04    0.00e+00
+    1     4   0.04000    1.54e-07    2.91e-07    8.33e-05    9.71e-05    0.00e+00
+    1     5   0.05000    1.78e-07    3.25e-07    6.87e-05    9.45e-05    0.00e+00
+    1     6   0.06000    2.00e-07    2.71e-07    5.96e-05    9.76e-05    0.00e+00
+    1     7   0.07000    2.33e-07    4.62e-07    5.09e-05    1.06e-04    0.00e+00
+    1     8   0.08000    2.54e-07    3.82e-07    4.89e-05    9.79e-05    0.00e+00
+    1     9   0.09000    2.82e-07    5.99e-07    7.85e-05    5.30e-06    0.00e+00
+    1    10   0.10000    2.69e-07    4.56e-07    1.05e-04    2.85e-05    0.00e+00
+worst                    2.82e-07    5.99e-07    1.05e-04    1.23e-04    0.00e+00
+CSR-induced change of the final coordinates (on − off), max |CSR.jl − Bmad| / max |Bmad|:
+  x   max|Δ_Bmad| = 1.283e-09   rel. diff = 2.78e-04
+  px  max|Δ_Bmad| = 5.887e-08   rel. diff = 6.47e-05
+  y   max|Δ_Bmad| = 8.016e-11   rel. diff = 5.30e-04
+  py  max|Δ_Bmad| = 8.138e-11   rel. diff = 2.66e-01
+  z   max|Δ_Bmad| = 1.993e-11   rel. diff = 3.92e-04
+  pz  max|Δ_Bmad| = 1.805e-06   rel. diff = 5.96e-05
+
+=== free_space_default: per-step wake, max |CSR.jl − Bmad| / max |Bmad| per column
+  ele  step         s           z    charge/m      kick/m     I_csr/m    s_source
+    1     0   0.00000    3.20e-08    1.57e-07    0.00e+00    0.00e+00    0.00e+00
+    1     1   0.01000    4.41e-08    1.54e-07    3.30e+00    1.23e-04    4.47e-08
+    1     2   0.02000    8.53e-08    2.10e-07    2.92e+00    1.12e-04    8.52e-08
+    1     3   0.03000    1.20e-07    2.97e-07    2.56e+00    1.03e-04    1.39e-07
+    1     4   0.04000    1.54e-07    2.91e-07    2.26e+00    9.59e-05    2.57e-07
+    1     5   0.05000    1.78e-07    3.25e-07    1.97e+00    9.27e-05    3.82e-07
+    1     6   0.06000    2.00e-07    2.70e-07    1.66e+00    9.40e-05    5.03e-07
+    1     7   0.07000    2.33e-07    4.65e-07    1.22e+00    9.76e-05    5.80e-07
+    1     8   0.08000    2.54e-07    3.88e-07    5.75e-01    7.86e-05    5.52e-07
+    1     9   0.09000    2.82e-07    6.11e-07    9.85e-02    8.65e-06    3.59e-07
+    1    10   0.10000    3.01e-07    4.78e-07    1.18e-02    3.26e-05    3.00e-07
+worst                    3.01e-07    6.11e-07    3.30e+00    1.23e-04    5.80e-07
+CSR-induced change of the final coordinates (on − off), max |CSR.jl − Bmad| / max |Bmad|:
+  x   max|Δ_Bmad| = 4.147e-10   rel. diff = 1.66e+00
+  px  max|Δ_Bmad| = 2.508e-08   rel. diff = 1.17e+00
+  y   max|Δ_Bmad| = 3.090e-11   rel. diff = 1.12e+00
+  py  max|Δ_Bmad| = 2.374e-11   rel. diff = 2.38e+00
+  z   max|Δ_Bmad| = 4.318e-12   rel. diff = 2.60e+00
+  pz  max|Δ_Bmad| = 1.204e-06   rel. diff = 5.48e-01
