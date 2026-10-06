@@ -106,7 +106,8 @@ function csr_wake_table(geom::CSRGeometry, kp::CSRKickPoint, dz, n_bin, backend;
   I_int = KernelAbstractions.zeros(backend, Float64, n_bin)
   s_source = KernelAbstractions.zeros(backend, Float64, n_bin)
   n_lag = cld(n_bin, n_block)
-  csr_wake_kernel!(backend, 1)(I_csr, I_int, s_source, geom, kp, dz, n_lag; ndrange = cld(n_bin, n_lag))
+  # Workgroup size passed at launch: a static size (`csr_wake_kernel!(backend, 1)`) is not inferred.
+  csr_wake_kernel!(backend)(I_csr, I_int, s_source, geom, kp, dz, n_lag; ndrange = cld(n_bin, n_lag), workgroupsize = 1)
   KernelAbstractions.synchronize(backend)
   csr_trapezoid_kernel!(backend)(I_int, I_csr, dz; ndrange = n_bin - 1)
   KernelAbstractions.synchronize(backend)

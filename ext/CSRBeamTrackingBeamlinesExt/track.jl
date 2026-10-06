@@ -25,6 +25,15 @@ function bunch_centroid(bunch, w, alive)
   return vec(sum(v .* wa; dims = 1)) ./ sum(wa)
 end
 
+# Single-particle bunch at c0 for the centroid orbit. Its weight is 1 (as `nothing`: only IBS reads it, through
+# log N) with the type of the bunch's weight, so BeamTracking reuses the kernels compiled for the bunch.
+function centroid_bunch(bunch, c0)
+  wt = bunch.coords.weight
+  w1 = isnothing(wt) ? nothing : wt isa Number ? one(wt) : fill!(similar(wt, 1), one(eltype(wt)))
+  return Bunch(reshape(c0, 1, 6), nothing, w1; species = bunch.species, p_over_q_ref = bunch.p_over_q_ref,
+               t_ref = bunch.t_ref)
+end
+
 function macro_weights(bunch)
   wt = bunch.coords.weight
   N = size(bunch.coords.v, 1)
@@ -104,7 +113,7 @@ function track_csr_line!(bunch::Bunch, line, context; params::CSRParams, csr_on 
   w = macro_weights(bunch)
   alive0 = bunch.coords.state .== BeamTracking.STATE_ALIVE
   c0 = isnothing(centroid_start) ? bunch_centroid(bunch, w, alive0) : collect(float.(centroid_start))
-  cb = Bunch(reshape(c0, 1, 6); species, p_over_q_ref = bunch.p_over_q_ref, t_ref = bunch.t_ref)
+  cb = centroid_bunch(bunch, c0)
   centroid = zeros(n + 1, 6)
   centroid[1, :] = c0
   for (i, ele) in enumerate(line)
@@ -127,27 +136,35 @@ function track_csr_line!(bunch::Bunch, line, context; params::CSRParams, csr_on 
     p_over_q_ref = ele.p_over_q_ref
     p_over_q_ref isa Number || error("track_csr!: time-dependent reference energy is not supported (element $i)")
     E_start, E_end = csr_ref_energies(ele, species, p_over_q_ref, context)
-    mass = massof(species)
-    n_step, ds = csr_n_step(L[i], params)
-    P0c = E_start == E_end ? nothing : sqrt(E_start^2 - mass^2)   # Particles' reference momentum (lcavity)
-    for i_step in 0:n_step
-      if i_step != 0
-        # s0 + L_slice equals the next slice's s0 exactly (Sterbenz), so SaganCavity cell kicks on a boundary
-        # fall in exactly one slice.
-        s0 = (i_step - 1) * ds
-        s = CSR.slice_element(ele, s0, i_step * ds - s0, i_step == 1, i_step == n_step; context)
-        track_slice!(bunch, s, p_over_q_ref)
-        isnothing(P0c) || (P0c = csr_slice_P0c(s))
-      end
-      s_kick = i_step * ds
-      E_kick = CSR.csr_ref_energy(E_start, E_end, s_kick, L[i]; bmad_compat = params.bmad_compat)
-      gamma = E_kick / mass
-      pz_scale = isnothing(P0c) ? 1.0 : sqrt(E_kick^2 - mass^2) / P0c
-      alive = bunch.coords.state .== BeamTracking.STATE_ALIVE
-      kick_factor = (i_step == 0 || i_step == n_step) ? 0.5 : 1.0
-      result = csr_kick!(pz, z, q, alive, geom, i, s_kick, gamma, species, params; kick_factor, pz_scale)
-      isnothing(diagnostics) || diagnostics(i, i_step, s_kick, result)
+    track_csr_element!(bunch, ele, i, L[i], E_start, E_end, p_over_q_ref, z, pz, q, geom, params, context, diagnostics)
+  end
+  return bunch
+end
+
+# CSR steps through element i. Function barrier: Beamlines parameters (p_over_q_ref, dE_ref) are not inferred.
+function track_csr_element!(bunch, ele, i, L, E_start, E_end, p_over_q_ref, z, pz, q, geom, params, context, diagnostics)
+  species = bunch.species
+  mass = massof(species)
+  n_step, ds = csr_n_step(L, params)
+  ramp = E_start != E_end
+  P0c = sqrt(E_start^2 - mass^2)   # Particles' reference momentum (used in an lcavity only)
+  for i_step in 0:n_step
+    if i_step != 0
+      # s0 + L_slice equals the next slice's s0 exactly (Sterbenz), so SaganCavity cell kicks on a boundary
+      # fall in exactly one slice.
+      s0 = (i_step - 1) * ds
+      s = CSR.slice_element(ele, s0, i_step * ds - s0, i_step == 1, i_step == n_step; context)
+      track_slice!(bunch, s, p_over_q_ref)
+      ramp && (P0c = oftype(P0c, csr_slice_P0c(s)))
     end
+    s_kick = i_step * ds
+    E_kick = CSR.csr_ref_energy(E_start, E_end, s_kick, L; bmad_compat = params.bmad_compat)
+    gamma = E_kick / mass
+    pz_scale = ramp ? sqrt(E_kick^2 - mass^2) / P0c : one(P0c)
+    alive = bunch.coords.state .== BeamTracking.STATE_ALIVE
+    kick_factor = (i_step == 0 || i_step == n_step) ? 0.5 : 1.0
+    result = csr_kick!(pz, z, q, alive, geom, i, s_kick, gamma, species, params; kick_factor, pz_scale)
+    isnothing(diagnostics) || diagnostics(i, i_step, s_kick, result)
   end
   return bunch
 end
