@@ -96,12 +96,33 @@ function csr_kick_reference!(pz::AbstractVector, z::AbstractVector, q::AbstractV
     I_csr!(k, i, bins.dz, geom, kp, i == 1 ? 0.0 : I_csr[i-1])
     I_csr[i] = k.I_csr
     I_int[i] = k.I_int_csr
-    s_source[i] = k.ix_ele_source == 0 ? s_chord : geom.ele[k.ix_ele_source].s_start + s_chord
+    s_source[i] = source_s(geom, k.ix_ele_source, s_chord)
   end
 
   coef = csr_kick_coef(species, gamma, actual_track_step)
   kick = zeros(n_bin)
   csr_convolve_reference!(kick, I_int, bins.edge_dcharge_density_dz, coef)
+
+  # Image charges: lags -n_bin:n_bin, one warm-started walk; kick(i) += coef Σ_j image(i - j) charge(j)
+  for ns in 1:params.n_shield_images
+    kp_ns = CSRKickPoint(geom, ix_ele_kick, s_kick, gamma; y_source = ns * params.beam_chamber_height,
+                         kick_factor = (-1)^ns * 2 * kick_factor)
+    image = zeros(2n_bin + 1)
+    k = CSRKick1()
+    k.ix_ele_source = ix_ele_kick
+    for i in -n_bin:n_bin
+      k.dz_particles = i * bins.dz
+      s_source_calc!(k, geom, kp_ns)
+      image[i+n_bin+1] = image_charge_kick(k, geom, kp_ns)
+    end
+    for i in 1:n_bin
+      acc = 0.0
+      for j in 1:n_bin
+        acc += image[i-j+n_bin+1] * bins.charge[j]
+      end
+      kick[i] += coef * acc
+    end
+  end
   csr_apply_kicks_reference!(pz, z, alive, bins, kick)
 
   ds_kick = kick_factor * actual_track_step

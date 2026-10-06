@@ -81,6 +81,25 @@ function ddz_calc_csr!(k::CSRKick1, s_chord_source, geom::CSRGeometry, kp::CSRKi
     ds < 0 && (dL += 2ds)
     k.theta_sl = spline_d1(sp, s0) - dtheta_L
     k.theta_lk = dtheta_L - spline_d1(sp, s1)
+    theta_s = k.theta_sl + k.theta_L
+    # For a source ahead of the kick point L_vec points backwards, and theta_sl + theta_L is the source direction
+    # + π (Bmad, planning/PLAN.md V8). Only the image-charge kick uses it.
+    ds < 0 && !bc && (theta_s = modulo2(theta_s + pi, pi))
+  elseif k.ix_ele_source > kp.ix_ele_kick
+    # Source downstream of the kick element (image charges, source ahead of the kick point; not in Bmad).
+    # Ls = -(path length from the kick point to the source), so dL = Ls - L = -(excess + 2L) in the plane.
+    theta_L = k.theta_L
+    ek = geom.ele[kp.ix_ele_kick]
+    excess = dspline_len(s1, ek.L_chord, ek.spline, modulo2(theta_L - ek.theta_chord, pi / 2); bmad_compat = bc)
+    for i in kp.ix_ele_kick+1:k.ix_ele_source-1
+      ce = geom.ele[i]
+      excess += dspline_len(0.0, ce.L_chord, ce.spline, modulo2(theta_L - ce.theta_chord, pi / 2); bmad_compat = bc)
+    end
+    excess += dspline_len(0.0, s0, es.spline, modulo2(theta_L - es.theta_chord, pi / 2); bmad_compat = bc)
+    dL = -(excess + 2sqrt(k.L_vec[1]^2 + k.L_vec[3]^2))
+    theta_s = spline_d1(es.spline, s0) + es.theta_chord
+    k.theta_sl = modulo2(theta_s - theta_L, pi / 2)
+    k.theta_lk = modulo2(theta_L - (spline_d1(ek.spline, s1) + ek.theta_chord), pi / 2)
   else
     # Where the centroid takes a backstep, theta_chord is anti-parallel to the other angles, so angles
     # are folded into [-π/2, π/2).
@@ -94,9 +113,10 @@ function ddz_calc_csr!(k::CSRKick1, s_chord_source, geom::CSRGeometry, kp::CSRKi
     dL += dspline_len(0.0, s1, ce.spline, modulo2(theta_L - ce.theta_chord, pi / 2); bmad_compat = bc)
     k.theta_sl = modulo2((spline_d1(es.spline, s0) + es.theta_chord) - theta_L, pi / 2)
     k.theta_lk = modulo2(theta_L - (spline_d1(ce.spline, s1) + ce.theta_chord), pi / 2)
+    theta_s = k.theta_sl + k.theta_L
   end
 
-  k.floor_s = FloorPosition(rs, k.theta_sl + k.theta_L)
+  k.floor_s = FloorPosition(rs, theta_s)
 
   # The dL calculation above neglects y_source, so correct for it.
   kp.y_source != 0 && (dL -= k.L - sqrt(k.L_vec[1]^2 + k.L_vec[3]^2))
@@ -164,12 +184,26 @@ function zbrent(f, x1, x2, rel_tol, abs_tol)
   return b, false
 end
 
+"Reference s of a source at `s_chord` in element `ix_ele_source` (0: upstream drift, `n + 1`: downstream drift)."
+function source_s(geom::CSRGeometry, ix_ele_source, s_chord)
+  ix_ele_source == 0 && return s_chord
+  if ix_ele_source > length(geom.ele)
+    e = geom.ele[end]
+    return e.s_start + e.L + s_chord
+  end
+  return geom.ele[ix_ele_source].s_start + s_chord
+end
+
 """
     s_source_calc!(k, geom, kp) -> s_chord_source
 
 Find the source point for target separation `k.dz_particles`, starting the search in element
 `k.ix_ele_source` and walking element by element. Updates `k`. A source upstream of the lattice is
 placed on an infinite drift (`k.ix_ele_source = 0`, negative s).
+
+A source ahead of the kick point (`dz < 0`, image charges) beyond the kick element is searched for downstream,
+and past the lattice end on an infinite drift (`k.ix_ele_source = length(geom.ele) + 1`, returning the distance
+past the end). Bmad does not do this; `geom.bmad_compat` restores Bmad's behaviour.
 """
 function s_source_calc!(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
   dz = k.dz_particles
@@ -208,6 +242,42 @@ function s_source_calc!(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
       return ds_source
     end
 
+    # Source downstream of the lattice (image charges; not in Bmad): infinite drift along the centroid exit
+    # direction. Exact retardation Ls - βL = dz with Ls = -(Lke + t), t ≥ 0 the distance past the lattice end.
+    if k.ix_ele_source > length(geom.ele)
+      fk = kp.floor_k
+      fe = geom.ele[end].floor1
+      ek = geom.ele[kp.ix_ele_kick]
+      # Lke is Ls from the kick point to the lattice end
+      Lke = dspline_len(kp.s_chord_kick, ek.L_chord, ek.spline; bmad_compat = geom.bmad_compat) + ek.L_chord - kp.s_chord_kick
+      for i in kp.ix_ele_kick+1:length(geom.ele)
+        Lke += geom.ele[i].dL_s + geom.ele[i].L_chord
+      end
+      ez = z_axis(fe.theta)
+      dr = fk.r - fe.r
+      # (u - t)² = β² L² with u = -(Lke + dz), L² = L0² - 2t Lz + t²: t²/γ² - 2b t + c = 0, smaller root.
+      u = -(Lke + dz)
+      b = u - beta2 * (dr[1] * ez[1] + dr[3] * ez[3])
+      c = u^2 - beta2 * (dr[1]^2 + dr[3]^2 + kp.y_source^2)
+      t = c / (b + sqrt(b^2 - c / kp.gamma2))
+      # A search warm-started here (previous lag) may belong inside the lattice: go back and walk.
+      if t < 0 && last_step == 0
+        k.ix_ele_source = length(geom.ele)
+        continue
+      end
+
+      rs = fe.r + t * ez + SVector(0.0, kp.y_source, 0.0)
+      k.floor_s = FloorPosition(rs, fe.theta)
+      k.L_vec = fk.r - rs
+      k.L = sqrt(k.L_vec[1]^2 + k.L_vec[2]^2 + k.L_vec[3]^2)
+      k.dL = -(Lke + t) - k.L
+      k.theta_L = atan(k.L_vec[1], k.L_vec[3])
+      k.theta_sl = modulo2(fe.theta - k.theta_L, pi / 2)
+      k.theta_lk = modulo2(k.theta_L - (spline_d1(ek.spline, kp.s_chord_kick) + ek.theta_chord), pi / 2)
+      k.s_chord_source = t
+      return t
+    end
+
     es = geom.ele[k.ix_ele_source]
     # Check whether the source point is within this element. Generally ddz decreases with increasing s,
     # but this may not hold for patch elements.
@@ -232,7 +302,10 @@ function s_source_calc!(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
     end
 
     if ddz0 > 0 && ddz1 > 0
-      if k.ix_ele_source == kp.ix_ele_kick   # Source ahead of the kick point: ignore
+      # Source beyond this element. Beyond the kick element it is ahead of the kick point, which needs dz < 0
+      # (image charges). Bmad ignores it there (k is left describing the source at the end of the kick element);
+      # CSR.jl continues downstream (planning/PLAN.md, V8).
+      if k.ix_ele_source == kp.ix_ele_kick && (geom.bmad_compat || dz >= 0)
         k.s_chord_source = 0.0
         return 0.0
       end

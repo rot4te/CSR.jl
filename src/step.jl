@@ -1,5 +1,5 @@
 # One CSR kick: bin, build the kick table, convolve, apply.
-# Port of the per-step part of Bmad's track1_bunch_csr and csr_bin_kicks (free space, CSR only).
+# Port of the per-step part of Bmad's track1_bunch_csr and csr_bin_kicks (CSR only, with image charges).
 
 """
     csr_kick_coef(species, gamma, ds)
@@ -48,8 +48,11 @@ Apply one 1D CSR kick at reference position `s_kick` [m] from the entrance of el
 
 The kick covers one step, `ds = L / n_step` (see `csr_n_step`) scaled by `L_chord / L`, as in Bmad.
 
-Runs as KernelAbstractions kernels on the backend of `pz` (deposit, edge gradient, wake table, convolution,
-kick). Only the CPU backend is supported (the wake table needs it). `csr_kick_reference!` is the serial
+With `params.n_shield_images > 0` the image-charge kicks of the shielding plates are added (Bmad's image part of
+`csr_bin_kicks`). `kick_per_meter` includes them; `I_csr_per_meter` and `s_source` are for free space only.
+
+Runs as KernelAbstractions kernels on the backend of `pz` (deposit, edge gradient, wake and image tables,
+convolutions, kick). Only the CPU backend is supported (the wake table needs it). `csr_kick_reference!` is the serial
 phase 1 version.
 """
 function csr_kick!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool},
@@ -72,6 +75,13 @@ function csr_kick!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, ali
   edge = bins.edge_dcharge_density_dz
   kick = KernelAbstractions.zeros(backend, promote_type(typeof(coef), eltype(I_int), eltype(edge)), n_bin)
   csr_convolve!(kick, I_int, edge, coef)
+  # Shielding: image layer ns at height ns*h with sign (-1)^ns; the factor 2 counts the images above and below.
+  for ns in 1:params.n_shield_images
+    kp_ns = CSRKickPoint(geom, ix_ele_kick, s_kick, gamma; y_source = ns * params.beam_chamber_height,
+                         kick_factor = (-1)^ns * 2 * kick_factor)
+    image, _ = csr_image_table(geom, kp_ns, bins.dz, n_bin, backend)
+    csr_image_convolve!(kick, image, bins.charge, coef)
+  end
   csr_apply_kicks!(pz, z, alive, bins, kick; pz_scale)
 
   ds_kick = kick_factor * actual_track_step

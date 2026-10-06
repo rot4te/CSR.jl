@@ -80,7 +80,7 @@ end
     @inbounds begin
       I_csr[i] = k.I_csr
       I_int[i] = k.I_int_csr
-      s_source[i] = k.ix_ele_source == 0 ? s_chord : geom.ele[k.ix_ele_source].s_start + s_chord
+      s_source[i] = source_s(geom, k.ix_ele_source, s_chord)
     end
   end
 end
@@ -113,6 +113,82 @@ function csr_wake_table(geom::CSRGeometry, kp::CSRKickPoint, dz, n_bin, backend;
   KernelAbstractions.synchronize(backend)
   return I_csr, I_int, s_source
 end
+
+#---------------------------------------------------------------------------------------------------
+# Image charges (shielding). Port of Bmad's image_charge_kick_calc and the image part of csr_bin_kicks.
+
+cross3(a, b) = SVector(a[2] * b[3] - a[3] * b[2], a[3] * b[1] - a[1] * b[3], a[1] * b[2] - a[2] * b[1])
+dot3(a, b) = a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
+
+"""
+    image_charge_kick(k, geom, kp)
+
+Longitudinal field at the kick point of an image charge at the source point stored in `k` (height
+`kp.y_source`), times `kp.kick_factor`: the Liénard–Wiechert velocity (`coulomb1`) and acceleration (`radiate`)
+terms, without the `q/(4πε₀)` factor. The source moves with speed `β` along the centroid with the centroid's
+curvature (zero on the infinite drifts outside the lattice).
+"""
+function image_charge_kick(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
+  ix = k.ix_ele_source
+  if 1 <= ix <= length(geom.ele)
+    sp = geom.ele[ix].spline
+    g_bend = -spline_d2(sp, k.s_chord_source) / sqrt(1 + spline_d1(sp, k.s_chord_source)^2)^3
+  else
+    g_bend = 0.0
+  end
+  theta = k.floor_s.theta
+  Bp_vec = kp.beta * SVector(sin(theta), 0.0, cos(theta))              # β vector at the source point
+  G_vec = kp.beta^2 * g_bend * SVector(-cos(theta), 0.0, sin(theta))   # Acceleration vector
+
+  N_vec = (kp.floor_k.r - k.floor_s.r) / k.L
+  theta = kp.floor_k.theta
+  B_vec = SVector(sin(theta), 0.0, cos(theta))                         # β direction at the kick point
+
+  OneNBp3 = (1 - dot3(N_vec, Bp_vec))^3
+  NBp_vec = N_vec - Bp_vec
+  rad_cross_vec = cross3(N_vec, cross3(NBp_vec, G_vec))
+
+  radiate = dot3(B_vec, rad_cross_vec) / (k.L * OneNBp3)
+  coulomb1 = dot3(B_vec, NBp_vec) / (kp.gamma2 * k.L^2 * OneNBp3)
+  return kp.kick_factor * (radiate + coulomb1)
+end
+
+# Image kick for lags i = -n_bin:n_bin, stored at index i + n_bin + 1. One work item per block of `n_lag`
+# consecutive lags, warm-started within a block as csr_wake_kernel!.
+@kernel function csr_image_kernel!(image, s_source, geom, kp, dz, n_lag)
+  b = @index(Global)
+  n_bin = (length(image) - 1) ÷ 2
+  k = CSRKick1()
+  k.ix_ele_source = kp.ix_ele_kick
+  for j in (b - 1) * n_lag + 1:min(b * n_lag, length(image))
+    k.dz_particles = (j - n_bin - 1) * dz
+    s_chord = s_source_calc!(k, geom, kp)
+    @inbounds begin
+      image[j] = image_charge_kick(k, geom, kp)
+      s_source[j] = source_s(geom, k.ix_ele_source, s_chord)
+    end
+  end
+end
+
+"""
+    csr_image_table(geom, kp, dz, n_bin, backend; n_block) -> (image, s_source)
+
+Image-charge kick (`image_charge_kick`) and reference s of the source point for lags `i * dz`,
+`i = -n_bin:n_bin` (index `i + n_bin + 1`), at kick point `kp` with `kp.y_source ≠ 0`. Blocks of lags as in
+`csr_wake_table`. CPU backend only.
+"""
+function csr_image_table(geom::CSRGeometry, kp::CSRKickPoint, dz, n_bin, backend;
+                         n_block = min(2n_bin + 1, 4 * Threads.nthreads()))
+  n = 2n_bin + 1
+  image = KernelAbstractions.zeros(backend, Float64, n)
+  s_source = KernelAbstractions.zeros(backend, Float64, n)
+  n_lag = cld(n, n_block)
+  csr_image_kernel!(backend)(image, s_source, geom, kp, dz, n_lag; ndrange = cld(n, n_lag), workgroupsize = 1)
+  KernelAbstractions.synchronize(backend)
+  return image, s_source
+end
+
+#---------------------------------------------------------------------------------------------------
 
 """
     I_csr_integral(z0, z1, geom, kp; n = 16)

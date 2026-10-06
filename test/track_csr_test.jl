@@ -119,6 +119,26 @@ end
     @test all(isfinite, b.coords.v)
   end
 
+  @testset "Shielding: Bmad csr_and_space_charge_test parameters" begin
+    # ben01: sbend, l = 0.1, b_field = 0.17, b1_gradient = -10; e_tot = 42 MeV; 77 pC, σ_z = 0.899377 mm;
+    # n_bin = 40, particle_bin_span = 2, ds_track_step = 0.01; n_shield_images = 4, beam_chamber_height = 0.01.
+    # No Bmad numbers to compare with (its output.correct is for its own random bunch).
+    gamma = 42e6 / massof(TC_E)
+    pq = tc_pq(gamma)
+    brho = float(pq)
+    line = [SBend(L = 0.1, g_ref = 0.17 / brho, Kn0 = 0.17 / brho, Kn1 = -10 / brho)]
+    eloss = Float64[]
+    for n_shield_images in (0, 4)
+      b = tc_line_bunch(0.899377e-3, 77e-12, 1001, pq; x = 2e-4)
+      params = CSRParams(n_bin = 40, particle_bin_span = 2, ds_step = 0.01, n_shield_images = n_shield_images, beam_chamber_height = 0.01)
+      track_csr!(b, Beamline(line; p_over_q_ref = pq, species_ref = TC_E); params)
+      @test all(isfinite, b.coords.v)
+      push!(eloss, sum(b.coords.v[:, 6] .* b.coords.weight))
+    end
+    @test eloss[1] < 0
+    @test eloss[2] != eloss[1]
+  end
+
   @testset "Errors" begin
     pq = tc_pq(100)
     bl = Beamline([SBend(L = 0.3, g_ref = 1.0, Kn0 = 1.0)]; p_over_q_ref = pq, species_ref = TC_E)
