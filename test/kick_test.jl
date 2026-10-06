@@ -56,6 +56,13 @@
     err_c = maximum(abs.(res2.kick_per_meter[core] .- W)) / scale
     @test err_c > err
 
+    # Every bin by quadrature (default) vs first bin only (planning/upstream-bin.md, options B and A)
+    res_a = csr_kick!(zeros(length(z)), z, q, alive, geom, n_ele, L_ele / 2, gamma, electron,
+                      CSRParams(n_bin = 200, particle_bin_span = 2, ds_step = L_ele, all_bin_quadrature = false))
+    err_a = maximum(abs.(res_a.kick_per_meter[core] .- W)) / scale
+    @test err < err_a
+    @test res_a.I_csr_per_meter == res.I_csr_per_meter
+
     # Half kick at element ends
     pz3 = zeros(length(z))
     csr_kick!(pz3, z, q, alive, geom, n_ele, L_ele / 2, gamma, electron, params; kick_factor = 0.5)
@@ -78,6 +85,38 @@
     N = Q / E_CHARGE
     bend_scale = abs(steady_state_dpz_ds(0.0, x -> dgaussian(x, sigma), 10.0, N, gamma; u_max = (12sigma)^(2/3)))
     @test maximum(abs, res.kick_per_meter) < 1e-6 * bend_scale
+  end
+
+  @testset "Bin integrals: every bin by quadrature" begin
+    # Entrance transient of the Bmad regression-test bend (42 MeV, B = 0.17 T, L = 0.1 m), kick at s = 0.05: the
+    # integrand is steep over the first bins (planning/upstream-bin.md). Reference: every bin by quadrature, 1600 bins.
+    gam = 42e6 / massof(electron)
+    rho2 = sqrt(42e6^2 - massof(electron)^2) / C_LIGHT / 0.17
+    sig2 = 0.000899377
+    z2, q2, a2 = gaussian_line_bunch(sig2, 77e-12, 40001)
+    g2 = CSRGeometry([0.1], [1 / rho2], zeros(2, 6))
+    kick(nb, ab) = csr_kick!(zeros(40001), z2, q2, a2, g2, 1, 0.05, gam, electron,
+                             CSRParams(n_bin = nb, ds_step = 0.01, all_bin_quadrature = ab))
+    ref = kick(1600, true)
+    zt = range(-2sig2, 2sig2; length = 41)
+    interp(r, x) = (i = searchsortedlast(r.z_center, x); f = (x - r.z_center[i]) / (r.z_center[2] - r.z_center[1]);
+                    (1 - f) * r.kick_per_meter[i] + f * r.kick_per_meter[i+1])
+    Wr = interp.(Ref(ref), zt)
+    werr(r) = maximum(abs.(interp.(Ref(r), zt) .- Wr)) / maximum(abs, Wr)
+    errs = [werr(kick(nb, true)) for nb in (40, 100, 400)]
+    @test issorted(errs; rev = true)
+    @test errs[3] < 5e-3                          # measured 2.6e-3
+    @test werr(kick(400, false)) > 3e-2           # first bin only: trapezoid error, measured 5.0e-2
+
+    # all_bin_quadrature = false: trapezoid for bins ≥ 2
+    kp = CSR.CSRKickPoint(g2, 1, 0.05, gam)
+    I_csr, I_int, _ = CSR.csr_wake_table(g2, kp, 1e-4, 40, CSR.CPU(); all_bin_quadrature = false)
+    @test I_int[2:end] == (I_csr[2:end] .+ I_csr[1:end-1]) .* 1e-4 ./ 2
+    # bmad_compat ignores all_bin_quadrature (Bmad: trapezoid)
+    g2c = CSRGeometry([0.1], [1 / rho2], zeros(2, 6); bmad_compat = true)
+    kc(ab) = csr_kick!(zeros(40001), z2, q2, a2, g2c, 1, 0.05, gam, electron,
+                       CSRParams(n_bin = 40, ds_step = 0.01, all_bin_quadrature = ab, bmad_compat = true)).kick_per_meter
+    @test kc(true) ≈ kc(false) rtol = 1e-12
   end
 
   @testset "Too few particles" begin

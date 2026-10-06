@@ -93,6 +93,9 @@ maxrel(a, b) = maximum(abs, a .- b) / maximum(abs, b)
       tables = [CSR.csr_wake_table(geom, kp, dz, 120, CSR.CPU(); n_block) for n_block in (1, 7, 120)]
       @test tables[2] == tables[1]
       @test tables[3] == tables[1]
+      tables = [CSR.csr_wake_table(geom, kp, dz, 120, CSR.CPU(); n_block, all_bin_quadrature = true) for n_block in (1, 7, 120)]
+      @test tables[2] == tables[1]
+      @test tables[3] == tables[1]
     end
   end
 

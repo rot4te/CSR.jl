@@ -69,7 +69,8 @@ function csr_kick!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, ali
 
   bins = csr_bin_particles(z, q, alive, params)
   kp = CSRKickPoint(geom, ix_ele_kick, s_kick, gamma; kick_factor)
-  I_csr, I_int, s_source = csr_wake_table(geom, kp, bins.dz, n_bin, backend)
+  I_csr, I_int, s_source = csr_wake_table(geom, kp, bins.dz, n_bin, backend;
+                                          all_bin_quadrature = params.all_bin_quadrature && !params.bmad_compat)
 
   coef = csr_kick_coef(species, gamma, actual_track_step)
   edge = bins.edge_dcharge_density_dz

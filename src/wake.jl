@@ -91,17 +91,31 @@ end
   @inbounds I_int[i] = (I_csr[i] + I_csr[i-1]) * dz / 2
 end
 
+# Bins i ≥ 2 by quadrature: one work item per block of `n_lag` consecutive bins (bin i is block element i - 1);
+# the source search is warm-started from node to node and bin to bin within a block.
+@kernel function csr_bin_quadrature_kernel!(I_int, geom, kp, dz, n_lag, n_quad)
+  b = @index(Global)
+  k = CSRKick1()
+  k.ix_ele_source = kp.ix_ele_kick
+  for i in (b - 1) * n_lag + 2:min(b * n_lag + 1, length(I_int))
+    @inbounds I_int[i] = I_csr_quadrature!(k, (i - 1) * dz, i * dz, geom, kp, n_quad)
+  end
+end
+
 """
-    csr_wake_table(geom, kp, dz, n_bin, backend) -> (I_csr, I_int, s_source)
+    csr_wake_table(geom, kp, dz, n_bin, backend; n_block, all_bin_quadrature = false) -> (I_csr, I_int, s_source)
 
 Kick integral `I_csr`, its integral over each bin `I_int`, and the reference s of the source point, for lags
 `i * dz`, `i = 1:n_bin`, at kick point `kp`. The lags are split into `n_block` blocks (one work item and
 workgroup each); a block reuses the previous lag's source element as the start of the next search.
 Default: 4 blocks per thread. CPU backend only: the source search uses a mutable work struct and the
 non-isbits `CSRGeometry`.
+
+`I_int` for bins `i ≥ 2`: trapezoid in `I_csr`, or with `all_bin_quadrature` Simpson in `u^(1/3)` with 8 nodes per
+bin (`I_csr_quadrature!`; 8 more source solves per bin, in blocks as above).
 """
 function csr_wake_table(geom::CSRGeometry, kp::CSRKickPoint, dz, n_bin, backend;
-                        n_block = min(n_bin, 4 * Threads.nthreads()))
+                        n_block = min(n_bin, 4 * Threads.nthreads()), all_bin_quadrature::Bool = false)
   I_csr = KernelAbstractions.zeros(backend, Float64, n_bin)
   I_int = KernelAbstractions.zeros(backend, Float64, n_bin)
   s_source = KernelAbstractions.zeros(backend, Float64, n_bin)
@@ -109,8 +123,15 @@ function csr_wake_table(geom::CSRGeometry, kp::CSRKickPoint, dz, n_bin, backend;
   # Workgroup size passed at launch: a static size (`csr_wake_kernel!(backend, 1)`) is not inferred.
   csr_wake_kernel!(backend)(I_csr, I_int, s_source, geom, kp, dz, n_lag; ndrange = cld(n_bin, n_lag), workgroupsize = 1)
   KernelAbstractions.synchronize(backend)
-  csr_trapezoid_kernel!(backend)(I_int, I_csr, dz; ndrange = n_bin - 1)
-  KernelAbstractions.synchronize(backend)
+  if n_bin > 1
+    if all_bin_quadrature
+      n_q = cld(n_bin - 1, min(n_bin - 1, n_block))
+      csr_bin_quadrature_kernel!(backend)(I_int, geom, kp, dz, n_q, 8; ndrange = cld(n_bin - 1, n_q), workgroupsize = 1)
+    else
+      csr_trapezoid_kernel!(backend)(I_int, I_csr, dz; ndrange = n_bin - 1)
+    end
+    KernelAbstractions.synchronize(backend)
+  end
   return I_csr, I_int, s_source
 end
 
@@ -211,6 +232,27 @@ function I_csr_integral(z0, z1, geom::CSRGeometry, kp::CSRKickPoint; n = 16)
   acc = f(t0) + f(t1)
   for j in 1:n-1
     acc += (isodd(j) ? 4 : 2) * f(t0 + j * h)
+  end
+  return acc * h / 3
+end
+
+"""
+    I_csr_quadrature!(k, z0, z1, geom, kp, n)
+
+As `I_csr_integral`, with the work struct `k` supplied: each source search starts where the previous one ended
+(nodes in increasing order). Searches end in the same element whatever the start element, so the result does not
+depend on the warm start.
+"""
+function I_csr_quadrature!(k::CSRKick1, z0, z1, geom::CSRGeometry, kp::CSRKickPoint, n)
+  t0 = cbrt(z0)
+  h = (cbrt(z1) - t0) / n
+  acc = 0.0
+  for j in 0:n
+    t = j == n ? cbrt(z1) : t0 + j * h
+    k.dz_particles = t^3
+    s_source_calc!(k, geom, kp)
+    w = (j == 0 || j == n) ? 1 : (isodd(j) ? 4 : 2)
+    acc += w * I_csr_value(k, kp) * 3t^2
   end
   return acc * h / 3
 end

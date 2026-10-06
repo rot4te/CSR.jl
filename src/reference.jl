@@ -98,6 +98,14 @@ function csr_kick_reference!(pz::AbstractVector, z::AbstractVector, q::AbstractV
     I_int[i] = k.I_int_csr
     s_source[i] = source_s(geom, k.ix_ele_source, s_chord)
   end
+  # Bins i ≥ 2 by quadrature (one warm-started walk) instead of the trapezoid
+  if params.all_bin_quadrature && !params.bmad_compat
+    k = CSRKick1()
+    k.ix_ele_source = ix_ele_kick
+    for i in 2:n_bin
+      I_int[i] = I_csr_quadrature!(k, (i - 1) * bins.dz, i * bins.dz, geom, kp, 8)
+    end
+  end
 
   coef = csr_kick_coef(species, gamma, actual_track_step)
   kick = zeros(n_bin)
