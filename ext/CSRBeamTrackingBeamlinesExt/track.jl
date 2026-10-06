@@ -56,7 +56,7 @@ csr_slice_P0c(_) = nothing
 
 """
     CSR.track_csr!(bunch, bl::Beamline; params, csr_on = ele -> true, centroid_start = nothing,
-                   diagnostics = nothing) -> bunch
+                   sliced_centroid = true, diagnostics = nothing) -> bunch
     CSR.track_csr!(bunch, br::Branch; ...) -> bunch
 
 Track `bunch` through `bl` (or the Beamlines of `br` in order) with 1D CSR kicks between slices of each element
@@ -68,6 +68,10 @@ Track `bunch` through `bl` (or the Beamlines of `br` in order) with 1D CSR kicks
 - `centroid_start`: 6-vector where the centroid orbit starts (Bmad/Tao: the supplied `centroid` orbit).
   Default: charge-weighted mean of the live particles. The centroid is tracked through `bl` without CSR
   before the bunch, and its orbit defines the CSR geometry.
+- `sliced_centroid = true`: track the centroid through CSR elements in the same slices as the bunch, so that it
+  follows the orbit of a bunch particle. BeamTracking's integration depends on the slicing (the default Symplectic
+  method takes one step per element or slice), so the centroid then depends on `params.ds_step` and `csr_on`.
+  `false`: track it through whole elements (before 2026-10-06).
 - `diagnostics(ix_ele, i_step, s_kick, result::CSRStepResult)` is called after each kick.
 
 Macroparticle charge: `weight × |charge of species|` [C] (`weight = nothing` means 1).
@@ -91,7 +95,7 @@ function CSR.track_csr!(bunch::Bunch, br::Branch; kwargs...)
 end
 
 function track_csr_line!(bunch::Bunch, line, context; params::CSRParams, csr_on = ele -> true,
-                         centroid_start = nothing, diagnostics = nothing)
+                         centroid_start = nothing, sliced_centroid = true, diagnostics = nothing)
   n = length(line)
   species = bunch.species
   q_abs = abs(chargeof(species; C = true))
@@ -117,7 +121,13 @@ function track_csr_line!(bunch::Bunch, line, context; params::CSRParams, csr_on 
   centroid = zeros(n + 1, 6)
   centroid[1, :] = c0
   for (i, ele) in enumerate(line)
-    track!(cb, ele; context)
+    if sliced_centroid && csr_on(ele) && CSR.csr_sliceable(ele; context)
+      p_over_q_ref = ele.p_over_q_ref
+      p_over_q_ref isa Number || error("track_csr!: time-dependent reference energy is not supported (element $i)")
+      track_centroid_sliced!(cb, ele, L[i], p_over_q_ref, params, context)
+    else
+      track!(cb, ele; context)
+    end
     cb.coords.state[1] == BeamTracking.STATE_ALIVE || error("track_csr!: centroid orbit lost in element $i")
     centroid[i+1, :] = cb.coords.v[1, :]
   end
@@ -141,6 +151,24 @@ function track_csr_line!(bunch::Bunch, line, context; params::CSRParams, csr_on 
   return bunch
 end
 
+# Slice i_step (1..n_step) of an element cut into n_step slices of length ds, as tracked between CSR kicks.
+# s0 + L_slice equals the next slice's s0 exactly (Sterbenz), so SaganCavity cell kicks on a boundary fall in
+# exactly one slice.
+function csr_slice(ele, i_step, n_step, ds, context)
+  s0 = (i_step - 1) * ds
+  return CSR.slice_element(ele, s0, i_step * ds - s0, i_step == 1, i_step == n_step; context)
+end
+
+# Centroid through an element in the bunch's slices (BeamTracking's integration depends on the slicing: the
+# default Symplectic method takes one step per element or slice). Function barrier as track_csr_element!.
+function track_centroid_sliced!(cb, ele, L, p_over_q_ref, params, context)
+  n_step, ds = csr_n_step(L, params)
+  for i_step in 1:n_step
+    track_slice!(cb, csr_slice(ele, i_step, n_step, ds, context), p_over_q_ref)
+  end
+  return cb
+end
+
 # CSR steps through element i. Function barrier: Beamlines parameters (p_over_q_ref, dE_ref) are not inferred.
 function track_csr_element!(bunch, ele, i, L, E_start, E_end, p_over_q_ref, z, pz, q, geom, params, context, diagnostics)
   species = bunch.species
@@ -150,10 +178,7 @@ function track_csr_element!(bunch, ele, i, L, E_start, E_end, p_over_q_ref, z, p
   P0c = sqrt(E_start^2 - mass^2)   # Particles' reference momentum (used in an lcavity only)
   for i_step in 0:n_step
     if i_step != 0
-      # s0 + L_slice equals the next slice's s0 exactly (Sterbenz), so SaganCavity cell kicks on a boundary
-      # fall in exactly one slice.
-      s0 = (i_step - 1) * ds
-      s = CSR.slice_element(ele, s0, i_step * ds - s0, i_step == 1, i_step == n_step; context)
+      s = csr_slice(ele, i_step, n_step, ds, context)
       track_slice!(bunch, s, p_over_q_ref)
       ramp && (P0c = oftype(P0c, csr_slice_P0c(s)))
     end

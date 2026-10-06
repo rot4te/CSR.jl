@@ -119,6 +119,57 @@ end
     @test all(isfinite, b.coords.v)
   end
 
+  @testset "Sliced centroid" begin
+    pq = tc_pq(100)
+    params = CSRParams(n_bin = 40, ds_step = 0.02)
+    c0 = [2e-4, 1e-4, 1e-4, 0.0, 0.0, 0.0]
+    function run(line, sliced_centroid; weight_scale = 1.0)
+      b = tc_line_bunch(1e-3, 1e-9, 201, pq)
+      b.coords.v[101, :] = c0   # a particle on the centroid start (z = 0 is the bunch centre)
+      b.coords.weight .*= weight_scale
+      res = Dict{Tuple{Int,Int},CSRStepResult}()
+      exits = Dict{Int,Vector{Float64}}()
+      n_step(i) = csr_n_step(float(line[i].L), params)[1]
+      track_csr!(b, Beamline(line; p_over_q_ref = pq, species_ref = TC_E); params, centroid_start = c0, sliced_centroid,
+                 diagnostics = (i, j, s, r) -> (res[(i, j)] = r; j == n_step(i) && (exits[i] = b.coords.v[101, :])))
+      return res, exits, b
+    end
+
+    # Pure bend and drift: BeamTracking's integration is exact, so slicing the centroid changes nothing
+    pure = [Drift(L = 0.1), SBend(L = 0.1, g_ref = 1.0, Kn0 = 1.0)]
+    r1, _, b1 = run(pure, true)
+    r0, _, b0 = run(pure, false)
+    # (equal up to round-off: the exact maps are not bit-identical when split)
+    @test maximum(maximum(abs, r1[k].I_csr_per_meter .- r0[k].I_csr_per_meter) for k in keys(r0)) <=
+          1e-12 * maximum(maximum(abs, r0[k].I_csr_per_meter) for k in keys(r0))
+    @test b1.coords.v ≈ b0.coords.v rtol = 1e-12
+
+    # Combined-function bend: the one-step integration of a whole element differs from the sliced one
+    cf = [Drift(L = 0.1), SBend(L = 0.1, g_ref = 1.0, Kn0 = 1.0, Kn1 = -20.0)]
+    r1, _, _ = run(cf, true)
+    r0, _, _ = run(cf, false)
+    @test maximum(maxrel(r1[k].I_csr_per_meter, r0[k].I_csr_per_meter) for k in keys(r0) if any(!iszero, r0[k].I_csr_per_meter)) > 1e-8
+
+    # The sliced centroid is the orbit of a bunch particle: rebuild the geometry from the exits of a zero-charge
+    # particle started on the centroid and recompute I_csr
+    res, exits, _ = run(cf, true; weight_scale = 1e-30)
+    L = [0.1, 0.1]; g = [0.0, 1.0]
+    geom = CSRGeometry(L, g, permutedims(hcat(c0, exits[1], exits[2])))
+    gamma = BeamTracking.R_to_E(TC_E, pq) / massof(TC_E)
+    # Compared relative to the largest I_csr over all steps: in the drift I_csr is at round-off level
+    dmax = 0.0; Imax = 0.0
+    for ((i, j), r) in res
+      n, ds = csr_n_step(L[i], params)
+      kf = (j == 0 || j == n) ? 0.5 : 1.0
+      kp = CSR.CSRKickPoint(geom, i, j * ds, gamma; kick_factor = kf)
+      I, _, _ = CSR.csr_wake_table(geom, kp, r.z_center[2] - r.z_center[1], params.n_bin, CSR.CPU())
+      e = geom.ele[i]
+      dmax = max(dmax, maximum(abs, I ./ (kf * ds * e.L_chord / e.L) .- r.I_csr_per_meter))
+      Imax = max(Imax, maximum(abs, r.I_csr_per_meter))
+    end
+    @test dmax / Imax < 1e-10
+  end
+
   @testset "Shielding: Bmad csr_and_space_charge_test parameters" begin
     # ben01: sbend, l = 0.1, b_field = 0.17, b1_gradient = -10; e_tot = 42 MeV; 77 pC, σ_z = 0.899377 mm;
     # n_bin = 40, particle_bin_span = 2, ds_track_step = 0.01; n_shield_images = 4, beam_chamber_height = 0.01.
