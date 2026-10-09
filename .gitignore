@@ -32,3 +32,6 @@ planning/
 
 # ignore my vscode architecture
 *.code-workspace
+.vscode
+
+.DS_Store
