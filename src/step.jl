@@ -58,10 +58,39 @@ phase 1 version.
 function csr_kick!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool},
                    geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma, species::Species,
                    params::CSRParams; kick_factor = 1.0, pz_scale = 1.0)
+  st = csr_binned_kick(z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor)
+  csr_apply_kicks!(pz, z, alive, st.bins, st.kick; pz_scale)
+  return csr_step_result(st)
+end
+
+"""
+    csr_kick_pz(pz, z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor = 1.0,
+                pz_scale = 1.0) -> pz_new
+
+Non-mutating `csr_kick!`: returns `pz` after the kick in a new vector (element type promoted with `z` and `q`),
+leaving `pz` unchanged. Differentiable with respect to `pz`, `z` and `q`: ForwardDiff Duals pass through, and with
+ChainRulesCore loaded an `rrule` gives the pullback by explicit adjoint kernels. In both, the bin grid and the kick
+table are held constant (the grid depends on the extreme live particles, the table on the geometry and `gamma`);
+derivatives with respect to `geom`, `s_kick`, `gamma` and the keywords are not provided.
+"""
+function csr_kick_pz(pz::AbstractVector, z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool},
+                     geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma, species::Species,
+                     params::CSRParams; kick_factor = 1.0, pz_scale = 1.0)
+  pz_new = similar(pz, promote_type(eltype(pz), eltype(z), eltype(q)))
+  copyto!(pz_new, pz)
+  csr_kick!(pz_new, z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor, pz_scale)
+  return pz_new
+end
+
+# Bin the particles and compute the binned kick (all of csr_kick! except applying it). Returns the intermediate
+# quantities the adjoint needs: bins, kick, free-space tables (I_csr, I_int, s_source), image tables per layer,
+# the kick coefficient and the step length.
+function csr_binned_kick(z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool}, geom::CSRGeometry,
+                         ix_ele_kick::Integer, s_kick, gamma, species::Species, params::CSRParams; kick_factor = 1.0)
   n_bin = params.n_bin
   params.bmad_compat == geom.bmad_compat || error("csr_kick!: params.bmad_compat and geom.bmad_compat differ")
   count(alive) >= n_bin || error("csr_kick!: number of live particles ($(count(alive))) is less than n_bin ($n_bin)")
-  backend = get_backend(pz)
+  backend = get_backend(z)
 
   e = geom.ele[ix_ele_kick]
   _, ds_step = csr_n_step(e.L, params)
@@ -77,17 +106,18 @@ function csr_kick!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, ali
   kick = KernelAbstractions.zeros(backend, promote_type(typeof(coef), eltype(I_int), eltype(edge)), n_bin)
   csr_convolve!(kick, I_int, edge, coef)
   # Shielding: image layer ns at height ns*h with sign (-1)^ns; the factor 2 counts the images above and below.
-  for ns in 1:params.n_shield_images
+  images = map(1:params.n_shield_images) do ns
     kp_ns = CSRKickPoint(geom, ix_ele_kick, s_kick, gamma; y_source = ns * params.beam_chamber_height,
                          kick_factor = (-1)^ns * 2 * kick_factor)
     image, _ = csr_image_table(geom, kp_ns, bins.dz, n_bin, backend)
     csr_image_convolve!(kick, image, bins.charge, coef)
+    image
   end
-  csr_apply_kicks!(pz, z, alive, bins, kick; pz_scale)
-
-  ds_kick = kick_factor * actual_track_step
-  return CSRStepResult(bins.z_center, bins.charge ./ bins.dz, kick ./ ds_kick, I_csr ./ ds_kick, s_source)
+  return (; bins, kick, I_csr, I_int, s_source, images, coef, ds_kick = kick_factor * actual_track_step)
 end
+
+csr_step_result(st) = CSRStepResult(st.bins.z_center, st.bins.charge ./ st.bins.dz, st.kick ./ st.ds_kick,
+                                    st.I_csr ./ st.ds_kick, st.s_source)
 
 """
     csr_ref_energy(E_start, E_end, s, L; bmad_compat = false)

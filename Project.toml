@@ -15,12 +15,14 @@ AbstractFFTs = "621f4979-c628-5d54-868e-fcf4e3e8185c"
 Beamlines = "5bb90b03-0719-46b8-8ce4-1ef3afd3cd4b"
 BeamTracking = "8ef5c10a-4ca3-437f-8af5-b84d8af36df0"
 ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 GTPSA = "b27dd330-f138-47c5-815b-40db9dd9b6e8"
 
 [extensions]
 CSRAbstractFFTsExt = "AbstractFFTs"
 CSRBeamTrackingBeamlinesExt = ["BeamTracking", "Beamlines"]
 CSRChainRulesCoreExt = "ChainRulesCore"
+CSRForwardDiffExt = "ForwardDiff"
 CSRGTPSAExt = "GTPSA"
 
 [compat]
@@ -29,6 +31,7 @@ Adapt = "4.7.1"
 AtomicAndPhysicalConstants = "0.11.5"
 Atomix = "1.2.1"
 ChainRulesCore = "1.26.1"
+ForwardDiff = "0.10, 1"
 GTPSA = "1.5.6"
 KernelAbstractions = "0.9.42"
 StaticArrays = "1.9.22"
@@ -40,8 +43,9 @@ AbstractFFTs = "621f4979-c628-5d54-868e-fcf4e3e8185c"
 BeamTracking = "8ef5c10a-4ca3-437f-8af5-b84d8af36df0"
 Beamlines = "5bb90b03-0719-46b8-8ce4-1ef3afd3cd4b"
 ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 GTPSA = "b27dd330-f138-47c5-815b-40db9dd9b6e8"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test", "AbstractFFTs", "BeamTracking", "Beamlines", "ChainRulesCore", "GTPSA"]
+test = ["Test", "AbstractFFTs", "BeamTracking", "Beamlines", "ChainRulesCore", "ForwardDiff", "GTPSA"]

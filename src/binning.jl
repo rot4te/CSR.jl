@@ -51,17 +51,27 @@ struct PlainAdd end
 
 supports_atomic_add(A) = eltype(A) <: Union{Float32,Float64}
 
+"""
+    primal(x)
+
+Value of `x` without derivative parts (identity for plain numbers; extensions add methods, e.g. ForwardDiff Duals).
+The bin grid is built from primal values, so derivatives treat it as constant.
+"""
+primal(x) = x
+
+# First bin a particle's triangle can overlap.
+@inline deposit_ix0(zp, z_min, dz, dz_particle) = nint((primal(zp) - dz_particle / 2 - z_min) / dz)
+
 # Spread one particle over bins ix0 : ix0 + span + 1. Bins outside the grid are counted in n_outside.
 @inline function deposit_particle!(add!, charge, n_particle, n_outside, zp, qp, z_min, dz, dz_particle, pbs)
   n_bin = length(charge)
-  zp0 = zp - dz_particle / 2
-  ix0 = nint((zp0 - z_min) / dz)
+  ix0 = deposit_ix0(zp, z_min, dz, dz_particle)
   for j in 0:pbs+1
     ib = j + ix0
     if 1 <= ib <= n_bin
       zb0 = z_min + (ib - 1) * dz
       overlap = triangle_overlap(zp, dz_particle, zb0, zb0 + dz)
-      add!(n_particle, ib, overlap)
+      add!(n_particle, ib, primal(overlap))
       add!(charge, ib, overlap * qp)
     else
       add!(n_outside, 1, 1)
@@ -93,6 +103,9 @@ live-particle z range, with empty padding bins at both ends.
 Runs as KernelAbstractions kernels on the backend of `z`. The deposit uses atomic adds for `Float32`/`Float64`
 charges, so the summation order (and the last bits of the bin charges) can vary between runs with several
 threads. Other element types are deposited serially on the CPU.
+
+The grid (`dz`, `z0_edge`, `z_center`) and `n_particle` are built from primal values (`primal`): with ForwardDiff
+Duals only `charge` and `edge_dcharge_density_dz` carry derivatives, and the grid is held constant.
 """
 function csr_bin_particles(z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool}, params::CSRParams)
   n_bin = params.n_bin
@@ -101,8 +114,8 @@ function csr_bin_particles(z::AbstractVector, q::AbstractVector, alive::Abstract
   backend = get_backend(z)
 
   any(alive) || error("csr_bin_particles: no live particles")
-  z_maxval = mapreduce((zi, a) -> a ? zi : oftype(zi, -Inf), max, z, alive)
-  z_minval = mapreduce((zi, a) -> a ? zi : oftype(zi, Inf), min, z, alive)
+  z_maxval = primal(mapreduce((zi, a) -> a ? zi : oftype(zi, -Inf), max, z, alive))
+  z_minval = primal(mapreduce((zi, a) -> a ? zi : oftype(zi, Inf), min, z, alive))
   z_maxval > z_minval || error("csr_bin_particles: longitudinal width of beam is zero")
 
   dz = 1.0000001 * (z_maxval - z_minval) / n_bin_eff   # 1.0000001 prevents round-off problems (Bmad)
@@ -111,7 +124,7 @@ function csr_bin_particles(z::AbstractVector, q::AbstractVector, alive::Abstract
   dz_particle = pbs * dz
 
   Tz = typeof(dz)
-  Tq = promote_type(Tz, eltype(q))
+  Tq = promote_type(Tz, eltype(z), eltype(q))
   z0_edge = KernelAbstractions.allocate(backend, Tz, n_bin)
   z0_edge .= z_min .+ (0:n_bin-1) .* dz
   bins = CSRBins(dz, z0_edge, z0_edge .+ dz / 2, KernelAbstractions.zeros(backend, Tq, n_bin),

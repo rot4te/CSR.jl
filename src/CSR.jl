@@ -8,7 +8,7 @@ using KernelAbstractions
 import Atomix
 
 export CSRParams, FloorPosition, CSRGeometry, CSRElementInfo, CSRBins, CSRKickPoint, CSRStepResult
-export planar_survey, csr_bin_particles, csr_kick!, csr_kick_coef, csr_n_step, dspline_len
+export planar_survey, csr_bin_particles, csr_kick!, csr_kick_pz, csr_kick_coef, csr_n_step, dspline_len
 export track_csr!
 
 include("params.jl")
@@ -19,6 +19,7 @@ include("wake.jl")
 include("convolve.jl")
 include("kick.jl")
 include("step.jl")
+include("adjoint.jl")
 include("reference.jl")
 include("interface.jl")
 
