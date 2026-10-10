@@ -183,7 +183,7 @@ function track_csr_element!(bunch, ele, i, L, E_start, E_end, p_over_q_ref, z, p
       ramp && (P0c = oftype(P0c, csr_slice_P0c(s)))
     end
     s_kick = i_step * ds
-    E_kick = CSR.csr_ref_energy(E_start, E_end, s_kick, L; bmad_compat = params.bmad_compat)
+    E_kick = CSR.csr_ref_energy(E_start, E_end, s_kick, L)
     gamma = E_kick / mass
     pz_scale = ramp ? sqrt(E_kick^2 - mass^2) / P0c : one(P0c)
     alive = bunch.coords.state .== BeamTracking.STATE_ALIVE

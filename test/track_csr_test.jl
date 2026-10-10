@@ -202,7 +202,6 @@ end
   @testset "csr_ref_energy" begin
     @test CSR.csr_ref_energy(1.0, 3.0, 0.0, 2.0) == 1.0
     @test CSR.csr_ref_energy(1.0, 3.0, 2.0, 2.0) == 3.0
-    @test CSR.csr_ref_energy(1.0, 3.0, 0.0, 2.0; bmad_compat = true) == 3.0   # Bmad's reversed weights (V6)
     @test CSR.csr_ref_energy(1.0, 3.0, 0.5, 2.0) ≈ 1.5
   end
 end

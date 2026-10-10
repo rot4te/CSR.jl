@@ -191,20 +191,129 @@ end
   end
 end
 
+# Image kick at lag u (the source search starts from the element in `k`).
+function image_kernel_at!(k::CSRKick1, u, geom::CSRGeometry, kp::CSRKickPoint)
+  k.dz_particles = u
+  s_source_calc!(k, geom, kp)
+  return image_charge_kick(k, geom, kp)
+end
+
+# Adaptive Simpson for (∫K, ∫K t) over [a, b], t = (u - u0) / dz; fa, fm, fb are K at a, (a + b)/2, b.
+# Intervals narrower than `h_min` are not split (the kernel has round-off noise from the source search).
+function image_simpson!(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol, h_min, depth)
+  m = (a + b) / 2
+  fl = image_kernel_at!(k, (a + m) / 2, geom, kp)
+  fr = image_kernel_at!(k, (m + b) / 2, geom, kp)
+  g(u, f) = SVector(f, f * (u - u0) / dz)
+  h = b - a
+  S1 = h / 6 * (g(a, fa) + 4g(m, fm) + g(b, fb))
+  S2 = h / 12 * (g(a, fa) + 4g((a + m) / 2, fl) + 2g(m, fm) + 4g((m + b) / 2, fr) + g(b, fb))
+  (depth <= 0 || h <= h_min || maximum(abs, S2 - S1) <= 15tol) && return S2 + (S2 - S1) / 15
+  return image_simpson!(k, geom, kp, a, m, fa, fl, fm, u0, dz, tol / 2, h_min, depth - 1) +
+         image_simpson!(k, geom, kp, m, b, fm, fr, fb, u0, dz, tol / 2, h_min, depth - 1)
+end
+
+function image_segment!(k, geom, kp, a, b, u0, dz, tol, h_min)
+  fa = image_kernel_at!(k, a, geom, kp)
+  fm = image_kernel_at!(k, (a + b) / 2, geom, kp)
+  fb = image_kernel_at!(k, b, geom, kp)
+  return image_simpson!(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol, h_min, 40)
+end
+
+# Hat-function moments of the image kernel over lag interval m, [m dz, (m+1) dz]: (∫K t, ∫K (1 - t)),
+# t = u/dz - m. `tol` is the absolute tolerance on the interval. The intervals touching u = 0 are split
+# geometrically down to `u_min` first, so that structure finer than the first Simpson nodes is not missed
+# (on a drift the kernel peaks at |u| = y/(√2 γ)).
+function image_interval_moments!(k, geom, kp, m, dz, tol, u_min)
+  a = m * dz
+  if m == 0 || m == -1
+    sgn = m == 0 ? 1 : -1
+    acc = zero(SVector{2,Float64})
+    x = dz
+    while x / 2 > u_min
+      lo, hi = minmax(sgn * x / 2, sgn * x)
+      acc += image_segment!(k, geom, kp, lo, hi, a, dz, tol * (x / 2) / dz, u_min)
+      x /= 2
+    end
+    lo, hi = minmax(0.0, sgn * x)
+    acc += image_segment!(k, geom, kp, lo, hi, a, dz, tol * x / dz, u_min)
+  else
+    acc = image_segment!(k, geom, kp, a, a + dz, a, dz, tol, u_min)
+  end
+  return SVector(acc[2], acc[1] - acc[2])
+end
+
+# Finest lag scale resolved by the hat-weighted image table: 1% of y/γ, the width of the drift kernel's peak.
+image_u_min(kp::CSRKickPoint) = 0.01 * abs(kp.y_source) / kp.gamma
+
+# Absolute tolerance per lag interval for the hat-weighted image table: `rtol * dz` times the largest |K| at the
+# lags (`image`, point-sampled) and at the nodes ±dz/2^j > u_min. The lags alone miss the peak near u = 0 when
+# dz ≫ y/γ, which would give a tolerance below the kernel's round-off noise.
+function image_hat_tol(geom::CSRGeometry, kp::CSRKickPoint, image, dz, rtol, u_min)
+  k = CSRKick1()
+  k.ix_ele_source = kp.ix_ele_kick
+  K = maximum(abs, image)
+  x = dz / 2
+  while x > u_min
+    K = max(K, abs(image_kernel_at!(k, x, geom, kp)), abs(image_kernel_at!(k, -x, geom, kp)))
+    x /= 2
+  end
+  return rtol * K * dz
+end
+
+# Moments for lag intervals m = -n_bin-1:n_bin (index m + n_bin + 2), blocks of `n_int` consecutive intervals.
+@kernel function csr_image_hat_kernel!(rise, fall, geom, kp, dz, tol, u_min, n_int)
+  b = @index(Global)
+  n_bin = (length(rise) - 2) ÷ 2
+  k = CSRKick1()
+  k.ix_ele_source = kp.ix_ele_kick
+  for j in (b - 1) * n_int + 1:min(b * n_int, length(rise))
+    mom = image_interval_moments!(k, geom, kp, j - n_bin - 2, dz, tol, u_min)
+    @inbounds rise[j] = mom[1]
+    @inbounds fall[j] = mom[2]
+  end
+end
+
+# Hat-weighted image table from the interval moments: image(l) = (∫ over [(l-1)dz, l dz] of K t
+# + ∫ over [l dz, (l+1)dz] of K (1 - t)) / dz.
+@kernel function csr_image_hat_combine_kernel!(image, @Const(rise), @Const(fall), dz)
+  j = @index(Global)
+  @inbounds image[j] = (rise[j] + fall[j+1]) / dz
+end
+
 """
-    csr_image_table(geom, kp, dz, n_bin, backend; n_block) -> (image, s_source)
+    csr_image_table(geom, kp, dz, n_bin, backend; n_block, bin_integrate = false, rtol = 1e-6) -> (image, s_source)
 
 Image-charge kick (`image_charge_kick`) and reference s of the source point for lags `i * dz`,
 `i = -n_bin:n_bin` (index `i + n_bin + 1`), at kick point `kp` with `kp.y_source ≠ 0`. Blocks of lags as in
 `csr_wake_table`. CPU backend only.
+
+`bin_integrate = false` samples the kernel at the lags (Bmad). `bin_integrate = true` integrates it against the hat
+function of width `2dz` centred on each lag (the charge density interpolated linearly between bin centres), by
+adaptive Simpson with absolute tolerance `rtol * dz * max|K|` per interval (`image_hat_tol`), down to lag widths of
+`0.01 y/γ`. The kernel's structure can be much finer than a bin (`~y/γ` on a drift, `~Ls³/24ρ²` in a bend), which
+point sampling does not resolve (`planning/PLAN.md` Section 13). `s_source` is at the lags in both cases.
 """
 function csr_image_table(geom::CSRGeometry, kp::CSRKickPoint, dz, n_bin, backend;
-                         n_block = min(2n_bin + 1, 4 * Threads.nthreads()))
+                         n_block = min(2n_bin + 1, 4 * Threads.nthreads()), bin_integrate::Bool = false,
+                         rtol = 1e-6)
   n = 2n_bin + 1
   image = KernelAbstractions.zeros(backend, Float64, n)
   s_source = KernelAbstractions.zeros(backend, Float64, n)
   n_lag = cld(n, n_block)
   csr_image_kernel!(backend)(image, s_source, geom, kp, dz, n_lag; ndrange = cld(n, n_lag), workgroupsize = 1)
+  KernelAbstractions.synchronize(backend)
+  bin_integrate || return image, s_source
+
+  u_min = image_u_min(kp)
+  tol = image_hat_tol(geom, kp, image, dz, rtol, u_min)
+  rise = KernelAbstractions.zeros(backend, Float64, n + 1)
+  fall = KernelAbstractions.zeros(backend, Float64, n + 1)
+  n_int = cld(n + 1, min(n + 1, n_block))
+  csr_image_hat_kernel!(backend)(rise, fall, geom, kp, dz, tol, u_min, n_int; ndrange = cld(n + 1, n_int),
+                                 workgroupsize = 1)
+  KernelAbstractions.synchronize(backend)
+  csr_image_hat_combine_kernel!(backend)(image, rise, fall, dz; ndrange = n)
   KernelAbstractions.synchronize(backend)
   return image, s_source
 end

@@ -229,8 +229,13 @@ function s_source_calc!(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
       b = 2 * (Lsz0 - dz - beta2 * Lz)
       c = (Lsz0 - dz)^2 - beta2 * L0^2
       ds_source = -(-b + sqrt(b^2 - 4a * c)) / (2a)
+      # A search warm-started here (another lag) may belong inside the lattice: go back and walk.
+      if ds_source > 0 && last_step == 0
+        k.ix_ele_source = 1
+        continue
+      end
 
-      rs = SVector(f0.r[1] + ds_source * sin(f0.theta), kp.y_source, f0.r[3] + ds_source * cos(f0.theta))
+      rs =SVector(f0.r[1] + ds_source * sin(f0.theta), kp.y_source, f0.r[3] + ds_source * cos(f0.theta))
       k.floor_s = FloorPosition(rs, f0.theta)
       k.L_vec = fk.r - rs
       k.L = sqrt(k.L_vec[1]^2 + k.L_vec[2]^2 + k.L_vec[3]^2)

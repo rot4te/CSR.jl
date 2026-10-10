@@ -109,7 +109,7 @@ function csr_binned_kick(z::AbstractVector, q::AbstractVector, alive::AbstractVe
   images = map(1:params.n_shield_images) do ns
     kp_ns = CSRKickPoint(geom, ix_ele_kick, s_kick, gamma; y_source = ns * params.beam_chamber_height,
                          kick_factor = (-1)^ns * 2 * kick_factor)
-    image, _ = csr_image_table(geom, kp_ns, bins.dz, n_bin, backend)
+    image, _ = csr_image_table(geom, kp_ns, bins.dz, n_bin, backend; bin_integrate = !params.bmad_compat)
     csr_image_convolve!(kick, image, bins.charge, coef)
     image
   end
@@ -120,17 +120,17 @@ csr_step_result(st) = CSRStepResult(st.bins.z_center, st.bins.charge ./ st.bins.
                                     st.I_csr ./ st.ds_kick, st.s_source)
 
 """
-    csr_ref_energy(E_start, E_end, s, L; bmad_compat = false)
+    csr_ref_energy(E_start, E_end, s, L)
 
 Reference total energy at `s` in an element of length `L` with entrance/exit reference energies
 `E_start`/`E_end`, linearly interpolated as in Bmad's `track1_bunch_csr` ("linear energy gain in a cavity").
 
-Bmad's code (csr_and_space_charge_mod.f90:330–331) weights the two ends the other way round, giving the exit
-energy at `s = 0` (`planning/PLAN.md`, V6); `bmad_compat = true` reproduces that.
+Bmad weighted the two ends the other way round until bmad-ecosystem PR #2199 (2026-10-06; `planning/PLAN.md`, V6);
+CSR.jl follows the fixed version in both modes.
 """
-function csr_ref_energy(E_start, E_end, s, L; bmad_compat::Bool = false)
+function csr_ref_energy(E_start, E_end, s, L)
   f1 = s / L
-  return bmad_compat ? f1 * E_start + (1 - f1) * E_end : (1 - f1) * E_start + f1 * E_end
+  return (1 - f1) * E_start + f1 * E_end
 end
 
 """

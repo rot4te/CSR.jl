@@ -123,6 +123,15 @@ function csr_kick_reference!(pz::AbstractVector, z::AbstractVector, q::AbstractV
       s_source_calc!(k, geom, kp_ns)
       image[i+n_bin+1] = image_charge_kick(k, geom, kp_ns)
     end
+    # Default: hat-weighted bin integral of the kernel (moments over lag intervals m = -n_bin-1:n_bin)
+    if !params.bmad_compat
+      u_min = image_u_min(kp_ns)
+      tol = image_hat_tol(geom, kp_ns, image, bins.dz, 1e-6, u_min)
+      mom = [image_interval_moments!(k, geom, kp_ns, m, bins.dz, tol, u_min) for m in -n_bin-1:n_bin]
+      for i in -n_bin:n_bin
+        image[i+n_bin+1] = (mom[i+n_bin+1][1] + mom[i+n_bin+2][2]) / bins.dz
+      end
+    end
     for i in 1:n_bin
       acc = 0.0
       for j in 1:n_bin

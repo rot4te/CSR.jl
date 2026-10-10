@@ -105,6 +105,44 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) * (r.z_center[2] - r.z_ce
     end
   end
 
+  @testset "Upstream infinite drift: warm start walks back" begin
+    for g in (0.0, 2.0)
+      geom = CSRGeometry([0.05, 0.1], [g, 0.0], zeros(3, 6))
+      kp = CSR.CSRKickPoint(geom, 2, 0.07, 50.0; y_source = 0.02)
+      k = CSR.CSRKick1(); k.ix_ele_source = 2; k.dz_particles = 0.08
+      CSR.s_source_calc!(k, geom, kp)
+      @test k.ix_ele_source == 0
+      # A search warm-started upstream of the lattice walks back when the source is inside the lattice
+      for dz in (-0.002, -0.03)   # sources in element 1, and ahead of the kick point
+        k.ix_ele_source = 0; k.dz_particles = dz
+        CSR.s_source_calc!(k, geom, kp)
+        k2 = CSR.CSRKick1(); k2.ix_ele_source = 2; k2.dz_particles = dz
+        CSR.s_source_calc!(k2, geom, kp)
+        @test k.ix_ele_source == k2.ix_ele_source >= 1
+        @test k.floor_s == k2.floor_s
+      end
+    end
+  end
+
+  # Hat-weighted bin integral of the uniform-motion field: second difference of G with G'' = uniform_field
+  # (G(u) = -asinh(γu/y)/γ²), divided by dz².
+  hat_uniform_field(l, dz, y, gamma) =
+    -(asinh(gamma * (l + 1) * dz / y) - 2asinh(gamma * l * dz / y) + asinh(gamma * (l - 1) * dz / y)) /
+    (gamma * dz)^2
+
+  @testset "Drift: hat-integrated image table, γ = $gamma, y = $y, dz = $dz" for (gamma, y, dz) in (
+      (100.0, 0.01, 2e-4), (1e4, 3e-3, 1e-4))
+    n_bin = 40
+    geom = CSRGeometry([10.0], [0.0], zeros(2, 6))
+    kp = CSR.CSRKickPoint(geom, 1, 5.0, gamma; y_source = y)
+    hat, _ = CSR.csr_image_table(geom, kp, dz, n_bin, CSR.CPU(); bin_integrate = true)
+    ana = [hat_uniform_field(l, dz, y, gamma) for l in -n_bin:n_bin]
+    @test maxrel(hat, ana) < 1e-4
+    # Point sampling misses the structure when dz ≫ y/γ
+    point, _ = CSR.csr_image_table(geom, kp, dz, n_bin, CSR.CPU())
+    gamma * dz > 10y && @test maxrel(point, ana) > 0.5
+  end
+
   # Kernels vs. serial reference, image table independent of the lag blocking
   L3 = [0.2, 0.3, 0.2]
   g3 = [0.0, 1.5, 0.0]
@@ -139,6 +177,11 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) * (r.z_center[2] - r.z_ce
       @test tables[2] == tables[1]
       @test tables[3] == tables[1]
       bc || @test maximum(tables[1][2]) > sum(L3)   # sources past the lattice end are reached
+      hats = [CSR.csr_image_table(geom, kp, 1e-4, 120, CSR.CPU(); n_block, bin_integrate = true)
+              for n_block in (1, 7, 241)]
+      @test hats[2] == hats[1]
+      @test hats[3] == hats[1]
+      @test hats[1][2] == tables[1][2]   # s_source at the lags
     end
   end
 
@@ -161,5 +204,14 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) * (r.z_center[2] - r.z_ce
     @test 0 < ratio[0.03] < 0.06
     @test 0.9 < ratio[0.1] < 0.95   # mild shielding
     @test ratio[1.0] ≈ 1 rtol = 1e-3
+    # h = 3 mm: the image kernel's structure is much finer than a bin. The hat-weighted table gives the same
+    # result for coarse and fine bins (fixed layer count); point sampling (bmad_compat) does not.
+    geom_c = CSRGeometry(circle_lattice(10.0, 0.1, 80)...; bmad_compat = true)
+    kick3(p) = csr_kick!(zeros(N), zb, qb, aliveb, p.bmad_compat ? geom_c : geom, 80, 0.05, 1e4, electron, p)
+    ratio3(n_bin; bc = false) =
+      eloss(kick3(CSRParams(n_bin = n_bin, ds_step = 0.1, n_shield_images = 16, beam_chamber_height = 0.003,
+                            bmad_compat = bc))) / eloss(kick3(CSRParams(n_bin = n_bin, ds_step = 0.1, bmad_compat = bc)))
+    @test ratio3(60) ≈ ratio3(480) rtol = 0.03
+    @test !isapprox(ratio3(60; bc = true), ratio3(480; bc = true); rtol = 0.5)
   end
 end

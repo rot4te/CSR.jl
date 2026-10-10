@@ -20,7 +20,7 @@ compare_case(DIR, bl; name = "free_space", csr_params = params(), centroid_start
 compare_case(DIR, bl; name = "shielded", csr_params = params(n_shield_images = 4, beam_chamber_height = 0.01),
              centroid_start, beam0, coords_off = off)
 
-# CSR.jl's default mode (Bmad fixes V1, V5, V6, V7, V8 and the downstream source search on), for information:
+# CSR.jl's default mode (Bmad fixes V1, V5, V7, V8 and the downstream source search on), for information:
 # how far the default results are from Bmad.
 compare_case(DIR, bl; name = "free_space_default", csr_params = params(bmad_compat = false), centroid_start, beam0,
              coords_off = off)
