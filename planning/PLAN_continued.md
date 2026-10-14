@@ -15,6 +15,25 @@ Metal (M3, Metal.jl 1.11.1; no Float64 on Apple GPUs): Float32 grid (`dz`, `z0_e
 out-of-grid counters, typed literals in the kick kernel. `csr_bin_particles`, `csr_convolve!`, `csr_apply_kicks!` now
 run on `MtlArray{Float32}` (scratch probe, not in the test suite: charge 2e-6, convolve 9e-7, kick 0 relative vs
 CPU Float32). Wake/image tables remain CPU/Float64 (Phase 8). Float64 results unchanged (oftype on Float64 is exact).
+`KernelAbstractions.supports_float64(backend)` exists (KA ≥ 0.9.35 checked; Metal returns false).
+
+**D24 investigation (2026-10-14), nothing implemented; proposal pending with the user.** Scripts in
+`planning/diagnostics/`: `layer_shape.jl`, `image_kernel_exact.jl`, `layer_terms.jl 1024 400 <h>` (40 m arc),
+`layer_sum_methods.jl`, `layer_kick_profile.jl`.
+- 8 m arc artifact confirmed: the 1 cm terms are constant (−7.78e-11) once the image source leaves the arc (n ≳ 185,
+  Ls ≈ (12ρ²y²)^{1/4} ≥ 8 m). Use the 40 m arc (`circle_lattice(10.0, 0.1, 400)`).
+- Terms a_n = (−1)^n b_n, b_n smooth, one sign change (n ≈ 100 at 3 mm, ≈ 32 at 1 cm), tail |a_n| ∝ 1/n: the series
+  converges only conditionally; plain truncation error ~ |a_M|/2. Exact LW field at lag 0 also ∝ 1/y (physical tail).
+- 40 m arc, 1024 layers, reference avg(8): 1 + Σa = 2.8869e-3 (3 mm), 2.6444e-3 (1 cm), 4.1094e-2 (3 cm).
+- k-fold averaging of the last partial sums (fixed per-layer weights, linear in the tables): avg(8) from M = 32 layers
+  within ~1e-6 relative (energy and per-bin kick), M = 64 within ~2e-7 (term noise floor ~1e-7). Plain sum at 16
+  layers: kick 170× (3 mm), 6× (1 cm) the converged value. Wynn ε no better than avg(8).
+- Kernel accuracy (exact-retardation LW vs CSR.jl, `image_kernel_exact.jl`): ≤ 1e-3 relative away from lag 0 for small
+  y; near lag 0 CSR.jl is ~14% low at every y ≥ 3 cm (K(0)_csr/K(0)_exact ≈ 0.86). Large-y layers sit entirely in this
+  regime (radiation and Coulomb terms nearly cancel). Hypothesis (estimate, not verified): `dspline_len`'s second-order
+  small-angle path excess (Δθ up to ~0.26 rad at Ls = 5 m, ρ = 10 m) shifts the source by ~4 mm (CSR Ls 5.165 vs exact
+  5.169 at y = 0.768). Also seen: y = 3 mm, u = −3 mm (retarded source at the kick point): K_csr = +1.35e-3 vs exact
+  −1.11e-3 (1e-7 of the peak; likely the same-element/V4 seam).
 
 **Git.**
 - `phase6-ad`: `bb1dc13` Phase 6 steps 0–2 (ForwardDiff + rrule), 837/837 on 1 and 4 threads. Not pushed.
