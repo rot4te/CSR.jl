@@ -24,3 +24,7 @@ compare_case(DIR, bl; name = "shielded", csr_params = params(n_shield_images = 4
 # how far the default results are from Bmad.
 compare_case(DIR, bl; name = "free_space_default", csr_params = params(bmad_compat = false), centroid_start, beam0,
              coords_off = off)
+# Default mode with images: also hat-integrated image kernel (D20) and averaged layer sum (D24).
+compare_case(DIR, bl; name = "shielded_default",
+             csr_params = params(n_shield_images = 4, beam_chamber_height = 0.01, bmad_compat = false), centroid_start,
+             beam0, coords_off = off)

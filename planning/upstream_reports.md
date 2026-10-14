@@ -1,7 +1,8 @@
 # Draft upstream reports (not filed)
 
 Drafted 2026-10-09 for the user to review and file. Nothing here has been sent anywhere.
-Line numbers: Bmad master `00b4557af` (2026-10-08); BeamTracking.jl `fe92aac` (2026-10-02).
+Line numbers: Bmad master `00b4557af` (2026-10-08; `csr_and_space_charge_mod.f90` unchanged through `7c9df4059`,
+REL 20261014-0, checked 2026-10-14); BeamTracking.jl `fe92aac` (2026-10-02). Item 5 added 2026-10-14.
 
 Already fixed upstream, no report needed: **V6** (swapped energy-interpolation weights), bmad-ecosystem PR #2199,
 merged 2026-10-06. Note: open PR #2085 (wiggler subdivision) rewrites `s_source_calc`/`ddz_calc_csr`; V7 and V8 sites
@@ -12,10 +13,10 @@ V4 (round-off branches; harmless for symmetric bends). Could be added as questio
 
 ---
 
-## Bmad: one issue, four items
+## Bmad: one issue, five items
 
-**Title:** 1D CSR (`csr_and_space_charge_mod.f90`): four possible errors (dspline_len, first-bin integral, source
-geometry after zbrent, source direction for sources ahead)
+**Title:** 1D CSR (`csr_and_space_charge_mod.f90`): five possible errors (dspline_len coefficient, first-bin integral,
+source geometry after zbrent, source direction for sources ahead, small-angle path-length excess)
 
 Found while porting `csr_method = one_dim` to Julia (CSR.jl). Each item was checked numerically against quadrature
 or an analytic limit; scripts available on request. Line numbers are for master `00b4557af`.
@@ -49,6 +50,26 @@ from sources ahead. Check on a drift (γ = 100, y = 0.01, coulomb term): sources
 true direction reproduces the analytic values to 5 digits. Reached only when the bunch is longer than about the
 chamber height (`|lag| > ns·beam_chamber_height`); `csr_and_space_charge_test` does not reach it. Line dates from
 `ff57a4dda` (2016).
+
+**5. `dspline_len` (1770–1799) and its callers: small-angle path-length excess.**
+`dspline_len` returns `½∫(x′ − dθ)² ds`, the second-order expansion of the path excess over the chord (or over the
+source–kick line, angle `dθ` in the element's chord frame). `ddz_calc_csr` sums it over elements to get
+`dL = Ls − L` for the retardation condition (lines 1055, 1065–1072; also 290, 907, 1420). Since the projection of a
+path onto a line is `∫cos(θ − θ_L) ds_arc`, the exact excess per element is
+`∫ x′²/(1 + √(1 + x′²)) ds + 2 sin²(dθ/2) Δs − sin(dθ) Δx` (Δs, Δx: chord and offset change over the interval);
+`½∫(x′ − dθ)²` drops the dθ⁴ terms. Over the long source distances of image charges `dθ` is not small (≈ 0.26 rad at
+Ls = 5 m on ρ = 10 m). On a circle the small-angle form overestimates the excess by `Ls⁵/(1920ρ⁴)` (the next term of
+`ρφ − 2ρ sin(φ/2)`), i.e. a relative error `Ls²/(80ρ²)`. Checked (ρ = 10 m, γ = 1e4, kick 5 cm before the end of a
+40 m arc of 0.1 m sector bends, centroid on axis): excess too large by 1.8e-5, 1.9e-4, 1.9e-3 m at Ls = 3.2, 5.2,
+8.2 m, matching the formula. It acts as a shift of the source lag, so the retarded image source sits too close (Ls
+5.165 vs 5.169 m at y = 0.768 m). The image kernel (`image_charge_kick_calc`) evaluated at Bmad's source point equals
+an independent Liénard–Wiechert field with exact retardation evaluated at that same point (≤ 2e-3), so the field
+formula is fine and the error is the source position. Near lag 0 the kernel is steep, and at every height
+y ≥ 3 cm it comes out ~14% low (0.86 of the exact-retardation field); high image layers sit entirely in that region.
+Small heights and free space are affected far less: the image kernel at y = 3 mm, lag 6 mm is 0.1% high, and
+free-space `I_csr` for a 1 mm bunch (lags to 6 mm) on a ρ = 10 m arc changes by ≤ 4e-4 relative. With the exact form (4-point Gauss–Legendre
+for the `x′` term) the kernel agrees with the exact field to ≤ 3e-5 at y = 3 cm–1.9 m, at ~1% extra run time in our
+port. The exact form also makes item 1 moot.
 
 ---
 

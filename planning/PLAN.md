@@ -48,9 +48,7 @@ GTPSA TPS).
    tables too.
 2. Phase 7 (TPS), Phase 8 (FFT convolution, benchmarks, GPU wake table, upstream hook proposal).
 
-**For the user:** file the upstream reports drafted in `planning/upstream_reports.md` (Section 4). Optionally rerun
-the cross-check: default-mode free-space results changed slightly with the exact path excess (compat sections are
-unaffected).
+**For the user:** file the upstream reports drafted in `planning/upstream_reports.md` (Section 4, now incl. V9).
 
 ---
 
@@ -138,7 +136,7 @@ extensions silently do not load.
 **Upstream reports — drafted in `planning/upstream_reports.md`, not filed (the user files):** Bmad V1, V5, V7, V8;
 BeamTracking Section 7b items and the `R_to_gamma`/`R_to_v` ion bug. A GitHub search (via WebFetch, summarized:
 moderately reliable) found no existing issue. Open Bmad PR #2085 rewrites `s_source_calc`; V7/V8 line numbers may
-move. Candidate addition: V9 (small-angle path excess) — not yet drafted.
+move. V9 (small-angle path excess) drafted as Bmad item 5 (2026-10-14).
 
 ---
 
@@ -228,7 +226,7 @@ move. Candidate addition: V9 (small-angle path excess) — not yet drafted.
 | V6 | `track1_bunch_csr` 330–331 | Energy interpolation weights reversed. | Fixed upstream (PR #2199); both modes follow it (D21). |
 | V7 | `s_source_calc` 997 | After `super_zbrent`, source geometry from the last evaluation, not the root. Catastrophic only when `ddz(0) == 0` exactly with CSR.jl's first-bin quadrature (I_csr 9.6e6 instead of −40). | Re-evaluated unless compat; regression test. |
 | V8 | `ddz_calc_csr` 1077 | `floor_s%theta` = source direction + π for sources ahead (image kick only). Drift check: ahead sources 1.21, 8.99 (Bmad) vs −0.826, −0.111 analytic; true direction matches to 5 digits. Line from `ff57a4dda` (2016). | Fixed (D13); compat flag. Script `diagnostics/v8_drift.jl`. |
-| V9 | `dspline_len` (all callers) | Small-angle path excess `½∫(x′ − dθ)²` drops the dθ⁴ terms: on a circle too large by Ls⁵/(1920ρ⁴) (1.8e-5, 1.9e-4, 1.9e-3 m at Ls = 3.2, 5.2, 8.2 m; ρ = 10 m). Acts as a lag shift; the image kernel near lag 0 at large y was ~14% low. | Exact `path_excess` in default mode; compat keeps Bmad. Not yet in `upstream_reports.md`. |
+| V9 | `dspline_len` (all callers) | Small-angle path excess `½∫(x′ − dθ)²` drops the dθ⁴ terms: on a circle too large by Ls⁵/(1920ρ⁴) (1.8e-5, 1.9e-4, 1.9e-3 m at Ls = 3.2, 5.2, 8.2 m; ρ = 10 m). Acts as a lag shift; the image kernel near lag 0 at large y was ~14% low. | Exact `path_excess` in default mode; compat keeps Bmad. Drafted in `upstream_reports.md` (item 5). |
 
 Other Bmad notes:
 - At lag 0 the image kick on a drift is 0.125 vs analytic 0 (3e-5 of the peak): Bmad's approximate retardation
@@ -350,6 +348,32 @@ CSR.jl reproduces Bmad's CSR to the precision of Bmad's diagnostic output; remai
 BeamTracking vs Bmad tracking. Default mode vs Bmad: final Δpz differs by 53% (single bend), 6% (Tao example), by
 elimination V5.
 
+**Rerun 2026-10-14** (`stage-c` after D22; BeamTracking 0.8.7, Beamlines 0.11.0, Bmad conda 20260918.0; result files
+in `crosscheck/<case>/result.txt`, `geom_check.txt`). New section `shielded_default` (default mode with images: D20
+hat kernel, D24 averaging, V8, V9). Max |CSR.jl − Bmad| / max |Bmad|:
+
+| Case | CSR off, sliced (x, px) | wake kick/m compat (free, shielded) | Δpz compat (free, shielded) | Δpz default (free, shielded) | I_csr from Bmad's orbit |
+|---|---|---|---|---|---|
+| pure bend, on axis | 8.0e-15, 2.4e-15 | 3.6e-7, 4.9e-7 | 4.1e-8, 7.8e-8 | 0.48, 0.42 | — |
+| pure bend, centroid offset | (as on axis) | 4.1e-7, 4.1e-7 | 4.1e-8, 7.8e-8 | 0.48, 0.42 | — |
+| regression bend | 1.2e-8, 1.3e-7 | 1.1e-5, 9.3e-6 | 2.8e-6, 6.2e-6 | 0.49, 0.43 | 2.8e-7 |
+| Tao example | 4.3e-8, 2.0e-7 | 9.6e-6, 2.1e-4 | 3.6e-6, 5.1e-6 | 0.046, 0.85 | 2.0e-6 |
+| Tao example with patch | not meaningful (tracking) | — | — | — | 6.1e-7 |
+
+- **Compat sections changed, but not because of CSR.jl:** the pre-session code (`468fc83`, run in a worktree against
+  today's dependencies) gives the same compat numbers as `stage-c`. The change comes from BeamTracking: pure-bend
+  tracking without CSR now agrees with Bmad to 8e-15 (was 1e-8), so the pure-bend Δpz improved 80× (3.2e-6 → 4.1e-8);
+  regression bend wake 5.9e-6 → 1.1e-5 and Tao-example shielded wake 9.8e-5 → 2.1e-4 moved the other way, with
+  Δpz still ≤ 6e-6. Reference floor geometry unchanged (≤ 5e-16).
+- **Default mode, free space:** I_csr now differs from Bmad by up to 1.8% (pure bend, step 1; 1e-4 by step 10; Tao
+  example 5.8%), was 1e-5. Cause: V9 at the bend entrance. With all sources on the upstream infinite drift,
+  `dL = Lsz0 − Lz` is a small difference (2.5e-7 m) of lengths of order 1 cm, and Bmad's small-angle arc length to the
+  kick point (`Lsz0`, spline slope ~0.06 in this 0.12 rad bend) is too long by 1.1e-8 m: far-source dL 4.6% too large
+  in compat vs 1.9e-4 (finite-distance residual) in default, checked against the quadrature arc length. Δpz default vs
+  Bmad unchanged (V5 dominates: 0.48–0.49 single bends, 0.046 Tao example).
+- **Default mode, shielded:** 0.42–0.43 (single bends), 0.85 (Tao example) vs Bmad: D20, D24 (4 layers averaged),
+  V8 and V9 together; for information only.
+
 ### Sliced centroid, D14 (10-06)
 Regression bend vs Bmad: wake 9.9e-5 → 5.9e-6, Δpz 4.8e-5 → 3.1e-6 (shielded 1.1e-4 → 4.8e-6, 6.0e-5 → 3.4e-6).
 
@@ -397,7 +421,8 @@ Hat costs ~5× the source solves of point sampling.
 - **V9, exact path excess.** Diagnosis (`image_large_y.jl`): CSR.jl's kernel = exact LW field at its own source
   position; source misplaced by the dropped Ls⁵/(1920ρ⁴). `path_excess = ∫ x′²/(1+√(1+x′²)) ds + 2 sin²(dθ/2) Δs −
   sin(dθ) Δx` (from L = ∫cos(θ − θ_L) ds_arc), Gauss–Legendre 4 points. After: kernel vs exact ≤ 3e-5 (y = 3 cm–1.9 m),
-  circle excess ≤ 1e-8 relative (compat 4e-5–6.5e-4 = Ls²/(80ρ²)), free-space I_csr at 6 mm lag 1.0009 → 0.99999.
+  circle excess ≤ 1e-8 relative (compat 4e-5–6.5e-4 = Ls²/(80ρ²)), image kernel at y = 3 mm, lag 6 mm
+  1.0010 → 0.99999 of exact.
   Cost: `csr_kick!` 6.68 → 6.79 ms (free space), 70.4 → 70.6 ms (16 layers), 1 thread (`diagnostics/bench_excess.jl`).
   Default free-space I_csr changes up to ~7e-4 relative at long lags.
 - **D22, exact SaganCavity split.** `sagan_segment!` in `sagan.jl`: a drift segment [a, b] applies its half kicks

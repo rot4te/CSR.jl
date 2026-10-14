@@ -9,8 +9,8 @@ Needs `tao` (default `~/miniforge3/envs/bmad/bin/tao`, or set `ENV["TAO"]`) and 
 BeamTracking and Beamlines. From this directory:
 
 ```
-julia --project=<env> run_case.jl <case> <beamline> [cx cy]   # writes <case>/*.dat; output saved in <case>/result.txt
-julia --project=<env> geom_check.jl <case> <beamline>          # after run_case.jl
+julia --project=<env> run_case.jl <case> <beamline> [cx cy] > <case>/result.txt   # also writes <case>/*.dat
+julia --project=<env> geom_check.jl <case> <beamline> > <case>/geom_check.txt     # after run_case.jl
 ```
 
 | Case | Lattice | Command arguments |
@@ -29,7 +29,8 @@ ds_step 0.01; shielded: n_shield_images 4, beam_chamber_height 0.01. The CSR cen
 ## What is compared
 
 - `run_case.jl`: (1) tracking without CSR; (2) per-step wake (Bmad `diagnostic_output_file`, 7 significant digits);
-  (3) the CSR-induced change of the final coordinates, (CSR on) − (CSR off). CSR.jl's "off" is `track_csr!` with the
+  (3) the CSR-induced change of the final coordinates, (CSR on) − (CSR off). Sections: `free_space`, `shielded` (`bmad_compat`), and for
+  information `free_space_default`, `shielded_default` (CSR.jl's default mode vs Bmad). CSR.jl's "off" is `track_csr!` with the
   charges scaled by 1e-30 (same slicing), because BeamTracking's integrators depend on the slicing.
 - `geom_check.jl`: CSR alone, independent of tracking: CSR.jl's reference floor positions vs Bmad's, and `I_csr` and
   `s_source` per step computed by CSR.jl from Bmad's design orbit.
@@ -37,3 +38,5 @@ ds_step 0.01; shielded: n_shield_images 4, beam_chamber_height 0.01. The CSR cen
 Notes on Bmad's diagnostic file: with image charges it divides kick and I_csr by the last image layer's
 `kick_factor` (`(−1)^n·2` times the free-space one) and prints that layer's source points; the S-position has 6
 decimals (use `i_step·ds`).
+
+Results and their interpretation: `planning/PLAN.md`, Phase 3 (latest rerun 2026-10-14).
