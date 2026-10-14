@@ -2,8 +2,9 @@ module CSRChainRulesCoreExt
 
 using CSR, ChainRulesCore
 
-# Pullback of csr_kick_pz with respect to pz, z and q by explicit adjoint kernels (src/adjoint.jl). The bin grid and
-# the kick tables are constants; derivatives with respect to the geometry, s_kick and gamma are not implemented.
+# Pullback of csr_kick_pz with respect to pz, z and q by explicit adjoint kernels (src/adjoint.jl,
+# src/kernels/adjoint.jl). The bin grid and the kick tables are constants; derivatives with respect to the geometry,
+# s_kick and gamma are not implemented.
 function ChainRulesCore.rrule(::typeof(csr_kick_pz), pz::AbstractVector, z::AbstractVector, q::AbstractVector,
                               alive::AbstractVector{Bool}, geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma,
                               species, params::CSRParams; kick_factor = 1.0, pz_scale = 1.0)

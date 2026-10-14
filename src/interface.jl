@@ -1,4 +1,4 @@
-# Functions whose methods are defined in package extensions.
+# Functions implemented in package extensions (CSRBeamTrackingBeamlinesExt).
 
 """
     slice_element(ele, s0, L_slice, first::Bool, last::Bool; context) -> LineElement

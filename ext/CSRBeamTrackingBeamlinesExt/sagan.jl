@@ -8,6 +8,11 @@
 # Consecutive slices must share their boundary exactly (s0 + L_slice of one == s0 of the next), or an event on a
 # boundary can be dropped or applied twice.
 
+"""
+    bt_ext()
+
+BeamTracking's Beamlines extension module (its internal helpers are used for SaganCavity slices).
+"""
 bt_ext() = Base.get_extension(BeamTracking, :BeamTrackingBeamlinesExt)
 
 """
@@ -46,13 +51,31 @@ struct SaganSlice{E,TM,M,K}
   last::Bool
 end
 
+"""
+    sagan_kick_factor(i_step, n_cells)
+
+2 for the end cell kicks (half strength), 1 otherwise, as BeamTracking's `sagan_cavity_thick!`.
+"""
 @inline sagan_kick_factor(i_step, n_cells) = (i_step == 0 || i_step == n_cells) ? 2 : 1
 
-# Length of segment [a, b] (nominal length len) inside [s0, s1]; the nominal length if it is fully inside.
+"""
+    sagan_overlap(a, b, len, s0, s1)
+
+Length of segment [a, b] (nominal length len) inside [s0, s1]; the nominal length if it is fully inside.
+"""
 @inline sagan_overlap(a, b, len, s0, s1) = (a >= s0 && b <= s1) ? len : max(zero(len), min(b, s1) - max(a, s0))
+"""
+    sagan_in_window(p, s0, s1, last)
+
+Whether a point event at `p` belongs to slice `[s0, s1]`: `s0 ≤ p < s1`, or `p ≤ s1` for the last slice.
+"""
 @inline sagan_in_window(p, s0, s1, last) = p >= s0 && (p < s1 || last)
 
-# Reference momentum after the cell kicks at p < s (p <= s if inclusive), applied as in sagan_cavity_thick!.
+"""
+    sagan_P0c_at(c, s, inclusive)
+
+Reference momentum after the cell kicks at p < s (p <= s if inclusive), applied as in sagan_cavity_thick!.
+"""
 function sagan_P0c_at(c::SaganSlice, s, inclusive)
   P0c = c.P0c0
   before(p) = p < s || (inclusive && p <= s)
@@ -68,8 +91,12 @@ function sagan_P0c_at(c::SaganSlice, s, inclusive)
   return P0c
 end
 
-# Reference time from the cavity entrance to s, with BeamTracking's per-segment reference velocities
-# (universal! for SaganCavity). sagan_dt_ref(c, c.L) is the whole-cavity value.
+"""
+    sagan_dt_ref(c, s)
+
+Reference time from the cavity entrance to s, with BeamTracking's per-segment reference velocities
+(universal! for SaganCavity). sagan_dt_ref(c, c.L) is the whole-cavity value.
+"""
 function sagan_dt_ref(c::SaganSlice, s)
   sp = c.species
   E1 = c.E0 + c.dE_ref
@@ -89,10 +116,14 @@ function sagan_dt_ref(c::SaganSlice, s)
   return dt
 end
 
-# Drift segment [a, b] (nominal length len) of the whole cavity, as BeamTracking's sagan_cavity_inside_drift!
-# (inside = true: half ponderomotive kicks, standing wave only) or sagan_cavity_outside_drift!: half kicks of strength
-# len/2 at a and b, drift or solenoid over len. The half kicks are point events at the segment ends (same window rule
-# as the cell kicks); only the drift is split, and drifts compose exactly, so slices reproduce the whole cavity.
+"""
+    sagan_segment!(i, coords, val_rad_damping_on, val_rad_fluctuations_on, , , , m_order, Kn, Ks, q, q_gradient, a_spin, mass, P0c, a, b, len, s0, s1, last, inside)
+
+Drift segment [a, b] (nominal length len) of the whole cavity, as BeamTracking's sagan_cavity_inside_drift!
+(inside = true: half ponderomotive kicks, standing wave only) or sagan_cavity_outside_drift!: half kicks of strength
+len/2 at a and b, drift or solenoid over len. The half kicks are point events at the segment ends (same window rule
+as the cell kicks); only the drift is split, and drifts compose exactly, so slices reproduce the whole cavity.
+"""
 @inline function sagan_segment!(i, coords, val_rad_damping_on, val_rad_fluctuations_on, ::Val{traveling_wave},
                                 ::Val{has_mult}, ::Val{has_sol}, m_order, Kn, Ks, q, q_gradient, a_spin, mass, P0c,
                                 a, b, len, s0, s1, last, inside) where {traveling_wave, has_mult, has_sol}
@@ -121,8 +152,12 @@ end
   return nothing
 end
 
-# Kernel: the window [s0, s1] of sagan_cavity_thick! / sagan_cavity_zero_L_active!. Branches only on scalars
-# (BeamTracking may call it with SIMD lanes). Segment ends use the same expressions as the neighbouring events.
+"""
+    sagan_slice_kernel!(i, coords, val_rad_damping_on, val_rad_fluctuations_on, val_traveling_wave, mass, q, P0c, dE_ref, t_ref, n_cells, val_has_mult, val_has_sol, m_order, Bn, Bs, a, q_gradient, q_voltage, rf_omega, t_phi0, L_active, L, s0, s1, last)
+
+Kernel: the window [s0, s1] of sagan_cavity_thick! / sagan_cavity_zero_L_active!. Branches only on scalars
+(BeamTracking may call it with SIMD lanes). Segment ends use the same expressions as the neighbouring events.
+"""
 function sagan_slice_kernel!(i, coords, val_rad_damping_on, val_rad_fluctuations_on, val_traveling_wave,
                              mass, q, P0c, dE_ref, t_ref, n_cells, val_has_mult, val_has_sol, m_order, Bn, Bs,
                              a, q_gradient, q_voltage, rf_omega, t_phi0, L_active, L, s0, s1, last)
@@ -175,6 +210,13 @@ function sagan_slice_kernel!(i, coords, val_rad_damping_on, val_rad_fluctuations
   return nothing
 end
 
+"""
+    slice_sagan(ele, up, s0, L_slice, first, last, context) -> SaganSlice
+
+SaganCavity slice `[s0, s0 + L_slice]`, with the cavity constants computed for the whole element as BeamTracking does
+(RF frequency and phase, cells, gradient, multipoles at the entrance energy), alignment per slice and apertures at
+the ends.
+"""
 function slice_sagan(ele::LineElement, up, s0, L_slice, first, last, context)
   bte = bt_ext()
   tm = up.tracking_method
@@ -229,7 +271,11 @@ function slice_sagan(ele::LineElement, up, s0, L_slice, first, last, context)
                     float(L_active), L, m_order, Bn, Bs, has_mult, has_sol, float(s0), float(s0 + L_slice), first, last)
 end
 
-# Reference momentum [eV] at the slice exit and the linearly ramped one used for the CSR kick there.
+"""
+    sagan_exit_P0c(c)
+
+Reference momentum [eV] at the slice exit and the linearly ramped one used for the CSR kick there.
+"""
 sagan_exit_P0c(c::SaganSlice) = c.last ? sagan_P0c_at(c, c.L, true) : sagan_P0c_at(c, c.s1, false)
 
 """
@@ -239,6 +285,13 @@ Track `bunch` through a slice made by `CSR.slice_element`.
 """
 track_slice!(bunch, s::LineElement, p_over_q_ref) = track!(bunch, s; _p_over_q_ref = p_over_q_ref)
 
+"""
+    track_slice!(bunch, c::SaganSlice)
+
+Track `bunch` through a SaganCavity slice: entrance alignment/aperture, `sagan_slice_kernel!`, exit
+alignment/aperture, with BeamTracking's `KernelChain`/`launch!`. Updates `bunch.t_ref` (whole-cavity `dt_ref` at the
+last slice, as BeamTracking).
+"""
 function track_slice!(bunch, c::SaganSlice, p_over_q_ref = c.p_over_q_ref)
   bte = bt_ext()
   bunch.species == c.species || error("track_slice!: bunch species differs from the cavity's reference species")
@@ -268,6 +321,11 @@ function track_slice!(bunch, c::SaganSlice, p_over_q_ref = c.p_over_q_ref)
   return bunch
 end
 
+"""
+    sagan_ends(bte, tm, kc, c, ap, dp, L_slice, entering)
+
+Alignment and aperture kernels at the slice entrance or exit, in the order BeamTracking uses for SaganCavity.
+"""
 function sagan_ends(bte, tm, kc, c, ap, dp, L_slice, entering)
   pq = c.p_over_q_ref
   if isactive(ap)

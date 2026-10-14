@@ -27,7 +27,10 @@ Contents
 Bmad's Fortran `csr_method = one_dim`; GPU-capable (KernelAbstractions) and differentiable (ForwardDiff, ChainRules,
 GTPSA TPS).
 
-**Current branch: `stage-c`** (from `phase6-open-questions` `468fc83`), not pushed. 1035/1035 tests on 1 and 4 threads.
+**Current branch: `reorg`** (from `stage-c` `f3c69bf`), not pushed: source layout as BeamTracking.jl (`src/kernels/`,
+`src/utils/`), docstrings for every function, README.md, Documenter docs (`docs/`, GitHub Actions workflow).
+1035/1035 tests on 1 and 4 threads; docs build clean. `stage-c` (from `phase6-open-questions` `468fc83`) holds the
+physics work below.
 
 | Commit | Content |
 |---|---|
@@ -142,23 +145,38 @@ move. V9 (small-angle path excess) drafted as Bmad item 5 (2026-10-14).
 
 ## 5. Code map
 
-### Core (`src/`), no BeamTracking dependency
+### Core (`src/`), no BeamTracking dependency — layout as BeamTracking.jl (since branch `reorg`, 2026-10-14)
+
+Top level: types and host-side functions (launch kernels, allocate, check). `kernels/`: KernelAbstractions
+`@kernel`s, `@inline` device functions, and the per-work-item physics the kernels call. `utils/`: helpers.
 
 | File | Contents |
 |---|---|
-| `CSR.jl` | Module. `using StaticArrays, AtomicAndPhysicalConstants, KernelAbstractions; import Atomix`. Exports `CSRParams, FloorPosition, CSRGeometry, CSRElementInfo, CSRBins, CSRKickPoint, CSRStepResult, planar_survey, csr_bin_particles, csr_kick!, csr_kick_pz, csr_kick_coef, csr_n_step, dspline_len, track_csr!`. |
-| `params.jl` | `CSRParams(; n_bin=40, particle_bin_span=2, ds_step=0.0, n_shield_images=0, beam_chamber_height=0.0, image_sum_order=8, all_bin_quadrature=true, bmad_compat=false)` with validation; `image_layer_weight(ns, params)`. Docstring lists every compat difference. |
-| `backend.jl` | `csr_float_type(backend)` (Float64, or Float32 without `supports_float64`), `device_scalar`, `table_backend` (CPU), `to_backend` (copy tables to the device). |
-| `geometry.jl` | `FloorPosition`; `planar_survey(L, g; start)` (g > 0 bends to −x); `advance_floor`, `advance_floor_patch`; `centroid_floor`; `modulo2`; spline helpers; `chord_spline` (= Bmad `create_a_spline`); `dspline_len` (Bmad small-angle excess, V1); `path_excess` (exact excess, default mode); `CSRElementInfo`; `CSRGeometry(L, g, centroid; ref_start, bmad_compat)` and `CSRGeometry(L, g, ref_exit, centroid)` (centroid row 1 = start, row i+1 = exit of element i); `s_ref_to_s_chord` (V3, literal). |
-| `binning.jl` | `CSRBins{T,V,W}`; `triangle_overlap`; `nint` (Fortran nint, exact generic fallback); `csr_deposit_kernel!` (Atomix atomic add for Float32/Float64; other types serial CPU loop); `csr_edge_gradient_kernel!`; `csr_bin_particles` (grid in the particles' float type, built elementwise; Int32 out-of-grid counter); `primal`. |
-| `source_point.jl` | `CSRKickPoint`; `mutable struct CSRKick1`; `ddz_calc_csr!`; `zbrent` (`super_zbrent`); `s_source_calc!` (element walk + Brent + upstream infinite-drift quadratic; V4 literal; V7 re-evaluation unless compat; V8 fix; downstream walk and downstream infinite drift for dz < 0 unless compat; warm-start walk-back from both infinite drifts); `source_s`. |
-| `wake.jl` | `I_csr_value`; `I_csr!`; `I_csr_quadrature!`; kernels `csr_wake_kernel!`, `csr_bin_quadrature_kernel!`, `csr_trapezoid_kernel!`; `csr_wake_table` (CPU only); `I_csr_integral`; image charges: `image_charge_kick`, `csr_image_kernel!`, hat integration (`image_u_min`, `image_hat_tol`, `csr_image_hat_kernel!`, combine kernel), `csr_image_table(...; bin_integrate, rtol)` (lags −n_bin:n_bin). |
-| `convolve.jl` | `csr_convolve!` (direct causal sum, one item per bin); `csr_image_convolve!`. |
-| `kick.jl` | `csr_apply_kicks!(pz, z, alive, bins, kick; pz_scale)` (linear interpolation between bin centres; no z rescaling). |
-| `step.jl` | `csr_kick_coef` (V2 unresolved for ions); `CSRStepResult`; `csr_kick!`; `csr_kick_pz`; `csr_binned_kick` (tables on `table_backend`, copied with `to_backend`; layer weights); `csr_step_result`; `csr_ref_energy`; `csr_n_step`. |
-| `adjoint.jl` | `csr_kick_adjoint`: explicit adjoint kernels (kick-cotangent scatter with atomics; deposit adjoint as a gather). |
-| `reference.jl` | Phase 1 serial reference (non-exported): `csr_bin_particles_reference`, `csr_convolve_reference!`, `csr_apply_kicks_reference!`, `csr_kick_reference!`. Ground truth for the kernels. |
+| `CSR.jl` | Module, exports (`CSRParams, FloorPosition, CSRGeometry, CSRElementInfo, CSRBins, CSRKickPoint, CSRStepResult, planar_survey, csr_bin_particles, csr_kick!, csr_kick_pz, csr_kick_coef, csr_n_step, dspline_len, track_csr!`), includes (types first: method signatures annotate them). |
+| `types.jl` | `FloorPosition`, `CSRElementInfo`, `CSRGeometry`, `CSRKickPoint`, `CSRKick1`, `CSRBins`, `CSRStepResult`, `CSRParams` (with validation; docstring lists every compat difference). |
+| `geometry.jl` | `CSRGeometry(L, g, centroid; ref_start, bmad_compat)`, `CSRGeometry(L, g, ref_exit, centroid)`, `CSRKickPoint(geom, ix, s_kick, γ; y_source, kick_factor)`. |
+| `binning.jl` | `csr_bin_particles` (grid in the particles' float type; Int32 counter; serial path for non-atomic types). |
+| `tables.jl` | `csr_wake_table`, `csr_image_table` (CPU only). |
+| `kick.jl` | `csr_convolve!`, `csr_image_convolve!`, `csr_apply_kicks!`, `csr_kick!`, `csr_kick_pz`, `csr_binned_kick` (tables on `table_backend`, `to_backend`, layer weights), `csr_step_result`. |
+| `adjoint.jl` | `csr_kick_adjoint`. |
+| `reference.jl` | Serial reference (`csr_*_reference`), ground truth for the kernels. |
 | `interface.jl` | Stubs + docstrings for `slice_element`, `csr_sliceable`, `track_csr!`. |
+| `kernels/binning.jl` | `triangle_overlap`, `deposit_ix0`, `deposit_particle!`, `csr_deposit_kernel!`, `csr_edge_gradient_kernel!`. |
+| `kernels/source_point.jl` | `ddz_calc_csr!`, `s_source_calc!` (V4 literal, V7, V8, downstream search, infinite drifts with walk-back). |
+| `kernels/wake.jl` | `I_csr_value`, `I_csr!`, `I_csr_integral`, `I_csr_quadrature!`, `csr_wake_kernel!`, `csr_trapezoid_kernel!`, `csr_bin_quadrature_kernel!`. |
+| `kernels/image_charges.jl` | `image_charge_kick`, `csr_image_kernel!`, hat integration (`image_kernel_at!`, `image_simpson!`, `image_segment!`, `image_interval_moments!`, `csr_image_hat_kernel!`, `csr_image_hat_combine_kernel!`). |
+| `kernels/convolve.jl`, `kernels/kick.jl` | `csr_convolve_kernel!`, `csr_image_convolve_kernel!`; `csr_apply_kicks_kernel!`. |
+| `kernels/adjoint.jl` | `triangle_overlap_dzp`, `kick_cell`, `kick_adjoint_particle!`, five adjoint kernels. |
+| `utils/math.jl` | `nint`, `modulo2`, `cross3`, `dot3`. |
+| `utils/backend.jl` | `csr_float_type`, `device_scalar`, `table_backend`, `to_backend`, `AtomicAdd`, `PlainAdd`, `supports_atomic_add`, `primal`. |
+| `utils/spline.jl` | `spline_val/d1/d2`, `chord_spline`, `dspline_len` (Bmad, V1), `GL4_NODES/WEIGHTS`, `path_excess` (exact, V9). |
+| `utils/floor.jl` | `x_axis`, `z_axis`, `advance_floor`, `advance_floor_patch`, `planar_survey`, `centroid_floor`. |
+| `utils/chord_coordinates.jl` | `s_ref_to_s_chord` (V3 literal), `source_s`. |
+| `utils/root_finding.jl` | `zbrent` (`super_zbrent`). |
+| `utils/image_layers.jl` | `image_layer_weight` (D24), `image_u_min`, `image_hat_tol` (D20). |
+| `utils/kick_setup.jl` | `csr_kick_coef` (V2), `csr_ref_energy`, `csr_n_step`. |
+
+Every function has a docstring (the docs build enforces it with `checkdocs = :all`).
 
 ### Extensions (`ext/`)
 
@@ -498,3 +516,4 @@ Metal tests in the suite (conditional on Metal.jl).
 | `upstream_reports.md` | Drafted upstream reports (Section 4). |
 | `diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`; data `layer_terms_*.txt` (the `_400` files predate V9). |
 | `../crosscheck/` | Bmad/Tao cross-check (README there). |
+| `../docs/` | Documenter docs (`julia --project=docs docs/make.jl`; `docs/README.md`); pages Home, Usage, Physics model, Physics decisions, Validation, API, Internals. Deployed by `.github/workflows/Documentation.yml` from `main`. Keep "Physics decisions" in sync with Section 3 when physics changes. |

@@ -3,9 +3,25 @@
 # expressed in Beamlines parameters. Uses BeamTracking internals (quaternion and alignment helpers), checked
 # against BeamTracking dev after v0.8.4 (RungeKutta, Beamlines EMFieldParams).
 
+"""
+    has_fringe_in(f)
+    has_fringe_out(f)
+
+Whether `fringe_at = f` includes the entrance (exit) fringe.
+"""
 has_fringe_in(f::Fringe.T) = f == Fringe.BothEnds || f == Fringe.EntranceEnd
+"""
+    has_fringe_out(f)
+
+Whether `fringe_at = f` includes the exit fringe.
+"""
 has_fringe_out(f::Fringe.T) = f == Fringe.BothEnds || f == Fringe.ExitEnd
 
+"""
+    fringe_at_ends(fin, fout)
+
+`Fringe` value with the entrance fringe if `fin` and the exit fringe if `fout`.
+"""
 function fringe_at_ends(fin::Bool, fout::Bool)
   fin && fout && return Fringe.BothEnds
   fin && return Fringe.EntranceEnd
@@ -13,8 +29,12 @@ function fringe_at_ends(fin::Bool, fout::Bool)
   return Fringe.NoEnd
 end
 
-# Symplectic order that SciBmadStandard uses for this element
-# (mirrors ext/BeamTrackingBeamlinesExt/scibmadstandard_bl.jl, unchanged since BeamTracking v0.8.4).
+"""
+    sbs_order(bp, bm, rp)
+
+Symplectic order that SciBmadStandard uses for this element
+(mirrors ext/BeamTrackingBeamlinesExt/scibmadstandard_bl.jl, unchanged since BeamTracking v0.8.4).
+"""
 function sbs_order(bp, bm, rp)
   isactive(rp) && return isactive(bm) ? 4 : 2              # bmultipole_rf, pure_rf
   isactive(bm) || return 2                                  # drift, bend without field, pure_edipole
@@ -26,6 +46,13 @@ function sbs_order(bp, bm, rp)
   end
 end
 
+"""
+    slice_tracking_method(tm, frac, first, last, bp, bm, rp)
+
+Tracking method for a slice holding fraction `frac` of the element: SciBmadStandard becomes the Symplectic order
+BeamTracking would pick (`sbs_order`); fringes only on the first/last slice; `n_steps` scaled by `frac` (at least
+1); RungeKutta keeps `ds_step`.
+"""
 function slice_tracking_method(tm, frac, first, last, bp, bm, rp)
   if tm isa SciBmadStandard
     tm = Symplectic(; order = sbs_order(bp, bm, rp),
@@ -50,6 +77,12 @@ function slice_tracking_method(tm, frac, first, last, bp, bm, rp)
   error("slice_element: tracking method $(typeof(tm)) not supported")
 end
 
+"""
+    scale_integrated(bm::BMultipoleParams, frac)
+    scale_integrated(em::EMultipoleParams, frac)
+
+Multipoles with the integrated components scaled by `frac` (slice fraction of the element length).
+"""
 function scale_integrated(bm::BMultipoleParams, frac)
   sc = [i ? frac : one(frac) for i in bm.integrated]
   return BMultipoleParams(bm.n .* sc, bm.s .* sc, copy(bm.tilt), bm.order, bm.normalized, bm.integrated)
@@ -60,6 +93,11 @@ function scale_integrated(em::EMultipoleParams, frac)
   return EMultipoleParams(em.n .* sc, em.s .* sc, copy(em.etilt), em.order, em.integrated)
 end
 
+"""
+    slice_aperture(dp, first, last)
+
+Aperture for a slice: entrance aperture only on the first slice, exit only on the last; `nothing` if none.
+"""
 function slice_aperture(dp::ApertureParams, first, last)
   at_in = dp.aperture_at == ApertureAt.Entrance || dp.aperture_at == ApertureAt.BothEnds
   at_out = dp.aperture_at == ApertureAt.Exit || dp.aperture_at == ApertureAt.BothEnds
@@ -70,8 +108,12 @@ function slice_aperture(dp::ApertureParams, first, last)
   return dp
 end
 
-# Euler angles (x_rot, y_rot, z_rot) of q = rot_quaternion(x_rot, y_rot, z_rot) = qy ⊗ qx ⊗ qz,
-# from the rotated basis vectors (M = Ry Rx Rz). Valid for |x_rot| < π/2.
+"""
+    rot_angles(q)
+
+Euler angles (x_rot, y_rot, z_rot) of q = rot_quaternion(x_rot, y_rot, z_rot) = qy ⊗ qx ⊗ qz,
+from the rotated basis vectors (M = Ry Rx Rz). Valid for |x_rot| < π/2.
+"""
 function rot_angles(q)
   ex = quat_rotate((1.0, 0.0, 0.0), q)
   ey = quat_rotate((0.0, 1.0, 0.0), q)
@@ -79,9 +121,13 @@ function rot_angles(q)
   return asin(-ez[2]), atan(ez[1], ez[3]), atan(ex[2], ey[2])
 end
 
-# Alignment of the slice [s0, s0 + Ls] such that the slices compose to the misaligned element
-# (Bmad: makeup_super_slave1). Straight: same rotation, offsets moved with the slice center.
-# Bend: the element's alignment transform at the slice center is the slice's chord-midpoint transform.
+"""
+    slice_alignment(a, bp, L, s0, Ls)
+
+Alignment of the slice [s0, s0 + Ls] such that the slices compose to the misaligned element
+(Bmad: makeup_super_slave1). Straight: same rotation, offsets moved with the slice center.
+Bend: the element's alignment transform at the slice center is the slice's chord-midpoint transform.
+"""
 function slice_alignment(a::AlignmentParams, bp, L, s0, Ls)
   if !isactive(bp) || (bp.g_ref == 0 && bp.tilt_ref == 0)
     s_del = s0 + Ls / 2 - L / 2
@@ -99,8 +145,12 @@ function slice_alignment(a::AlignmentParams, bp, L, s0, Ls)
   return AlignmentParams(R[1] - f * ct - d[1], R[2] - f * st - d[2], R[3] - d[3], x_rot, y_rot, tilt)
 end
 
-# Patch slice (Bmad: makeup_super_slave1). The first slice holds the patch transform with the exit face
-# moved back by L - Ls along the new z axis; the other slices are drifts.
+"""
+    slice_patch(p, L, Ls, first)
+
+Patch slice (Bmad: makeup_super_slave1). The first slice holds the patch transform with the exit face
+moved back by L - Ls along the new z axis; the other slices are drifts.
+"""
 function slice_patch(p::PatchParams, L, Ls, first)
   first || return PatchParams(zero(Ls), zero(Ls), zero(Ls), Ls, zero(Ls), zero(Ls), zero(Ls))
   ez = quat_rotate((0, 0, 1), rot_quaternion(p.dx_rot, p.dy_rot, p.dz_rot))
@@ -108,8 +158,12 @@ function slice_patch(p::PatchParams, L, Ls, first)
   return PatchParams(p.dt, p.dx - dl * ez[1], p.dy - dl * ez[2], p.dz - dl * ez[3], p.dx_rot, p.dy_rot, p.dz_rot)
 end
 
-# Four-potential or EM field evaluated at element coordinates: the integrator passes s and t relative to the
-# slice entrance (t = (s/β₀ - z/β)/c), so shift both by the slice start.
+"""
+    ShiftedPotential(f, s0, t0)
+
+Four-potential or EM field evaluated at element coordinates: the integrator passes s and t relative to the
+slice entrance (t = (s/β₀ - z/β)/c), so both are shifted by the slice start.
+"""
 struct ShiftedPotential{F,T} <: Function
   f::F
   s0::T
@@ -117,24 +171,42 @@ struct ShiftedPotential{F,T} <: Function
 end
 (p::ShiftedPotential)(x, y, s, t, pp = nothing) = p.f(x, y, s + p.s0, t + p.t0, pp)
 
+"""
+    shifted_to_slice(f, ele, s0)
+
+`ShiftedPotential` of `f` for a slice starting at `s0`: `t0 = s0/(β₀c)` with β₀ of the element's reference.
+"""
 function shifted_to_slice(f, ele, s0)
   bg = R_to_beta_gamma(ele.species_ref, ele.p_over_q_ref)
   beta_0 = bg / sqrt(1 + bg^2)
   return ShiftedPotential(f, float(s0), s0 / (beta_0 * C_LIGHT))
 end
 
+"""
+    slice_four_potential(fp, ele, s0)
+
+`FourPotentialParams` of a slice starting at `s0` (see `shifted_to_slice`).
+"""
 function slice_four_potential(fp::FourPotentialParams, ele, s0)
   f = shifted_to_slice(fp.four_potential, ele, s0)
   return FourPotentialParams(f, fp.four_potential_params, fp.four_potential_normalized)
 end
 
-# EM field (used by RungeKutta tracking).
+"""
+    slice_em_field(ef, ele, s0)
+
+EM field (used by RungeKutta tracking).
+"""
 function slice_em_field(ef::EMFieldParams, ele, s0)
   return EMFieldParams(shifted_to_slice(ef.em_field, ele, s0), ef.em_field_params, ef.em_field_normalized)
 end
 
-# RF slice: voltage ∝ length (Bmad), rate converted to a frequency (the harmonic number refers to the
-# original beamline's circumference).
+"""
+    slice_rf(rp, ele, frac)
+
+RF slice: voltage ∝ length (Bmad), rate converted to a frequency (the harmonic number refers to the
+original beamline's circumference).
+"""
 function slice_rf(rp::RFParams, ele, frac)
   return RFParams(ele.rf_frequency, rp.voltage * frac, rp.phi0, RateMeaning.RFFrequency, rp.zero_phase,
                   rp.traveling_wave, rp.is_crabcavity)

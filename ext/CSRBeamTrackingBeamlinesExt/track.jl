@@ -1,6 +1,11 @@
 # Bunch tracking with 1D CSR through a Beamline: port of Bmad's track1_bunch_csr step loop (route (a)).
 
-# Reference curvature in the horizontal plane. Vertical bends are not supported by the planar geometry.
+"""
+    csr_ref_curvature(bp, ix)
+
+Reference curvature in the horizontal plane (`g_ref`, sign from `tilt_ref ∈ {0, π}`). Vertical bends are not
+supported by the planar geometry (error).
+"""
 function csr_ref_curvature(bp, ix)
   isactive(bp) || return 0.0
   g = float(bp.g_ref)
@@ -10,14 +15,22 @@ function csr_ref_curvature(bp, ix)
   return g * sign(c)
 end
 
-# Reference floor position at the exit of an element entered at `f`.
+"""
+    csr_ref_exit(f, L, g, pp)
+
+Reference floor position at the exit of an element entered at `f`.
+"""
 function csr_ref_exit(f::FloorPosition, L, g, pp)
   isactive(pp) || return CSR.advance_floor(f, L, g)
   ez = quat_rotate((0, 0, 1), rot_quaternion(pp.dx_rot, pp.dy_rot, pp.dz_rot))
   return CSR.advance_floor_patch(f, (pp.dx, pp.dy, pp.dz), ez)
 end
 
-# Charge-weighted mean of the live particles' coordinates.
+"""
+    bunch_centroid(bunch, w, alive)
+
+Charge-weighted mean of the live particles' coordinates.
+"""
 function bunch_centroid(bunch, w, alive)
   v = bunch.coords.v
   wa = w .* alive
@@ -25,8 +38,12 @@ function bunch_centroid(bunch, w, alive)
   return vec(sum(v .* wa; dims = 1)) ./ sum(wa)
 end
 
-# Single-particle bunch at c0 for the centroid orbit. Its weight is 1 (as `nothing`: only IBS reads it, through
-# log N) with the type of the bunch's weight, so BeamTracking reuses the kernels compiled for the bunch.
+"""
+    centroid_bunch(bunch, c0)
+
+Single-particle bunch at c0 for the centroid orbit. Its weight is 1 (as `nothing`: only IBS reads it, through
+log N) with the type of the bunch's weight, so BeamTracking reuses the kernels compiled for the bunch.
+"""
 function centroid_bunch(bunch, c0)
   wt = bunch.coords.weight
   w1 = isnothing(wt) ? nothing : wt isa Number ? one(wt) : fill!(similar(wt, 1), one(eltype(wt)))
@@ -34,6 +51,11 @@ function centroid_bunch(bunch, c0)
                t_ref = bunch.t_ref)
 end
 
+"""
+    macro_weights(bunch)
+
+Real particles per macroparticle as a vector (`weight = nothing` means 1).
+"""
 function macro_weights(bunch)
   wt = bunch.coords.weight
   N = size(bunch.coords.v, 1)
@@ -42,15 +64,23 @@ function macro_weights(bunch)
   return collect(float.(wt))
 end
 
-# Reference energies at the entrance and exit of an element. Only SaganCavity tracking uses dE_ref (BeamTracking),
-# so only there does the reference energy change inside the element (lcavity).
+"""
+    csr_ref_energies(ele, species, p_over_q_ref, context)
+
+Reference energies at the entrance and exit of an element. Only SaganCavity tracking uses dE_ref (BeamTracking),
+so only there does the reference energy change inside the element (lcavity).
+"""
 function csr_ref_energies(ele, species, p_over_q_ref, context)
   E_end = R_to_E(species, p_over_q_ref)
   deval(ele.UniversalParams, context).tracking_method isa SaganCavity || return E_end, E_end
   return E_end - float(deval(ele.BeamlineParams, context).dE_ref), E_end
 end
 
-# Reference momentum [eV] of the particles after slice `s` (and at s = 0), when it differs from p_over_q_ref.
+"""
+    csr_slice_P0c(s)
+
+Reference momentum [eV] of the particles after slice `s` (and at s = 0), when it differs from p_over_q_ref.
+"""
 csr_slice_P0c(s::SaganSlice) = sagan_exit_P0c(s)
 csr_slice_P0c(_) = nothing
 
@@ -94,6 +124,12 @@ function CSR.track_csr!(bunch::Bunch, br::Branch; kwargs...)
   return track_csr_line!(bunch, reduce(vcat, [bl.line for bl in bls]), br.context; kwargs...)
 end
 
+"""
+    track_csr_line!(bunch, line, context; params, csr_on, centroid_start, sliced_centroid, diagnostics)
+
+Body of `track_csr!` for a vector of elements: reference survey (with patches), centroid orbit, `CSRGeometry`,
+then the step loop over elements and slices with half kicks at the element ends (Bmad `track1_bunch_csr`).
+"""
 function track_csr_line!(bunch::Bunch, line, context; params::CSRParams, csr_on = ele -> true,
                          centroid_start = nothing, sliced_centroid = true, diagnostics = nothing)
   n = length(line)
@@ -151,16 +187,24 @@ function track_csr_line!(bunch::Bunch, line, context; params::CSRParams, csr_on 
   return bunch
 end
 
-# Slice i_step (1..n_step) of an element cut into n_step slices of length ds, as tracked between CSR kicks.
-# s0 + L_slice equals the next slice's s0 exactly (Sterbenz), so SaganCavity cell kicks on a boundary fall in
-# exactly one slice.
+"""
+    csr_slice(ele, i_step, n_step, ds, context)
+
+Slice i_step (1..n_step) of an element cut into n_step slices of length ds, as tracked between CSR kicks.
+s0 + L_slice equals the next slice's s0 exactly (Sterbenz), so SaganCavity cell kicks on a boundary fall in
+exactly one slice.
+"""
 function csr_slice(ele, i_step, n_step, ds, context)
   s0 = (i_step - 1) * ds
   return CSR.slice_element(ele, s0, i_step * ds - s0, i_step == 1, i_step == n_step; context)
 end
 
-# Centroid through an element in the bunch's slices (BeamTracking's integration depends on the slicing: the
-# default Symplectic method takes one step per element or slice). Function barrier as track_csr_element!.
+"""
+    track_centroid_sliced!(cb, ele, L, p_over_q_ref, params, context)
+
+Centroid through an element in the bunch's slices (BeamTracking's integration depends on the slicing: the
+default Symplectic method takes one step per element or slice). Function barrier as track_csr_element!.
+"""
 function track_centroid_sliced!(cb, ele, L, p_over_q_ref, params, context)
   n_step, ds = csr_n_step(L, params)
   for i_step in 1:n_step
@@ -169,7 +213,11 @@ function track_centroid_sliced!(cb, ele, L, p_over_q_ref, params, context)
   return cb
 end
 
-# CSR steps through element i. Function barrier: Beamlines parameters (p_over_q_ref, dE_ref) are not inferred.
+"""
+    track_csr_element!(bunch, ele, i, L, E_start, E_end, p_over_q_ref, z, pz, q, geom, params, context, diagnostics)
+
+CSR steps through element i. Function barrier: Beamlines parameters (p_over_q_ref, dE_ref) are not inferred.
+"""
 function track_csr_element!(bunch, ele, i, L, E_start, E_end, p_over_q_ref, z, pz, q, geom, params, context, diagnostics)
   species = bunch.species
   mass = massof(species)

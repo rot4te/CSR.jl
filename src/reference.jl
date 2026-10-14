@@ -1,7 +1,12 @@
-# Serial reference implementation (phase 1): plain loops, Float64, one lag after another with the source search
-# starting where the previous lag's search ended (as in Bmad). The kernel versions in binning.jl, wake.jl,
-# convolve.jl, kick.jl and step.jl are tested against these.
+# Serial reference implementation (phase 1, non-exported): plain loops, Float64, one lag after another with the
+# source search starting where the previous lag's search ended (as in Bmad). The kernels in kernels/ (launched by
+# binning.jl, tables.jl, kick.jl) are tested against these (test/kernels_test.jl).
 
+"""
+    csr_bin_particles_reference(z, q, alive, params)
+
+Serial reference of `csr_bin_particles`.
+"""
 function csr_bin_particles_reference(z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool}, params::CSRParams)
   n_bin = params.n_bin
   pbs = params.particle_bin_span
@@ -40,6 +45,11 @@ function csr_bin_particles_reference(z::AbstractVector, q::AbstractVector, alive
   return bins
 end
 
+"""
+    csr_convolve_reference!(kick, I_int, edge_grad, coef)
+
+Serial reference of `csr_convolve!`.
+"""
 function csr_convolve_reference!(kick::AbstractVector, I_int::AbstractVector, edge_grad::AbstractVector, coef)
   n = length(kick)
   for i in 1:n
@@ -52,6 +62,11 @@ function csr_convolve_reference!(kick::AbstractVector, I_int::AbstractVector, ed
   return kick
 end
 
+"""
+    csr_apply_kicks_reference!(pz, z, alive, bins, kick)
+
+Serial reference of `csr_apply_kicks!`.
+"""
 function csr_apply_kicks_reference!(pz::AbstractVector, z::AbstractVector, alive::AbstractVector{Bool}, bins::CSRBins, kick::AbstractVector)
   n_bin = length(kick)
   dz = bins.dz
@@ -70,6 +85,12 @@ function csr_apply_kicks_reference!(pz::AbstractVector, z::AbstractVector, alive
   return pz
 end
 
+"""
+    csr_kick_reference!(pz, z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor = 1.0)
+
+Serial reference of `csr_kick!` (free space and image charges, same layer weights), without
+`pz_scale`. One warm-started source walk over the lags, as Bmad.
+"""
 function csr_kick_reference!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool},
                              geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma, species::Species,
                              params::CSRParams; kick_factor = 1.0)

@@ -1,3 +1,9 @@
+"""
+    CSRBeamTrackingBeamlinesExt
+
+`track_csr!`, `slice_element` and `csr_sliceable` for BeamTracking bunches and Beamlines lattices: element slicing
+(Bmad `makeup_super_slave1` rules), SaganCavity (lcavity) slices, and the CSR step loop.
+"""
 module CSRBeamTrackingBeamlinesExt
 
 using CSR, BeamTracking, Beamlines
