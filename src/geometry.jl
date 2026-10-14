@@ -130,6 +130,35 @@ function dspline_len(s0, s1, c, dtheta_ref = 0.0; bmad_compat::Bool = false)
   )
 end
 
+const GL4_NODES = (-0.8611363115940526, -0.3399810435848563, 0.3399810435848563, 0.8611363115940526)
+const GL4_WEIGHTS = (0.3478548451374538, 0.6521451548625461, 0.6521451548625461, 0.3478548451374538)
+
+"""
+    path_excess(s0, s1, c, dtheta_ref = 0; bmad_compat = false)
+
+Length of the spline curve minus its projection onto a reference line rotated by `dtheta_ref` from the spline axis,
+from `s0` to `s1` (signed: negative for `s1 < s0`). Since the projection of a path onto a line is
+`∫ cos(θ - θ_ref) ds_arc`, this is `∫ (√(1 + x′²) - cos dθ - x′ sin dθ) ds`
+`= ∫ x′² / (1 + √(1 + x′²)) ds + 2 sin²(dθ/2) Δs - sin(dθ) Δx`: exact in `dtheta_ref`, with the slope term by 4-point
+Gauss–Legendre (exact for its `x′²/2` part; `x′` is the small slope relative to the element chord).
+
+With `bmad_compat = true`, Bmad's small-angle form `dspline_len(...; bmad_compat = true)`. That form drops the
+`dθ⁴` terms: on a circle of radius ρ it overestimates the excess over an arc Ls by `Ls⁵/(1920ρ⁴)`, which shifts image
+sources at large heights (`planning/PLAN.md`).
+"""
+function path_excess(s0, s1, c, dtheta_ref = 0.0; bmad_compat::Bool = false)
+  bmad_compat && return dspline_len(s0, s1, c, dtheta_ref; bmad_compat)
+  h = (s1 - s0) / 2
+  m = (s0 + s1) / 2
+  acc = 0.0
+  for i in 1:4
+    xp = spline_d1(c, m + h * GL4_NODES[i])
+    acc += GL4_WEIGHTS[i] * xp^2 / (1 + sqrt(1 + xp^2))
+  end
+  sh, ch = sincos(dtheta_ref / 2)
+  return h * acc + 2sh^2 * (s1 - s0) - 2sh * ch * (spline_val(c, s1) - spline_val(c, s0))
+end
+
 #---------------------------------------------------------------------------------------------------
 
 """
@@ -217,7 +246,7 @@ function CSRGeometry(L::AbstractVector, g::AbstractVector, ref_exit::AbstractVec
       parallel0 == parallel1 || error("CSRGeometry: inconsistent centroid direction in element $i")
       parallel0 || (L_chord = -L_chord)
       spline = chord_spline(L_chord, theta0, theta1)
-      dL_s = dspline_len(0.0, L_chord, spline; bmad_compat)
+      dL_s = path_excess(0.0, L_chord, spline; bmad_compat)
     end
 
     ele[i] = CSRElementInfo(L[i], g[i], s, ref_floor0, ref_floor1, floor0, floor1, theta_chord, L_chord, spline, dL_s)

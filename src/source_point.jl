@@ -76,7 +76,7 @@ function ddz_calc_csr!(k::CSRKick1, s_chord_source, geom::CSRGeometry, kp::CSRKi
     # dtheta_L = angle of the L line in the centroid chord frame
     sp = es.spline
     dtheta_L = sp[2] + sp[3] * (2s0 + ds) + sp[4] * (3s0^2 + 3s0 * ds + ds^2)
-    dL = dspline_len(s0, s1, sp, dtheta_L; bmad_compat = bc)   # = Ls - L
+    dL = path_excess(s0, s1, sp, dtheta_L; bmad_compat = bc)   # = Ls - L
     # Ls is negative if the source point is ahead of the kick point (ds < 0), but L is always positive.
     ds < 0 && (dL += 2ds)
     k.theta_sl = spline_d1(sp, s0) - dtheta_L
@@ -90,12 +90,12 @@ function ddz_calc_csr!(k::CSRKick1, s_chord_source, geom::CSRGeometry, kp::CSRKi
     # Ls = -(path length from the kick point to the source), so dL = Ls - L = -(excess + 2L) in the plane.
     theta_L = k.theta_L
     ek = geom.ele[kp.ix_ele_kick]
-    excess = dspline_len(s1, ek.L_chord, ek.spline, modulo2(theta_L - ek.theta_chord, pi / 2); bmad_compat = bc)
+    excess = path_excess(s1, ek.L_chord, ek.spline, modulo2(theta_L - ek.theta_chord, pi / 2); bmad_compat = bc)
     for i in kp.ix_ele_kick+1:k.ix_ele_source-1
       ce = geom.ele[i]
-      excess += dspline_len(0.0, ce.L_chord, ce.spline, modulo2(theta_L - ce.theta_chord, pi / 2); bmad_compat = bc)
+      excess += path_excess(0.0, ce.L_chord, ce.spline, modulo2(theta_L - ce.theta_chord, pi / 2); bmad_compat = bc)
     end
-    excess += dspline_len(0.0, s0, es.spline, modulo2(theta_L - es.theta_chord, pi / 2); bmad_compat = bc)
+    excess += path_excess(0.0, s0, es.spline, modulo2(theta_L - es.theta_chord, pi / 2); bmad_compat = bc)
     dL = -(excess + 2sqrt(k.L_vec[1]^2 + k.L_vec[3]^2))
     theta_s = spline_d1(es.spline, s0) + es.theta_chord
     k.theta_sl = modulo2(theta_s - theta_L, pi / 2)
@@ -104,13 +104,13 @@ function ddz_calc_csr!(k::CSRKick1, s_chord_source, geom::CSRGeometry, kp::CSRKi
     # Where the centroid takes a backstep, theta_chord is anti-parallel to the other angles, so angles
     # are folded into [-π/2, π/2).
     theta_L = k.theta_L
-    dL = dspline_len(s0, es.L_chord, es.spline, modulo2(theta_L - es.theta_chord, pi / 2); bmad_compat = bc)
+    dL = path_excess(s0, es.L_chord, es.spline, modulo2(theta_L - es.theta_chord, pi / 2); bmad_compat = bc)
     for i in k.ix_ele_source+1:kp.ix_ele_kick-1
       ce = geom.ele[i]
-      dL += dspline_len(0.0, ce.L_chord, ce.spline, modulo2(theta_L - ce.theta_chord, pi / 2); bmad_compat = bc)
+      dL += path_excess(0.0, ce.L_chord, ce.spline, modulo2(theta_L - ce.theta_chord, pi / 2); bmad_compat = bc)
     end
     ce = geom.ele[kp.ix_ele_kick]
-    dL += dspline_len(0.0, s1, ce.spline, modulo2(theta_L - ce.theta_chord, pi / 2); bmad_compat = bc)
+    dL += path_excess(0.0, s1, ce.spline, modulo2(theta_L - ce.theta_chord, pi / 2); bmad_compat = bc)
     k.theta_sl = modulo2((spline_d1(es.spline, s0) + es.theta_chord) - theta_L, pi / 2)
     k.theta_lk = modulo2(theta_L - (spline_d1(ce.spline, s1) + ce.theta_chord), pi / 2)
     theta_s = k.theta_sl + k.theta_L
@@ -221,7 +221,7 @@ function s_source_calc!(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
       Lz = (fk.r[1] - f0.r[1]) * sin(f0.theta) + (fk.r[3] - f0.r[3]) * cos(f0.theta)
       # Lsz0 is Ls from the lattice start to the kick point
       ek = geom.ele[kp.ix_ele_kick]
-      Lsz0 = dspline_len(0.0, kp.s_chord_kick, ek.spline; bmad_compat = geom.bmad_compat) + kp.s_chord_kick
+      Lsz0 = path_excess(0.0, kp.s_chord_kick, ek.spline; bmad_compat = geom.bmad_compat) + kp.s_chord_kick
       for i in 1:kp.ix_ele_kick-1
         Lsz0 += geom.ele[i].dL_s + geom.ele[i].L_chord
       end
@@ -254,7 +254,7 @@ function s_source_calc!(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
       fe = geom.ele[end].floor1
       ek = geom.ele[kp.ix_ele_kick]
       # Lke is Ls from the kick point to the lattice end
-      Lke = dspline_len(kp.s_chord_kick, ek.L_chord, ek.spline; bmad_compat = geom.bmad_compat) + ek.L_chord - kp.s_chord_kick
+      Lke = path_excess(kp.s_chord_kick, ek.L_chord, ek.spline; bmad_compat = geom.bmad_compat) + ek.L_chord - kp.s_chord_kick
       for i in kp.ix_ele_kick+1:length(geom.ele)
         Lke += geom.ele[i].dL_s + geom.ele[i].L_chord
       end

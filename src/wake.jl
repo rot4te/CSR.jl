@@ -47,7 +47,7 @@ function I_csr!(k::CSRKick1, i_bin, dz_slice, geom::CSRGeometry, kp::CSRKickPoin
       # then add the rest.
       L = s_chord_kick
       dtheta_L = spl[2] + spl[3] * L + spl[4] * L^2
-      dL = dspline_len(0.0, L, spl, dtheta_L; bmad_compat = geom.bmad_compat)   # = Ls - L
+      dL = path_excess(0.0, L, spl, dtheta_L; bmad_compat = geom.bmad_compat)   # = Ls - L
       Ls = L + dL
       zz = L / (2gamma2) + dL
       k.I_int_csr = -kp.kick_factor * ((g_bend * Ls / 2)^2 - log(2gamma2 * zz / Ls) / gamma2)

@@ -40,6 +40,24 @@ using CSR: CSRKickPoint, CSRKick1, s_source_calc!, ddz_calc_csr!, I_csr!, zbrent
     end
   end
 
+  # Default mode: path excess exact (path_excess). bmad_compat: small-angle form, too large by Ls⁵/(1920ρ⁴), i.e. a
+  # relative error Ls²/(80ρ²) of the excess Ls³/(24ρ²).
+  @testset "Path excess on a circle: exact (default), small-angle (compat)" begin
+    geom_c = CSRGeometry(circle_lattice(rho, L_ele, n_ele)...; bmad_compat = true)
+    kp_c = CSRKickPoint(geom_c, n_ele, s_kick, gamma)
+    for dz in (1e-4, 1e-3, 5e-3), (g, p, bc) in ((geom, kp, false), (geom_c, kp_c, true))
+      k = CSRKick1(); k.ix_ele_source = n_ele; k.dz_particles = dz
+      s_source_calc!(k, g, p)
+      phi = 2asin(k.L / (2rho))
+      rel = (k.dL - (rho * phi - k.L)) / (rho * phi - k.L)
+      if bc
+        @test rel ≈ (rho * phi)^2 / (80rho^2) rtol = 0.1
+      else
+        @test abs(rel) < 1e-7
+      end
+    end
+  end
+
   @testset "First-bin integral" begin
     ss_int(dz) = -3^(2/3) * rho^(-2/3) * dz^(2/3)   # ∫₀ᶻ of the γ → ∞ steady-state kernel
     function first_bin(g, dz)
@@ -84,7 +102,7 @@ using CSR: CSRKickPoint, CSRKick1, s_source_calc!, ddz_calc_csr!, I_csr!, zbrent
     kp = CSR.CSRKickPoint(geom, 2, 0.1, 1e4)
     spl = geom.ele[2].spline
     L = kp.s_chord_kick
-    zz = L / (2kp.gamma2) + dspline_len(0.0, L, spl, spl[2] + spl[3] * L + spl[4] * L^2)
+    zz = L / (2kp.gamma2) + CSR.path_excess(0.0, L, spl, spl[2] + spl[3] * L + spl[4] * L^2)
     k = CSR.CSRKick1(); k.ix_ele_source = 2; k.dz_particles = zz
     s = CSR.s_source_calc!(k, geom, kp)
     @test k.ix_ele_source == 2 && s == 0

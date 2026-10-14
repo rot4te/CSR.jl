@@ -33,6 +33,8 @@ Parameters for the 1D CSR calculation. Names follow Bmad's `space_charge_com` co
        and does not look for sources beyond the end of the kick element (`planning/PLAN.md`, V8).
     4. Image charges: Bmad samples the image kernel at the bin centres and sums the layers plainly; CSR.jl integrates
        the kernel against the bin hat function and averages the layer sum (`image_sum_order`).
+    5. Path-length excess of the centroid over the source–kick line (retardation): Bmad's small-angle form
+       `½∫(x′ - dθ)²` (`dspline_len`); CSR.jl the exact form (`path_excess`). They differ by `~Ls²/(80ρ²)` relative.
 """
 Base.@kwdef struct CSRParams
   n_bin::Int = 40
