@@ -27,6 +27,13 @@ using CSR: triangle_overlap
     @test bins.edge_dcharge_density_dz[5] ≈ (bins.charge[5] - bins.charge[4]) / bins.dz^2
 
     @test_throws ErrorException csr_bin_particles(zeros(5), ones(5), fill(true, 5), params)
+
+    # Float32 particles keep a Float32 grid (GPUs without Float64, e.g. Metal)
+    b32 = csr_bin_particles(Float32.(z), Float32.(q), alive, params)
+    @test b32.dz isa Float32
+    @test eltype(b32.z0_edge) == eltype(b32.charge) == Float32
+    @test b32.z0_edge ≈ bins.z0_edge rtol = 1e-5
+    @test sum(b32.charge) ≈ sum(q[alive]) rtol = 1e-5
   end
 
   @testset "CSRParams" begin

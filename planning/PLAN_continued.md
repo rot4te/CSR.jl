@@ -11,6 +11,10 @@ in Sections 0 and 8 are stale.
 `BeamTracking = "0.8.7"` (registered 0.8.5–0.8.7 contain `RungeKutta`; only 0.8.7 tested). 857/857 on 1 and 4 threads
 against dev BeamTracking 0.8.7 (`65e343f`) and Beamlines 0.11.0 (`35fe016`). `R_to_gamma`/`R_to_v` ion bug still in
 0.8.7. Plan: D24 → D22 → Phase 6 step 3.
+Metal (M3, Metal.jl 1.11.1; no Float64 on Apple GPUs): Float32 grid (`dz`, `z0_edge` without range arithmetic), Int32
+out-of-grid counters, typed literals in the kick kernel. `csr_bin_particles`, `csr_convolve!`, `csr_apply_kicks!` now
+run on `MtlArray{Float32}` (scratch probe, not in the test suite: charge 2e-6, convolve 9e-7, kick 0 relative vs
+CPU Float32). Wake/image tables remain CPU/Float64 (Phase 8). Float64 results unchanged (oftype on Float64 is exact).
 
 **Git.**
 - `phase6-ad`: `bb1dc13` Phase 6 steps 0–2 (ForwardDiff + rrule), 837/837 on 1 and 4 threads. Not pushed.

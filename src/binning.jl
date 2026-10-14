@@ -74,7 +74,7 @@ primal(x) = x
       add!(n_particle, ib, primal(overlap))
       add!(charge, ib, overlap * qp)
     else
-      add!(n_outside, 1, 1)
+      add!(n_outside, 1, one(eltype(n_outside)))
     end
   end
   return nothing
@@ -118,7 +118,8 @@ function csr_bin_particles(z::AbstractVector, q::AbstractVector, alive::Abstract
   z_minval = primal(mapreduce((zi, a) -> a ? zi : oftype(zi, Inf), min, z, alive))
   z_maxval > z_minval || error("csr_bin_particles: longitudinal width of beam is zero")
 
-  dz = 1.0000001 * (z_maxval - z_minval) / n_bin_eff   # 1.0000001 prevents round-off problems (Bmad)
+  # 1.0000001 prevents round-off problems (Bmad). Grid in the particles' float type (no Float64 on some GPUs).
+  dz = oftype(float(z_maxval), 1.0000001) * (z_maxval - z_minval) / n_bin_eff
   z_center = (z_maxval + z_minval) / 2
   z_min = z_center - n_bin * dz / 2
   dz_particle = pbs * dz
@@ -126,11 +127,11 @@ function csr_bin_particles(z::AbstractVector, q::AbstractVector, alive::Abstract
   Tz = typeof(dz)
   Tq = promote_type(Tz, eltype(z), eltype(q))
   z0_edge = KernelAbstractions.allocate(backend, Tz, n_bin)
-  z0_edge .= z_min .+ (0:n_bin-1) .* dz
+  z0_edge .= (i -> z_min + i * dz).(0:n_bin-1)   # not range arithmetic: Float32 ranges carry Float64 internals
   bins = CSRBins(dz, z0_edge, z0_edge .+ dz / 2, KernelAbstractions.zeros(backend, Tq, n_bin),
                  KernelAbstractions.zeros(backend, Tz, n_bin), KernelAbstractions.allocate(backend, Tq, n_bin))
 
-  n_outside = KernelAbstractions.zeros(backend, Int, 1)
+  n_outside = KernelAbstractions.zeros(backend, Int32, 1)   # Int32: no 64-bit atomics on some GPUs
   if supports_atomic_add(bins.charge) && supports_atomic_add(bins.n_particle)
     csr_deposit_kernel!(backend)(bins.charge, bins.n_particle, n_outside, z, q, alive, z_min, dz, dz_particle, pbs;
                                  ndrange = length(z))
