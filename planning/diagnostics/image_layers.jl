@@ -1,5 +1,5 @@
 using CSR
-include("/Users/alexcoxe/.julia/dev/CSR.jl/test/utils.jl")
+include(joinpath(homedir(), ".julia/dev/CSR.jl/test/utils.jl"))
 @eval CSR begin
 # K(u) at lag u
 function image_kernel_at!(k, u, geom, kp)

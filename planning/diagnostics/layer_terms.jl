@@ -1,7 +1,7 @@
 # Per-layer image contributions a_n to the energy loss (steady-state bend ρ = 10 m, σ = 1 mm, γ = 1e4),
 # hat-integrated tables. Writes layer_terms_<h>_<n_bin>.txt (n, a_n / free-space loss).
 using CSR, DelimitedFiles
-include("/Users/alexcoxe/.julia/dev/CSR.jl/test/utils.jl")
+include(joinpath(homedir(), ".julia/dev/CSR.jl/test/utils.jl"))
 electron = Species("electron")
 N = 40001
 zb, qb, aliveb = gaussian_line_bunch(1e-3, 1e-9, N)

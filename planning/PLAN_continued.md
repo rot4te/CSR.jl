@@ -2,10 +2,15 @@
 
 ## ★ Session 2026-10-10: D20/D21/D23 committed (read this first; supersedes older notes below)
 
-**Paths.** Package `/Users/alexcoxe/.julia/dev/CSR.jl`; dev checkouts beside it: `BeamTracking.jl` (`fe92aac`),
-`Beamlines.jl` (v0.10.6), `AtomicAndPhysicalConstants.jl`, `GTPSA.jl`. **Bmad source now at
-`/Users/alexcoxe/bmad-ecosystem`** (master `00b4557af`, 2026-10-08). Conda env `bmad` (Tao 20260918.0) at
-`/Users/alexcoxe/miniconda3/envs/bmad`. Google Drive paths in Sections 0 and 8 are stale.
+**Paths.** Two machines (`$HOME` = `/Users/alexcoxe` or `/Users/coxea3`): write paths with `~`. Package
+`~/.julia/dev/CSR.jl`; dev checkouts beside it: `BeamTracking.jl`, `Beamlines.jl`, `AtomicAndPhysicalConstants.jl`,
+`GTPSA.jl`. **Bmad source at `~/bmad-ecosystem`**. Conda env `bmad` at `~/miniforge3/envs/bmad`. Google Drive paths
+in Sections 0 and 8 are stale.
+
+**Stage C (2026-10-14), branch `stage-c` (from `468fc83`).** Step 0: CSR.jl compat `Beamlines = "0.10.6, 0.11"`,
+`BeamTracking = "0.8.7"` (registered 0.8.5–0.8.7 contain `RungeKutta`; only 0.8.7 tested). 857/857 on 1 and 4 threads
+against dev BeamTracking 0.8.7 (`65e343f`) and Beamlines 0.11.0 (`35fe016`). `R_to_gamma`/`R_to_v` ion bug still in
+0.8.7. Plan: D24 → D22 → Phase 6 step 3.
 
 **Git.**
 - `phase6-ad`: `bb1dc13` Phase 6 steps 0–2 (ForwardDiff + rrule), 837/837 on 1 and 4 threads. Not pushed.
