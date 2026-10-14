@@ -13,12 +13,12 @@ table_type(geom::CSRGeometry, kp::CSRKickPoint, dz) = float(promote_type(number_
 Kick integral `I_csr`, its integral over each bin `I_int`, and the reference s of the source point, for lags
 `i * dz`, `i = 1:n_bin`, at kick point `kp`. The lags are split into `n_block` blocks (one work item and
 workgroup each); a block reuses the previous lag's source element as the start of the next search.
-Default: 4 blocks per thread. CPU backend only: the source search uses a mutable work struct and the
-non-isbits `CSRGeometry`. The tables are in `table_type(geom, kp, dz)` (`Float64`, or e.g. `Dual`s for derivatives
+Default: 4 blocks per thread. CPU backend only: `CSRGeometry` is not isbits (its element vector), and the source
+search raises errors and recurses (adaptive quadrature). The tables are in `table_type(geom, kp, dz)` (`Float64`, or e.g. `Dual`s for derivatives
 with respect to the geometry, `s_kick` or `gamma`).
 
 `I_int` for bins `i ≥ 2`: trapezoid in `I_csr`, or with `all_bin_quadrature` Simpson in `u^(1/3)` with 8 nodes per
-bin (`I_csr_quadrature!`; 8 more source solves per bin, in blocks as above).
+bin (`I_csr_quadrature`; 8 more source solves per bin, in blocks as above).
 """
 function csr_wake_table(geom::CSRGeometry, kp::CSRKickPoint, dz, n_bin, backend;
                         n_block = min(n_bin, 4 * Threads.nthreads()), all_bin_quadrature::Bool = false)

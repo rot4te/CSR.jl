@@ -1,4 +1,4 @@
-using CSR: CSRKickPoint, CSRKick1, s_source_calc!, ddz_calc_csr!, I_csr!, zbrent
+using CSR: CSRKickPoint, CSRKick1, s_source_calc, ddz_calc_csr, I_csr_calc, zbrent
 
 @testset "Source point and kick integral" begin
   @testset "zbrent" begin
@@ -17,10 +17,8 @@ using CSR: CSRKickPoint, CSRKick1, s_source_calc!, ddz_calc_csr!, I_csr!, zbrent
 
   @testset "Source point on a circle" begin
     for dz in (1e-6, 1e-4, 1e-3, 5e-3)
-      k = CSRKick1()
-      k.ix_ele_source = n_ele
-      k.dz_particles = dz
-      s_source_calc!(k, geom, kp)
+      k = CSRKick1(; ix_ele_source = n_ele, dz_particles = dz)
+      k, _ = s_source_calc(k, geom, kp)
       @test 1 <= k.ix_ele_source <= n_ele
       # Retardation condition at the root (tolerance set by zbrent's abs_tol = 1e-8 on s)
       @test abs(k.L / (2gamma^2) + k.dL - dz) < 1e-10 + 1e-6 * dz
@@ -30,7 +28,7 @@ using CSR: CSRKickPoint, CSRKick1, s_source_calc!, ddz_calc_csr!, I_csr!, zbrent
       @test k.theta_sl ≈ phi / 2 rtol = 2e-3
       @test k.theta_lk ≈ phi / 2 rtol = 2e-3
       # Kick integral vs the circle closed form, and vs the γ → ∞ steady-state kernel
-      I_csr!(k, 2, dz, geom, kp, 0.0)
+      k = I_csr_calc(k, 2, dz, geom, kp, 0.0)
       th = phi / 2
       I_circle = -2 * (k.dL / dz + gamma^2 * th^2 / (1 + gamma^2 * th^2)) / k.L
       @test k.I_csr ≈ I_circle rtol = 5e-3
@@ -46,8 +44,8 @@ using CSR: CSRKickPoint, CSRKick1, s_source_calc!, ddz_calc_csr!, I_csr!, zbrent
     geom_c = CSRGeometry(circle_lattice(rho, L_ele, n_ele)...; bmad_compat = true)
     kp_c = CSRKickPoint(geom_c, n_ele, s_kick, gamma)
     for dz in (1e-4, 1e-3, 5e-3), (g, p, bc) in ((geom, kp, false), (geom_c, kp_c, true))
-      k = CSRKick1(); k.ix_ele_source = n_ele; k.dz_particles = dz
-      s_source_calc!(k, g, p)
+      k = CSRKick1(; ix_ele_source = n_ele, dz_particles = dz)
+      k, _ = s_source_calc(k, g, p)
       phi = 2asin(k.L / (2rho))
       rel = (k.dL - (rho * phi - k.L)) / (rho * phi - k.L)
       if bc
@@ -62,9 +60,9 @@ using CSR: CSRKickPoint, CSRKick1, s_source_calc!, ddz_calc_csr!, I_csr!, zbrent
     ss_int(dz) = -3^(2/3) * rho^(-2/3) * dz^(2/3)   # ∫₀ᶻ of the γ → ∞ steady-state kernel
     function first_bin(g, dz)
       kpg = CSRKickPoint(g, n_ele, s_kick, gamma)
-      k = CSRKick1(); k.ix_ele_source = n_ele; k.dz_particles = dz
-      s_source_calc!(k, g, kpg)
-      I_csr!(k, 1, dz, g, kpg, 0.0)
+      k = CSRKick1(; ix_ele_source = n_ele, dz_particles = dz)
+      k, _ = s_source_calc(k, g, kpg)
+      k = I_csr_calc(k, 1, dz, g, kpg, 0.0)
       return k
     end
     # Source inside the kick element: Bmad's closed form
@@ -86,8 +84,8 @@ using CSR: CSRKickPoint, CSRKick1, s_source_calc!, ddz_calc_csr!, I_csr!, zbrent
     # Short bend: large lags put the source on the infinite upstream drift (ix_ele_source = 0)
     g2 = CSRGeometry([0.2], [0.1], zeros(2, 6))
     kp2 = CSRKickPoint(g2, 1, 0.1, 50.0)
-    k = CSRKick1(); k.ix_ele_source = 1; k.dz_particles = 1e-3
-    s = s_source_calc!(k, g2, kp2)
+    k = CSRKick1(; ix_ele_source = 1, dz_particles = 1e-3)
+    k, s = s_source_calc(k, g2, kp2)
     @test k.ix_ele_source == 0
     @test s < 0
     # Exact retardation Ls - βL = dz on the straight upstream line
@@ -103,8 +101,8 @@ using CSR: CSRKickPoint, CSRKick1, s_source_calc!, ddz_calc_csr!, I_csr!, zbrent
     spl = geom.ele[2].spline
     L = kp.s_chord_kick
     zz = L / (2kp.gamma2) + CSR.path_excess(0.0, L, spl, spl[2] + spl[3] * L + spl[4] * L^2)
-    k = CSR.CSRKick1(); k.ix_ele_source = 2; k.dz_particles = zz
-    s = CSR.s_source_calc!(k, geom, kp)
+    k = CSR.CSRKick1(; ix_ele_source = 2, dz_particles = zz)
+    k, s = CSR.s_source_calc(k, geom, kp)
     @test k.ix_ele_source == 2 && s == 0
     @test k.L ≈ L rtol = 1e-6
     # Kick insensitive to the round-off centroid angle

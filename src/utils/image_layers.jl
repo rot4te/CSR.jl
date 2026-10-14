@@ -32,11 +32,12 @@ dz ≫ y/γ, which would give a tolerance below the kernel's round-off noise.
 """
 function image_hat_tol(geom::CSRGeometry, kp::CSRKickPoint, image, dz, rtol, u_min)
   k = CSRKick1(geom, kp)
-  k.ix_ele_source = kp.ix_ele_kick
   K = maximum(abs, image)
   x = dz / 2
   while x > u_min
-    K = max(K, abs(image_kernel_at!(k, x, geom, kp)), abs(image_kernel_at!(k, -x, geom, kp)))
+    k, Kp = image_kernel_at(k, x, geom, kp)
+    k, Km = image_kernel_at(k, -x, geom, kp)
+    K = max(K, abs(Kp), abs(Km))
     x /= 2
   end
   return rtol * primal(K) * dz

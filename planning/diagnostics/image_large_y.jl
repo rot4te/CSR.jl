@@ -40,8 +40,7 @@ s_kick = 0.1 * (n_ele - 1) + 0.05
 println("     y       u       Ls_csr     Ls_exact   dLp_csr-dLp_ex  K_csr/E(Ls_csr)  E(Ls_csr)/E_ex  K_csr/E_ex")
 for y in (0.03, 0.3, 0.768, 1.92), u in (0.0, 1e-3, 6e-3)
   kp = CSR.CSRKickPoint(geom, n_ele, 0.05, γ; y_source = y, kick_factor = 1.0)
-  k = CSR.CSRKick1(); k.ix_ele_source = n_ele; k.dz_particles = u
-  sc = CSR.s_source_calc!(k, geom, kp)
+  k, sc = CSR.s_source_calc(CSR.CSRKick1(; ix_ele_source = n_ele, dz_particles = u), geom, kp)
   K = CSR.image_charge_kick(k, geom, kp)
   Lsc = s_kick - CSR.source_s(geom, k.ix_ele_source, sc)
   Lp = sqrt(k.L_vec[1]^2 + k.L_vec[3]^2)

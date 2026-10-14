@@ -12,8 +12,7 @@ gamma = 100.0; y = 0.01
 kp = CSR.CSRKickPoint(geom, 1, 5.0, gamma; y_source = y)
 println(" dz [m]     where   analytic     Bmad theta   true theta")
 for dz in (0.03, 0.005, 0.0, -0.005, -0.009, -0.011, -0.03)
-  k = CSR.CSRKick1(); k.ix_ele_source = 1; k.dz_particles = dz
-  s = CSR.s_source_calc!(k, geom, kp)
+  k, s = CSR.s_source_calc(CSR.CSRKick1(; ix_ele_source = 1, dz_particles = dz), geom, kp)
   ana = gamma * dz / (gamma^2 * dz^2 + y^2)^1.5
   where = s > kp.s_chord_kick ? "ahead " : "behind"
   println(rpad(dz, 9), "  ", where, "  ", lpad(round(ana, sigdigits=5), 11), "  ",

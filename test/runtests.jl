@@ -7,7 +7,7 @@ include("utils.jl")
 
 @testset "CSR.jl" begin
   @testset "Package extensions load" begin
-    for ext in (:CSRAbstractFFTsExt, :CSRBeamTrackingBeamlinesExt, :CSRChainRulesCoreExt, :CSRForwardDiffExt, :CSRGTPSAExt)
+    for ext in (:CSRAbstractFFTsExt, :CSRBeamTrackingBeamlinesExt, :CSRChainRulesCoreExt, :CSRGTPSAExt)
       @test !isnothing(Base.get_extension(CSR, ext))
     end
   end

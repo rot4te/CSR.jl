@@ -109,22 +109,19 @@ function csr_kick_reference!(pz::AbstractVector, z::AbstractVector, q::AbstractV
   I_int = zeros(n_bin)
   I_csr = zeros(n_bin)
   s_source = zeros(n_bin)
-  k = CSRKick1()
-  k.ix_ele_source = ix_ele_kick
+  k = CSRKick1(; ix_ele_source = ix_ele_kick)
   for i in 1:n_bin
-    k.dz_particles = i * bins.dz
-    s_chord = s_source_calc!(k, geom, kp)
-    I_csr!(k, i, bins.dz, geom, kp, i == 1 ? 0.0 : I_csr[i-1])
+    k, s_chord = s_source_calc(with_fields(k; dz_particles = i * bins.dz), geom, kp)
+    k = I_csr_calc(k, i, bins.dz, geom, kp, i == 1 ? 0.0 : I_csr[i-1])
     I_csr[i] = k.I_csr
     I_int[i] = k.I_int_csr
     s_source[i] = source_s(geom, k.ix_ele_source, s_chord)
   end
   # Bins i ≥ 2 by quadrature (one warm-started walk) instead of the trapezoid
   if params.all_bin_quadrature && !params.bmad_compat
-    k = CSRKick1()
-    k.ix_ele_source = ix_ele_kick
+    k = CSRKick1(; ix_ele_source = ix_ele_kick)
     for i in 2:n_bin
-      I_int[i] = I_csr_quadrature!(k, (i - 1) * bins.dz, i * bins.dz, geom, kp, 8)
+      k, I_int[i] = I_csr_quadrature(k, (i - 1) * bins.dz, i * bins.dz, geom, kp, 8)
     end
   end
 
@@ -137,18 +134,19 @@ function csr_kick_reference!(pz::AbstractVector, z::AbstractVector, q::AbstractV
     kp_ns = CSRKickPoint(geom, ix_ele_kick, s_kick, gamma; y_source = ns * params.beam_chamber_height,
                          kick_factor = (-1)^ns * 2 * image_layer_weight(ns, params) * kick_factor)
     image = zeros(2n_bin + 1)
-    k = CSRKick1()
-    k.ix_ele_source = ix_ele_kick
+    k = CSRKick1(; ix_ele_source = ix_ele_kick)
     for i in -n_bin:n_bin
-      k.dz_particles = i * bins.dz
-      s_source_calc!(k, geom, kp_ns)
+      k, _ = s_source_calc(with_fields(k; dz_particles = i * bins.dz), geom, kp_ns)
       image[i+n_bin+1] = image_charge_kick(k, geom, kp_ns)
     end
     # Default: hat-weighted bin integral of the kernel (moments over lag intervals m = -n_bin-1:n_bin)
     if !params.bmad_compat
       u_min = image_u_min(kp_ns)
       tol = image_hat_tol(geom, kp_ns, image, bins.dz, 1e-6, u_min)
-      mom = [image_interval_moments!(k, geom, kp_ns, m, bins.dz, tol, u_min) for m in -n_bin-1:n_bin]
+      mom = Vector{SVector{2,Float64}}(undef, 2n_bin + 2)
+      for m in -n_bin-1:n_bin
+        k, mom[m+n_bin+2] = image_interval_moments(k, geom, kp_ns, m, bins.dz, tol, u_min)
+      end
       for i in -n_bin:n_bin
         image[i+n_bin+1] = (mom[i+n_bin+1][1] + mom[i+n_bin+2][2]) / bins.dz
       end

@@ -6,12 +6,11 @@ uniform_field(dz, y, gamma) = gamma * dz / (gamma^2 * dz^2 + y^2)^1.5
 
 # Image kick for lags dz (increasing, warm-started as in csr_image_table)
 function image_kicks(geom, kp, dzs)
-  k = CSR.CSRKick1()
-  k.ix_ele_source = kp.ix_ele_kick
+  k = CSR.CSRKick1(; ix_ele_source = kp.ix_ele_kick)
   out = Float64[]; ixs = Int[]
   for dz in dzs
-    k.dz_particles = dz
-    CSR.s_source_calc!(k, geom, kp)
+    k = CSR.with_fields(k; dz_particles = dz)
+    k, _ = CSR.s_source_calc(k, geom, kp)
     push!(out, CSR.image_charge_kick(k, geom, kp))
     push!(ixs, k.ix_ele_source)
   end
@@ -71,8 +70,8 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) * (r.z_center[2] - r.z_ce
     for g in (0.0, 0.5), bc in (false, true)
       geom = CSRGeometry([1.0], [g], zeros(2, 6); bmad_compat = bc)
       kp = CSR.CSRKickPoint(geom, 1, 0.3, 100.0; y_source = 0.01)
-      k = CSR.CSRKick1(); k.ix_ele_source = 1; k.dz_particles = -0.05
-      s = CSR.s_source_calc!(k, geom, kp)
+      k = CSR.CSRKick1(; ix_ele_source = 1, dz_particles = -0.05)
+      k, s = CSR.s_source_calc(k, geom, kp)
       @test s > kp.s_chord_kick   # ahead, in the kick element
       e = geom.ele[1]
       true_theta = e.theta_chord + CSR.spline_d1(e.spline, s)
@@ -87,8 +86,8 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) * (r.z_center[2] - r.z_ce
       geom = CSRGeometry([0.1, 0.05], [0.0, g], zeros(3, 6))
       gamma = 50.0; y = 0.02
       kp = CSR.CSRKickPoint(geom, 2, 0.03, gamma; y_source = y)
-      k = CSR.CSRKick1(); k.ix_ele_source = 2; k.dz_particles = -0.08
-      t = CSR.s_source_calc!(k, geom, kp)
+      k = CSR.CSRKick1(; ix_ele_source = 2, dz_particles = -0.08)
+      k, t = CSR.s_source_calc(k, geom, kp)
       @test k.ix_ele_source == 3
       @test t > 0
       beta = sqrt(1 - 1 / gamma^2)
@@ -96,10 +95,10 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) * (r.z_center[2] - r.z_ce
       @test k.floor_s.theta == geom.ele[end].floor1.theta
       @test CSR.source_s(geom, k.ix_ele_source, t) ≈ 0.15 + t
       # A search warm-started past the lattice end walks back when the source is inside the lattice
-      k.dz_particles = -0.001
-      CSR.s_source_calc!(k, geom, kp)
-      k2 = CSR.CSRKick1(); k2.ix_ele_source = 2; k2.dz_particles = -0.001
-      CSR.s_source_calc!(k2, geom, kp)
+      k = CSR.with_fields(k; dz_particles = -0.001)
+      k, _ = CSR.s_source_calc(k, geom, kp)
+      k2 = CSR.CSRKick1(; ix_ele_source = 2, dz_particles = -0.001)
+      k2, _ = CSR.s_source_calc(k2, geom, kp)
       @test k.ix_ele_source == k2.ix_ele_source <= 2
       @test k.floor_s == k2.floor_s
     end
@@ -109,15 +108,15 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) * (r.z_center[2] - r.z_ce
     for g in (0.0, 2.0)
       geom = CSRGeometry([0.05, 0.1], [g, 0.0], zeros(3, 6))
       kp = CSR.CSRKickPoint(geom, 2, 0.07, 50.0; y_source = 0.02)
-      k = CSR.CSRKick1(); k.ix_ele_source = 2; k.dz_particles = 0.08
-      CSR.s_source_calc!(k, geom, kp)
+      k = CSR.CSRKick1(; ix_ele_source = 2, dz_particles = 0.08)
+      k, _ = CSR.s_source_calc(k, geom, kp)
       @test k.ix_ele_source == 0
       # A search warm-started upstream of the lattice walks back when the source is inside the lattice
       for dz in (-0.002, -0.03)   # sources in element 1, and ahead of the kick point
-        k.ix_ele_source = 0; k.dz_particles = dz
-        CSR.s_source_calc!(k, geom, kp)
-        k2 = CSR.CSRKick1(); k2.ix_ele_source = 2; k2.dz_particles = dz
-        CSR.s_source_calc!(k2, geom, kp)
+        k = CSR.with_fields(k; ix_ele_source = 0, dz_particles = dz)
+        k, _ = CSR.s_source_calc(k, geom, kp)
+        k2 = CSR.CSRKick1(; ix_ele_source = 2, dz_particles = dz)
+        k2, _ = CSR.s_source_calc(k2, geom, kp)
         @test k.ix_ele_source == k2.ix_ele_source >= 1
         @test k.floor_s == k2.floor_s
       end

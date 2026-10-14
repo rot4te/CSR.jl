@@ -131,4 +131,16 @@ maxrel(a, b) = maximum(abs, a .- b) / maximum(abs, b)
     @test maxrel(rb.charge_per_meter, ref.charge_per_meter) < 1e-12
     @test maxrel(Float64.(pzb), pzr) < 1e-10
   end
+
+  @testset "Work struct and geometry types are isbits (GPU-ready)" begin
+    D = ForwardDiff.Dual{Nothing,Float64,3}
+    for T in (Float64, Float32, D)
+      @test isbitstype(CSR.CSRKick1{T})
+      @test isbitstype(CSRKickPoint{T})
+      @test isbitstype(CSRElementInfo{T})
+    end
+    k = CSR.CSRKick1(; ix_ele_source = 3, dz_particles = 1e-3)
+    k2 = CSR.with_fields(k; L = 2, ix_ele_source = 1)
+    @test k2.L === 2.0 && k2.ix_ele_source == 1 && k2.dz_particles == 1e-3 && k.L == 0
+  end
 end

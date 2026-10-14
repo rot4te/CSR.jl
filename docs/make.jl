@@ -1,5 +1,5 @@
 using CSR
-using BeamTracking, Beamlines, ForwardDiff, ChainRulesCore   # load the package extensions
+using BeamTracking, Beamlines, ChainRulesCore   # load the package extensions
 using Documenter
 
 const CSRBeamTrackingBeamlinesExt = Base.get_extension(CSR, :CSRBeamTrackingBeamlinesExt)

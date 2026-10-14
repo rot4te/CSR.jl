@@ -1,5 +1,5 @@
 using CSR, Printf, AtomicAndPhysicalConstants
-using CSR: CSRKickPoint, CSRKick1, s_source_calc!, I_csr!, I_csr_integral, csr_convolve!, csr_kick_coef
+using CSR: CSRKickPoint, CSRKick1, s_source_calc, I_csr_calc, with_fields, I_csr_integral, csr_convolve!, csr_kick_coef
 include(joinpath(@__DIR__, "..", "..", "test", "utils.jl"))
 e = Species("electron")
 gam = 42e6 / massof(e); pc = sqrt(42e6^2 - massof(e)^2); rho2 = pc / C_LIGHT / 0.17
@@ -14,9 +14,9 @@ function wake(nb, s, mode)
   p = CSRParams(n_bin=nb, particle_bin_span=2, ds_step=0.01, bmad_compat=bc)
   bins = csr_bin_particles(z2, q2, a2, p); dz = bins.dz
   kp = CSRKickPoint(g, 1, s, gam)
-  Iint = zeros(nb); Ic = zeros(nb); k = CSRKick1(); k.ix_ele_source = 1
+  Iint = zeros(nb); Ic = zeros(nb); k = CSRKick1(; ix_ele_source = 1)
   for i in 1:nb
-    k.dz_particles = i*dz; s_source_calc!(k, g, kp); I_csr!(k, i, dz, g, kp, i==1 ? 0.0 : Ic[i-1])
+    k, _ = s_source_calc(with_fields(k; dz_particles = i*dz), g, kp); k = I_csr_calc(k, i, dz, g, kp, i==1 ? 0.0 : Ic[i-1])
     Ic[i] = k.I_csr; Iint[i] = k.I_int_csr
     if mode == :allquad && i > 1
       Iint[i] = I_csr_integral((i-1)*dz, i*dz, g, kp; n = 8)

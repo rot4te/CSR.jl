@@ -2,10 +2,10 @@ using CSR
 include(joinpath(homedir(), ".julia/dev/CSR.jl/test/utils.jl"))
 @eval CSR begin
 # K(u) at lag u
+# k is a Ref holding the (immutable) work struct, updated for the next warm start
 function image_kernel_at!(k, u, geom, kp)
-  k.dz_particles = u
-  s_source_calc!(k, geom, kp)
-  return image_charge_kick(k, geom, kp)
+  k[], _ = s_source_calc(with_fields(k[]; dz_particles = u), geom, kp)
+  return image_charge_kick(k[], geom, kp)
 end
 # Adaptive Simpson of (∫K, ∫K t) over [a, b], t = (u - u0)/dz. fa, fm, fb at a, mid, b.
 function image_simpson!(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol, depth, cnt)
@@ -30,7 +30,7 @@ function image_interval!(k, geom, kp, a, b, u0, dz, tol, cnt)
 end
 # Hat-weighted table, lags -n_bin:n_bin
 function image_table_hat(geom, kp, dz, n_bin; rtol = 1e-6)
-  k = CSRKick1(); k.ix_ele_source = kp.ix_ele_kick
+  k = Ref(CSRKick1(; ix_ele_source = kp.ix_ele_kick))
   Kmax = maximum(abs(image_kernel_at!(k, m * dz, geom, kp)) for m in -n_bin-1:n_bin+1)
   tol = rtol * Kmax * dz
   u_min = 0.01 * kp.y_source / kp.gamma

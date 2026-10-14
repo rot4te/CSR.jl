@@ -94,9 +94,10 @@ end
 """
     CSRKick1{T}
 
-Kick quantities for one source-to-kick separation (Bmad `csr_kick1_struct`), in number type `T`.
+Kick quantities for one source-to-kick separation (Bmad `csr_kick1_struct`), in number type `T`. Immutable (isbits
+for isbits `T`): the source-point functions return an updated copy (`with_fields`).
 """
-mutable struct CSRKick1{T<:Real}
+struct CSRKick1{T<:Real}
   I_csr::T                    # Kick integral
   I_int_csr::T                # Integrated kick integral
   L_vec::SVector{3,T}         # Source-to-kick vector in floor coordinates
@@ -112,21 +113,33 @@ mutable struct CSRKick1{T<:Real}
 end
 
 """
-    CSRKick1{T}()
-    CSRKick1()
-    CSRKick1(geom, kp)
+    CSRKick1{T}(; ix_ele_source = 0, dz_particles = 0)
+    CSRKick1(; ix_ele_source = 0, dz_particles = 0)
+    CSRKick1(geom, kp; ix_ele_source = kp.ix_ele_kick, dz_particles = 0)
 
 Zeroed work struct in number type `T` (default `Float64`; `CSRKick1(geom, kp)`: promoted from the geometry and the
-kick point); set `ix_ele_source` (search start) and `dz_particles` (lag) before `s_source_calc!`.
+kick point) with the source search's start element `ix_ele_source` and the lag `dz_particles`.
 """
-function CSRKick1{T}() where {T}
+function CSRKick1{T}(; ix_ele_source::Integer = 0, dz_particles = zero(T)) where {T}
   z = zero(T)
-  return CSRKick1{T}(z, z, SVector(z, z, z), z, z, z, z, z, z, z, 0, FloorPosition(SVector(z, z, z), z))
+  return CSRKick1{T}(z, z, SVector(z, z, z), z, z, dz_particles, z, z, z, z, ix_ele_source,
+                     FloorPosition(SVector(z, z, z), z))
 end
 
-CSRKick1() = CSRKick1{Float64}()
+CSRKick1(; kw...) = CSRKick1{Float64}(; kw...)
 
-CSRKick1(geom, kp) = CSRKick1{promote_type(number_type(geom), number_type(kp))}()
+CSRKick1(geom, kp; ix_ele_source::Integer = kp.ix_ele_kick, dz_particles = 0) =
+  CSRKick1{promote_type(number_type(geom), number_type(kp))}(; ix_ele_source, dz_particles)
+
+"""
+    with_fields(k::CSRKick1; fields...) -> CSRKick1
+
+Copy of `k` with the given fields replaced (converted to `k`'s number type).
+"""
+@inline function with_fields(k::CSRKick1{T}; kw...) where {T}
+  nt = NamedTuple{fieldnames(CSRKick1)}(ntuple(i -> getfield(k, i), Val(fieldcount(CSRKick1))))
+  return CSRKick1{T}(merge(nt, values(kw))...)
+end
 
 """
     number_type(x)

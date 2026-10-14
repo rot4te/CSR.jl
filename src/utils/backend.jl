@@ -18,7 +18,7 @@ device_scalar(backend, x) = KernelAbstractions.supports_float64(backend) ? x : c
 """
     table_backend(backend)
 
-Backend the kick tables are computed on. The table kernels need the CPU (mutable work struct, non-isbits geometry).
+Backend the kick tables are computed on. The table kernels need the CPU (non-isbits geometry; see `csr_wake_table`).
 """
 table_backend(backend) = backend isa CPU ? backend : CPU()
 
@@ -62,7 +62,8 @@ supports_atomic_add(A) = eltype(A) <: Union{Float32,Float64}
 """
     primal(x)
 
-Value of `x` without derivative parts (identity for plain numbers; extensions add methods, e.g. ForwardDiff Duals).
+Value of `x` without derivative parts (identity for plain numbers; the value of a ForwardDiff `Dual`, recursively).
 The bin grid is built from primal values, so derivatives treat it as constant.
 """
 primal(x) = x
+primal(d::Dual) = primal(value(d))

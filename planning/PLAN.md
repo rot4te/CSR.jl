@@ -54,17 +54,17 @@ README, Documenter docs.
 **Phase 6 step 3a (forward mode) done** on branch **`phase6-geom_speed-deltas`** (from `reorg`); see Section 9.
 **Next: step 3b** (D26): hybrid `rrule` for `csr_kick_pz` w.r.t. `geom`, `s_kick`, γ and an `rrule` for
 `CSRGeometry(L, g, centroid)`; tests with ChainRulesTestUtils (D27; add it to `[extras]`/test target). Open point
-for the user: the hybrid rrule needs ForwardDiff inside a ChainRulesCore extension (ForwardDiff as a hard
-dependency, or an extension triggered by both packages).
+resolved: ForwardDiff is a hard dependency (D28), so the rrule in `CSRChainRulesCoreExt` can use it. `CSRKick1` is
+immutable (D29, done).
 
 Original notes for step 3 (from the reorg handoff, 2026-10-14): Goal: derivatives of a kick w.r.t. the geometry and the reference speed/energy (γ), and `s_kick`.
 Starting points (suggestions, not decided):
 - Today the `rrule` (`ext/CSRChainRulesCoreExt/CSRChainRulesCoreExt.jl`) returns `@not_implemented` for `geom`,
   `s_kick`, `gamma`; ForwardDiff passes only through the particle side (tables are `Float64`, built on the CPU in
-  `src/tables.jl` with the mutable `CSRKick1` work struct).
+  `src/tables.jl` with the `CSRKick1` work struct).
 - The tables depend on the parameters through the retarded source point: implicit differentiation of the root of
   `ddz(s; p) = L/(2γ²) + ΔL − dz = 0` (`kernels/source_point.jl`), `ds/dp = −∂ddz/∂p / ∂ddz/∂s`, then the chain rule
-  through `I_csr_value` / `I_csr!` / quadratures (`kernels/wake.jl`) and `image_charge_kick` + hat integration
+  through `I_csr_value` / `I_csr_calc` / quadratures (`kernels/wake.jl`) and `image_charge_kick` + hat integration
   (`kernels/image_charges.jl`). Also `csr_kick_coef` (∝ 1/γ, `utils/kick_setup.jl`).
 - Decide with the user first: which parameters count as "geometry" (centroid orbit rows? element L, g? `s_kick`),
   forward (Duals through the table kernels: needs the work struct and tables generic in the number type) vs reverse
@@ -148,6 +148,8 @@ extensions silently do not load.
 | D25 | 10-14 | Phase 6 step 3 parameters: all geometry builder inputs (centroid rows, element L and g), `s_kick`, γ. |
 | D26 | 10-14 | Phase 6 step 3 route: forward first (number-type-generic tables, primal root + implicit tangent), then a hybrid `rrule` (convolution adjoint × table Jacobian by chunked Duals) plus an `rrule` for `CSRGeometry(L, g, centroid)`. |
 | D27 | 10-14 | Tests may use ChainRulesTestUtils (reverses D18 for new rrule tests; existing hand tests stay). |
+| D28 | 10-14 | ForwardDiff is a hard dependency (already one of BeamTracking; CSR.jl is rarely used alone). `CSRForwardDiffExt` removed; `primal(::Dual)`, `root_tangent`, `RootTag` in core. Compat `ForwardDiff = "1.3.3"` (BeamTracking's; only 1.4.6 tested). |
+| D29 | 10-14 | `CSRKick1` immutable (user: prefer immutable types); the source-point functions return updated copies. |
 
 ---
 
@@ -190,9 +192,9 @@ Top level: types and host-side functions (launch kernels, allocate, check). `ker
 | `reference.jl` | Serial reference (`csr_*_reference`), ground truth for the kernels. |
 | `interface.jl` | Stubs + docstrings for `slice_element`, `csr_sliceable`, `track_csr!`. |
 | `kernels/binning.jl` | `triangle_overlap`, `deposit_ix0`, `deposit_particle!`, `csr_deposit_kernel!`, `csr_edge_gradient_kernel!`. |
-| `kernels/source_point.jl` | `ddz_calc_csr!`, `s_source_calc!` (V4 literal, V7, V8, downstream search, infinite drifts with walk-back). |
-| `kernels/wake.jl` | `I_csr_value`, `I_csr!`, `I_csr_integral`, `I_csr_quadrature!`, `csr_wake_kernel!`, `csr_trapezoid_kernel!`, `csr_bin_quadrature_kernel!`. |
-| `kernels/image_charges.jl` | `image_charge_kick`, `csr_image_kernel!`, hat integration (`image_kernel_at!`, `image_simpson!`, `image_segment!`, `image_interval_moments!`, `csr_image_hat_kernel!`, `csr_image_hat_combine_kernel!`). |
+| `kernels/source_point.jl` | `ddz_calc_csr`, `s_source_calc` (return `(k, value)`; V4 literal, V7, V8, downstream search, infinite drifts with walk-back), `csr_kick1_like`. |
+| `kernels/wake.jl` | `I_csr_value`, `I_csr_calc` (Bmad `I_csr`), `I_csr_integral`, `I_csr_quadrature`, `csr_wake_kernel!`, `csr_trapezoid_kernel!`, `csr_bin_quadrature_kernel!`. |
+| `kernels/image_charges.jl` | `image_charge_kick`, `csr_image_kernel!`, hat integration (`image_kernel_at`, `image_simpson`, `image_segment`, `image_interval_moments`, each returning `(k, value)`, `csr_image_hat_kernel!`, `csr_image_hat_combine_kernel!`). |
 | `kernels/convolve.jl`, `kernels/kick.jl` | `csr_convolve_kernel!`, `csr_image_convolve_kernel!`; `csr_apply_kicks_kernel!`. |
 | `kernels/adjoint.jl` | `triangle_overlap_dzp`, `kick_cell`, `kick_adjoint_particle!`, five adjoint kernels. |
 | `utils/math.jl` | `nint`, `modulo2`, `cross3`, `dot3`. |
@@ -211,7 +213,6 @@ Every function has a docstring (the docs build enforces it with `checkdocs = :al
 | Extension | Contents |
 |---|---|
 | `CSRBeamTrackingBeamlinesExt` | `slicing.jl`: `slice_element` following Bmad `makeup_super_slave1` (fringe at ends, SciBmadStandard → Symplectic order, RungeKutta n_steps scaled, multipoles scaled, apertures at ends, alignment per slice, patch on first slice, RF voltage ∝ length, four-potential/`EMFieldParams` shifted, SaganCavity → `slice_sagan`; maps whole); `csr_sliceable`. `sagan.jl`: `SaganSlice` windows of the cavity's kernel sequence, `track_slice!`. `track.jl`: `track_csr!(bunch, ::Beamline / ::Branch)` → `track_csr_line!` (survey, centroid, `CSRGeometry`, step loop with half kicks at ends, `L_slice = i·ds − s0`, `csr_ref_energies`, `pz_scale` in SaganCavity; keywords `params`, `csr_on`, `centroid_start`, `sliced_centroid`, `diagnostics`). Uses BeamTracking internals listed in the files' imports. |
-| `CSRForwardDiffExt` | `CSR.primal(::Dual)`. |
 | `CSRChainRulesCoreExt` | `rrule` for `csr_kick_pz`. |
 | `CSRAbstractFFTsExt`, `CSRGTPSAExt` | Empty stubs. |
 
@@ -243,7 +244,7 @@ Every function has a docstring (the docs build enforces it with `checkdocs = :al
   CPU covers the whole ndrange, so small ndranges need an explicit workgroup size (wake table uses 1).
 - Atomix atomic add fails on ForwardDiff Duals; Duals use the serial deposit path.
 - GPU (Metal): no Float64 and no 64-bit atomics. Float32 ranges carry Float64 internals (build grids elementwise).
-  Float literals in kernels must take the argument's type. The table kernels need the CPU (mutable work struct,
+  Float literals in kernels must take the argument's type. The table kernels need the CPU (`CSRKick1` immutable since D29, but
   non-isbits geometry).
 - lcavity in SciBmad: RF element with `tracking_method = SaganCavity` in its own Beamline with `dE_ref` (a Branch
   splits it out). `dE_ref` is seen only by the first element of a Beamline, only used by SaganCavity. RFParams with
@@ -465,6 +466,18 @@ Hat costs ~5× the source solves of point sampling.
 - Not done: nested Duals (Hessians) in `root_tangent` (errors); GTPSA/TPS (Phase 7: needs Newton iterations per
   order); Duals on GPU backends.
 
+### D28, D29 — ForwardDiff hard dependency, immutable `CSRKick1` (10-14, branch `phase6-geom_speed-deltas`)
+- `CSRKick1{T}` immutable and isbits (Float64, Float32, Dual; tested). `with_fields(k; ...)` copies with fields
+  replaced; `CSRKick1(geom, kp; ix_ele_source, dz_particles)`. Renamed (now non-mutating, returning `(k, value)`):
+  `ddz_calc_csr`, `s_source_calc`, `I_csr_calc` (was `I_csr!`), `I_csr_quadrature`, `image_kernel_at`,
+  `image_simpson`, `image_segment`, `image_interval_moments`. `zbrent` returns `(x, ok, x_last)`; compat (V7)
+  re-evaluates `k` at `x_last` instead of relying on mutation. `ddz_calc_csr` is `@inline` (else ~3% slower).
+- Diagnostics scripts updated (prototypes `image_proto.jl`, `image_layers.jl` hold `k` in a `Ref`); all rerun and
+  reproduce their logged numbers.
+- 1150/1150 on 1 and 4 threads (+9: isbits/`with_fields`). Timing, interleaved runs vs `8042ef1`, 1 thread:
+  free space 7.29/7.19 vs 7.15/7.23 ms, 16 layers 74.7/76.6 vs 73.8/74.3 ms (noise ~3%; machine slower than the
+  6.81 ms run above). No allocations in `s_source_calc`.
+
 ### Stage C (10-14, branch `stage-c`)
 - **Step 0.** Compat `Beamlines = "0.10.6, 0.11"`, `BeamTracking = "0.8.7"` (registered 0.8.5–0.8.7 contain
   `RungeKutta`; only 0.8.7 tested). 857/857 against dev BeamTracking 0.8.7, Beamlines 0.11.0.
@@ -517,7 +530,7 @@ Hat costs ~5× the source solves of point sampling.
 | 5 | Shielding (image charges) | done (+ D20, D24, V9) |
 | 6 | AD: steps 0–2 particles (done); step 3 geometry/γ via implicit differentiation of the source root | 3a forward done; 3b rrule next |
 | 7 | TPS (serial deposit, optional smooth shape function); tests: first order = Jacobian, second = ForwardDiff Hessian | not started |
-| 8 | FFT convolution (`CSRAbstractFFTsExt`) for large n_bin; benchmarks; GPU wake table (isbits geometry via Adapt, immutable work struct); issue for a BeamTracking collective-step hook (route b) | not started |
+| 8 | FFT convolution (`CSRAbstractFFTsExt`) for large n_bin; benchmarks; GPU wake table (isbits geometry via Adapt; work struct immutable since D29; errors/recursion in the source search); issue for a BeamTracking collective-step hook (route b) | not started |
 
 Follow-ups not requested: per-element `ds_step` (Bmad `csr_ds_step`); caching slices per element (rebuilt every step);
 Metal tests in the suite (conditional on Metal.jl).

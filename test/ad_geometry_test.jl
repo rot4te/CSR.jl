@@ -35,17 +35,13 @@
     G = CSRGeometry(L3, ForwardDiff.Dual.(g3, 1.0), c3; bmad_compat = bc)
     kp = CSRKickPoint(G, 2, 0.17, ForwardDiff.Dual(200.0, 1.0))
     for dz in (2e-5, 3e-4, 1e-3)
-      k = CSR.CSRKick1(G, kp)
-      k.ix_ele_source = 2
-      k.dz_particles = dz
-      s = CSR.s_source_calc!(k, G, kp)
+      k = CSR.CSRKick1(G, kp; ix_ele_source = 2, dz_particles = dz)
+      k, s = CSR.s_source_calc(k, G, kp)
       @test ForwardDiff.partials(s, 1) != 0
       # ddz at the Dual root: zero derivative (implicit function theorem); at the primal root: not
-      k2 = CSR.CSRKick1(G, kp)
-      k2.ix_ele_source = k.ix_ele_source
-      k2.dz_particles = dz
-      r_dual = CSR.ddz_calc_csr!(k2, s, G, kp)
-      r_fixed = CSR.ddz_calc_csr!(k2, ForwardDiff.value(s), G, kp)
+      k2 = CSR.CSRKick1(G, kp; ix_ele_source = k.ix_ele_source, dz_particles = dz)
+      _, r_dual = CSR.ddz_calc_csr(k2, s, G, kp)
+      _, r_fixed = CSR.ddz_calc_csr(k2, ForwardDiff.value(s), G, kp)
       @test abs(ForwardDiff.partials(r_dual, 1)) < 1e-10 * abs(ForwardDiff.partials(r_fixed, 1))
     end
   end

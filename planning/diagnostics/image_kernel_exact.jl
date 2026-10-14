@@ -30,9 +30,7 @@ function E_exact(u, ρ, y, γ)
 end
 
 function K_csr(u, geom, kp)
-  k = CSR.CSRKick1(); k.ix_ele_source = kp.ix_ele_kick
-  k.dz_particles = u
-  CSR.s_source_calc!(k, geom, kp)
+  k, _ = CSR.s_source_calc(CSR.CSRKick1(; ix_ele_source = kp.ix_ele_kick, dz_particles = u), geom, kp)
   return CSR.image_charge_kick(k, geom, kp)
 end
 

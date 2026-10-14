@@ -12,6 +12,8 @@ using StaticArrays
 using AtomicAndPhysicalConstants
 using KernelAbstractions
 import Atomix
+import ForwardDiff
+using ForwardDiff: Dual, Partials, value, partials
 
 export CSRParams, FloorPosition, CSRGeometry, CSRElementInfo, CSRBins, CSRKickPoint, CSRStepResult
 export planar_survey, csr_bin_particles, csr_kick!, csr_kick_pz, csr_kick_coef, csr_n_step, dspline_len
