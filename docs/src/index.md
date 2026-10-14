@@ -10,8 +10,9 @@ shielding by parallel plates (image charges).
   CSR kick.
 - The **BeamTracking + Beamlines extension** provides [`track_csr!`](@ref): it slices every element, tracks each
   slice with BeamTracking, and applies a CSR kick between slices.
-- **Derivatives** of a kick with respect to the particle coordinates and charges: ForwardDiff `Dual`s pass through,
-  and with ChainRulesCore an `rrule` for [`csr_kick_pz`](@ref) uses explicit adjoint kernels.
+- **Derivatives** of a kick with respect to the particle coordinates and charges, the geometry (element lengths,
+  curvatures, centroid), the kick position and γ: ForwardDiff `Dual`s pass through, and with ChainRulesCore `rrule`s for
+  [`csr_kick_pz`](@ref) and `CSRGeometry` give the pullbacks.
 
 By default CSR.jl corrects several approximations and errors found in Bmad's implementation;
 `CSRParams(bmad_compat = true)` reproduces Bmad. Each such choice is listed, with its effect, on the

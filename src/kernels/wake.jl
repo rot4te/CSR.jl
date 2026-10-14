@@ -18,7 +18,7 @@ it is a trapezoid with the previous bin's `I_csr_prev`.
 function I_csr_calc(k::CSRKick1, i_bin, dz_slice, geom::CSRGeometry, kp::CSRKickPoint, I_csr_prev)
   # No kick when the source particle is ahead of the kicked particle
   z = k.dz_particles
-  z <= 0 && return with_fields(k; I_csr = 0.0, I_int_csr = 0.0)
+  primal(z) <= 0 && return with_fields(k; I_csr = 0.0, I_int_csr = 0.0)
 
   gamma2 = kp.gamma2
   I_csr = I_csr_value(k, kp)

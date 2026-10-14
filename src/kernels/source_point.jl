@@ -29,13 +29,13 @@ in element `k.ix_ele_source`, minus the target `k.dz_particles`. Returns `k` wit
     dtheta_L = sp[2] + sp[3] * (2s0 + ds) + sp[4] * (3s0^2 + 3s0 * ds + ds^2)
     dL = path_excess(s0, s1, sp, dtheta_L; bmad_compat = bc)   # = Ls - L
     # Ls is negative if the source point is ahead of the kick point (ds < 0), but L is always positive.
-    ds < 0 && (dL += 2ds)
+    primal(ds) < 0 && (dL += 2ds)
     theta_sl = spline_d1(sp, s0) - dtheta_L
     theta_lk = dtheta_L - spline_d1(sp, s1)
     theta_s = theta_sl + theta_L
     # For a source ahead of the kick point L_vec points backwards, and theta_sl + theta_L is the source direction
     # + π (Bmad, planning/PLAN.md V8). Only the image-charge kick uses it.
-    ds < 0 && !bc && (theta_s = modulo2(theta_s + pi, pi))
+    primal(ds) < 0 && !bc && (theta_s = modulo2(theta_s + pi, pi))
   elseif k.ix_ele_source > kp.ix_ele_kick
     # Source downstream of the kick element (image charges, source ahead of the kick point; not in Bmad).
     # Ls = -(path length from the kick point to the source), so dL = Ls - L = -(excess + 2L) in the plane.
@@ -107,7 +107,7 @@ function s_source_calc(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
       c = (Lsz0 - dz)^2 - beta2 * L0^2
       ds_source = -(-b + sqrt(b^2 - 4a * c)) / (2a)
       # A search warm-started here (another lag) may belong inside the lattice: go back and walk.
-      if ds_source > 0 && last_step == 0
+      if primal(ds_source) > 0 && last_step == 0
         k = with_fields(k; ix_ele_source = 1)
         continue
       end
@@ -143,7 +143,7 @@ function s_source_calc(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
       c = u^2 - beta2 * (dr[1]^2 + dr[3]^2 + kp.y_source^2)
       t = c / (b + sqrt(b^2 - c / kp.gamma2))
       # A search warm-started here (previous lag) may belong inside the lattice: go back and walk.
-      if t < 0 && last_step == 0
+      if primal(t) < 0 && last_step == 0
         k = with_fields(k; ix_ele_source = length(geom.ele))
         continue
       end
@@ -162,8 +162,10 @@ function s_source_calc(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
     es = geom.ele[k.ix_ele_source]
     # Check whether the source point is within this element. Generally ddz decreases with increasing s,
     # but this may not hold for patch elements.
+    # Branch decisions on primal values: ForwardDiff orders Duals with equal values by their partials.
     k, ddz0 = ddz_calc_csr(k, 0.0, geom, kp)
     k, ddz1 = ddz_calc_csr(k, es.L_chord, geom, kp)
+    ddz0, ddz1 = primal(ddz0), primal(ddz1)
 
     if last_step == -1 && ddz1 > 0   # Round-off error makes ddz1 positive
       # Bmad returns the ddz value here, not a position (csr_and_space_charge_mod.f90:952).
@@ -186,7 +188,7 @@ function s_source_calc(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
       # Source beyond this element. Beyond the kick element it is ahead of the kick point, which needs dz < 0
       # (image charges). Bmad ignores it there (k is left describing the source at the end of the kick element);
       # CSR.jl continues downstream (planning/PLAN.md, V8).
-      if k.ix_ele_source == kp.ix_ele_kick && (geom.bmad_compat || dz >= 0)
+      if k.ix_ele_source == kp.ix_ele_kick && (geom.bmad_compat || primal(dz) >= 0)
         return with_fields(k; s_chord_source = 0.0), zero(number_type(k))
       end
       last_step == -1 && break

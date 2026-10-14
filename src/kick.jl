@@ -115,14 +115,25 @@ function csr_binned_kick(z::AbstractVector, q::AbstractVector, alive::AbstractVe
   n_bin = params.n_bin
   params.bmad_compat == geom.bmad_compat || error("csr_kick!: params.bmad_compat and geom.bmad_compat differ")
   count(alive) >= n_bin || error("csr_kick!: number of live particles ($(count(alive))) is less than n_bin ($n_bin)")
-  backend = get_backend(z)
+  bins = csr_bin_particles(z, q, alive, params)
+  return csr_bins_kick(bins, get_backend(z), geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor)
+end
+
+"""
+    csr_bins_kick(bins, backend, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor = 1.0)
+
+The part of `csr_binned_kick` after binning: kick tables, convolutions and kick per bin, for given `bins` (arrays on
+`backend`). Returns the same named tuple.
+"""
+function csr_bins_kick(bins::CSRBins, backend, geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma,
+                       species::Species, params::CSRParams; kick_factor = 1.0)
+  n_bin = params.n_bin
   tb = table_backend(backend)
 
   e = geom.ele[ix_ele_kick]
   _, ds_step = csr_n_step(e.L, params)
   actual_track_step = ds_step * (e.L_chord / e.L)
 
-  bins = csr_bin_particles(z, q, alive, params)
   kp = CSRKickPoint(geom, ix_ele_kick, s_kick, gamma; kick_factor)
   dz_t = tb === backend ? bins.dz : Float64(bins.dz)   # tables off the particle backend: Float64 lags
   I_csr, I_int, s_source = to_backend.(Ref(backend),

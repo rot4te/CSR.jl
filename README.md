@@ -21,8 +21,9 @@ Currently implemented and tested (CPU; the particle-side kernels also run on GPU
   others (see the documentation's "Physics decisions" page).
 - Element slicing following Bmad's rules for all Beamlines element kinds BeamTracking tracks, including RungeKutta
   field maps and SaganCavity (lcavity) elements with a reference-energy ramp.
-- Derivatives of a kick with respect to the particle coordinates and charges: ForwardDiff `Dual`s and an `rrule`
-  with explicit adjoint kernels.
+- Derivatives of a kick with respect to the particle coordinates and charges, the geometry (element lengths,
+  curvatures, centroid), the kick position and γ: ForwardDiff `Dual`s, and `rrule`s (ChainRulesCore) for `csr_kick_pz`
+  and `CSRGeometry`.
 
 ## Documentation
 

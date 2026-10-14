@@ -44,13 +44,13 @@ function CSRGeometry(L::AbstractVector, g::AbstractVector, ref_exit::AbstractVec
     spline = zero(SVector{4,T})
     dL_s = zero(T)
 
-    if abs(L_chord) >= 1e-8   # Bmad's threshold for a zero-length chord
+    if abs(primal(L_chord)) >= 1e-8   # Bmad's threshold for a zero-length chord
       # An element with a negative step (e.g. off-center beam in a patch with only an x-pitch) can have
       # floor%theta and theta_chord 180° apart. Restrict theta0 and theta1 to [-π/2, π/2).
       theta0 = modulo2(floor0.theta - theta_chord, pi / 2)
       theta1 = modulo2(floor1.theta - theta_chord, pi / 2)
-      parallel0 = abs(modulo2(floor0.theta - theta_chord, pi)) < pi / 2
-      parallel1 = abs(modulo2(floor1.theta - theta_chord, pi)) < pi / 2
+      parallel0 = abs(modulo2(primal(floor0.theta - theta_chord), pi)) < pi / 2
+      parallel1 = abs(modulo2(primal(floor1.theta - theta_chord), pi)) < pi / 2
       parallel0 == parallel1 || error("CSRGeometry: inconsistent centroid direction in element $i")
       parallel0 || (L_chord = -L_chord)
       spline = chord_spline(L_chord, theta0, theta1)

@@ -77,7 +77,7 @@ function image_simpson(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol, h_min, depth)
   h = b - a
   S1 = h / 6 * (g(a, fa) + 4g(m, fm) + g(b, fb))
   S2 = h / 12 * (g(a, fa) + 4g((a + m) / 2, fl) + 2g(m, fm) + 4g((m + b) / 2, fr) + g(b, fb))
-  (depth <= 0 || h <= h_min || maximum(abs, S2 - S1) <= 15tol) && return k, S2 + (S2 - S1) / 15
+  (depth <= 0 || h <= h_min || maximum(abs, primal.(S2 - S1)) <= 15primal(tol)) && return k, S2 + (S2 - S1) / 15
   k, Sl = image_simpson(k, geom, kp, a, m, fa, fl, fm, u0, dz, tol / 2, h_min, depth - 1)
   k, Sr = image_simpson(k, geom, kp, m, b, fm, fr, fb, u0, dz, tol / 2, h_min, depth - 1)
   return k, Sl + Sr

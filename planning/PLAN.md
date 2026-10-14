@@ -32,8 +32,8 @@ GTPSA TPS).
 - **`reorg`** (from `stage-c` `f3c69bf`), head `5ee107c` + this handoff edit: source layout as BeamTracking.jl
   (`src/kernels/`, `src/utils/`), a docstring for every function, README.md, Documenter docs (`docs/`, GitHub
   Actions workflow). 1035/1035 tests on 1 and 4 threads; docs build clean (`checkdocs = :all`).
-- **`phase6-geom_speed-deltas`** (from `reorg` `08da04e`): Phase 6 step 3a, forward-mode derivatives w.r.t. geometry,
-  `s_kick`, γ. 1141/1141 on 1 and 4 threads. **Latest state.**
+- **`phase6-geom_speed-deltas`** (from `reorg` `08da04e`): Phase 6 step 3 (forward mode and rrules w.r.t. geometry,
+  `s_kick`, γ), ForwardDiff hard dependency, immutable `CSRKick1`. 1355/1355 on 1 and 4 threads. **Latest state.**
 
 | Commit | Branch | Content |
 |---|---|---|
@@ -51,11 +51,10 @@ GTPSA TPS).
 lcavity mode, Stage B (D20, D21, D23), D24, GPU number types, exact path excess (V9), D22, source reorganization,
 README, Documenter docs.
 
-**Phase 6 step 3a (forward mode) done** on branch **`phase6-geom_speed-deltas`** (from `reorg`); see Section 9.
-**Next: step 3b** (D26): hybrid `rrule` for `csr_kick_pz` w.r.t. `geom`, `s_kick`, γ and an `rrule` for
-`CSRGeometry(L, g, centroid)`; tests with ChainRulesTestUtils (D27; add it to `[extras]`/test target). Open point
-resolved: ForwardDiff is a hard dependency (D28), so the rrule in `CSRChainRulesCoreExt` can use it. `CSRKick1` is
-immutable (D29, done).
+**Phase 6 step 3 done** (3a forward mode, D28/D29, 3b rrules) on branch **`phase6-geom_speed-deltas`** (from
+`reorg`); see Section 9. **Next (user to choose):** Phase 8 GPU table work (Adapt-based `CSRGeometry` with the element
+vector as a type parameter; errors in the source search as return codes; iterative adaptive Simpson), Phase 7 (TPS),
+or a cheaper geometry pullback (per-lag sparsity, or hand-written adjoints of the tables).
 
 Original notes for step 3 (from the reorg handoff, 2026-10-14): Goal: derivatives of a kick w.r.t. the geometry and the reference speed/energy (γ), and `s_kick`.
 Starting points (suggestions, not decided):
@@ -243,6 +242,11 @@ Every function has a docstring (the docs build enforces it with `checkdocs = :al
 - KA CPU backend: `@index(Global)` must be a standalone assignment (`@index(Global) + 1` fails); default workgroup on
   CPU covers the whole ndrange, so small ndranges need an explicit workgroup size (wake table uses 1).
 - Atomix atomic add fails on ForwardDiff Duals; Duals use the serial deposit path.
+- ForwardDiff ≥ 1.0 (checked 1.4.6): `==` compares partials, and `<`, `>`, `<=`, `>=`, `max`, `min` order Duals with
+  equal values by their partials (`Dual(0, 1) > 0` is true). Every branch on a possibly-Dual value must compare
+  `primal` values (else the branch depends on the seeded directions, and at ties differs from the Float64 run);
+  `primal_max`/`primal_min` for value-producing max/min. `mod(Dual(0, 0), π)` has NaN partials: `modulo2` has a Dual
+  method.
 - GPU (Metal): no Float64 and no 64-bit atomics. Float32 ranges carry Float64 internals (build grids elementwise).
   Float literals in kernels must take the argument's type. The table kernels need the CPU (`CSRKick1` immutable since D29, but
   non-isbits geometry).
@@ -478,6 +482,29 @@ Hat costs ~5× the source solves of point sampling.
   free space 7.29/7.19 vs 7.15/7.23 ms, 16 layers 74.7/76.6 vs 73.8/74.3 ms (noise ~3%; machine slower than the
   6.81 ms run above). No allocations in `s_source_calc`.
 
+### Phase 6 step 3b — rrules w.r.t. geometry, s_kick, γ (10-14, branch `phase6-geom_speed-deltas`)
+- `csr_kick_pz` rrule (`CSRChainRulesCoreExt`): particle part as before (`csr_kick_adjoint` now also returns the kick
+  cotangent per bin `kbar`); geometry/`s_kick`/γ by `csr_kick_param_adjoint`: ForwardDiff gradient of `kbar ⋅ kick`
+  through `csr_bins_kick` (split out of `csr_binned_kick`) with the bins fixed, on the CPU. Geometry cotangent is a
+  `Tangent{CSRGeometry}` (no `bmad_compat` entry), built from `geometry_to_vector` order (4 + 26 n_ele numbers;
+  `geometry_from_vector` the inverse). rrules for `CSRGeometry(L, g, centroid)` and `(L, g, ref_exit, centroid)`:
+  transposed ForwardDiff Jacobian; keywords (`ref_start`, `kick_factor`, `pz_scale`) get no cotangents.
+- Sparse seeding (`geometry_active_indices`): kick element (26), walked elements (11: floor0, theta_chord, L_chord,
+  spline, dL_s), drift sums and `start`/last `floor1` when sources leave the lattice; range from source searches at
+  the extreme lags. Assumes the source element is monotone in the lag. Pullback (n_bin 200, ρ = 10 m arc, 1 thread):
+  dense 0.05 s (10 elements), 17 s (80); sparse 0.02 s (10), 2.6 s (80 and 400; 367 active numbers), kick 7 ms.
+- Bugs found: (1) `mod` NaN partials at 0 → NaN derivatives for a kick at an element entrance (source on the boundary)
+  and on-axis straight elements; (2) Dual comparisons at ties use partials → sparse and dense gradients differed by
+  2.5% at a boundary root; single-direction AD and FD confirmed the sparse value. Fixed by primal comparisons in
+  `source_point.jl`, `wake.jl`, `image_charges.jl`, `geometry.jl`, `chord_coordinates.jl`, the deposit
+  (`primal_max`/`primal_min`) and the kick kernel. Float64 results unchanged (suite exact comparisons pass).
+- Tests (`test/ad_rrule_test.jl`): rrule vs ForwardDiff ≤ 1e-12 (geometry vector, s_kick, γ; free space, images,
+  compat); composed with the CSRGeometry rrules vs ForwardDiff over L (≤ 1e-6, cancellation), g, centroid, ref_exit
+  (≤ 1e-9); sparse == dense in 5 cases (mid-lattice, entrance, upstream drift, downstream drift with images, compat);
+  ChainRulesTestUtils `test_rrule` (z fixed via `rrule_f`; FD steps capped at 1e-6 because of curvature, rtol 1e-2
+  because of the zbrent 1e-8 noise at those steps; `to_vec`/`test_approx` for `CSRGeometry` in the test file).
+  ChainRulesTestUtils in `[extras]` (compat 1.13). 1355/1355 on 1 and 4 threads; docs updated, build clean.
+
 ### Stage C (10-14, branch `stage-c`)
 - **Step 0.** Compat `Beamlines = "0.10.6, 0.11"`, `BeamTracking = "0.8.7"` (registered 0.8.5–0.8.7 contain
   `RungeKutta`; only 0.8.7 tested). 857/857 against dev BeamTracking 0.8.7, Beamlines 0.11.0.
@@ -528,7 +555,7 @@ Hat costs ~5× the source solves of point sampling.
 | 3 | Bmad cross-check | done |
 | 4 | KernelAbstractions kernels | done (GPU: particle side + CPU tables, Stage C) |
 | 5 | Shielding (image charges) | done (+ D20, D24, V9) |
-| 6 | AD: steps 0–2 particles (done); step 3 geometry/γ via implicit differentiation of the source root | 3a forward done; 3b rrule next |
+| 6 | AD: steps 0–2 particles (done); step 3 geometry/γ via implicit differentiation of the source root | done (3a forward, 3b rrules) |
 | 7 | TPS (serial deposit, optional smooth shape function); tests: first order = Jacobian, second = ForwardDiff Hessian | not started |
 | 8 | FFT convolution (`CSRAbstractFFTsExt`) for large n_bin; benchmarks; GPU wake table (isbits geometry via Adapt; work struct immutable since D29; errors/recursion in the source search); issue for a BeamTracking collective-step hook (route b) | not started |
 

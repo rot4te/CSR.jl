@@ -67,3 +67,14 @@ The bin grid is built from primal values, so derivatives treat it as constant.
 """
 primal(x) = x
 primal(d::Dual) = primal(value(d))
+
+"""
+    primal_max(a, b)
+    primal_min(a, b)
+
+`max`/`min` decided on primal values (ForwardDiff orders `Dual`s with equal values by their partials, which would make
+the choice at a tie depend on the seeded directions). Same results as `max`/`min` for plain numbers except for signed
+zeros.
+"""
+@inline primal_max(a, b) = ((a, b) = promote(a, b); primal(a) >= primal(b) ? a : b)
+@inline primal_min(a, b) = ((a, b) = promote(a, b); primal(a) <= primal(b) ? a : b)

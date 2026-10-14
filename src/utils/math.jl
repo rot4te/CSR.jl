@@ -24,6 +24,9 @@ function modulo2(x, amp)
   return m >= amp ? m - 2amp : m
 end
 
+# Fold the value only; the derivative of the fold is 1 (ForwardDiff's `mod` gives NaN partials at a value of exactly 0).
+modulo2(x::Dual{T}, amp) where {T} = Dual{T}(modulo2(value(x), amp), partials(x))
+
 """
     cross3(a, b)
 

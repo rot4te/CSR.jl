@@ -98,7 +98,17 @@ In `Float32`, strongly shielded kicks (a small residual of large image terms) ar
 differentiation of its root, `ds/dp = −(∂ddz/∂p)/(∂ddz/∂s)`, not by differentiating the root finder. Held
 constant: the bin grid (from the extreme live particles) and the discrete choices (number of steps, the element each
 source lies in, the adaptive quadrature's subdivision), so derivatives are one-sided where these switch, e.g. at an
-element entrance. With ChainRulesCore an `rrule` gives the pullback with respect to `pz`, `z` and `q`.
+element entrance.
+
+With ChainRulesCore loaded, `rrule`s give the pullbacks of `csr_kick_pz` (with respect to `pz`, `z`, `q`, the
+geometry as a `Tangent{CSRGeometry}`, `s_kick` and γ) and of `CSRGeometry(L, g, centroid)` and
+`CSRGeometry(L, g, ref_exit, centroid)` (with respect to their positional arguments). The particle part uses explicit
+adjoint kernels. The geometry, `s_kick` and γ part is the gradient of `k̄ ⋅ kick` (`k̄` the cotangent of the kick per
+bin) by ForwardDiff through the kick tables, seeding only the geometry numbers the kick can depend on: the kick
+element, the elements between it and the farthest source, and the drift sums when sources lie outside the lattice.
+Its cost is about one table evaluation per such number, independent of the lattice length (2.6 s for a kick whose
+sources reach 3 m upstream on a ρ = 10 m arc, n_bin = 200, vs 7 ms for the kick; 1 thread). Keyword arguments
+(`kick_factor`, `pz_scale`, `ref_start`) get no cotangents.
 
 ```@example usage
 using ForwardDiff, ChainRulesCore

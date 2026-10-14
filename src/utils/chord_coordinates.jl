@@ -7,7 +7,7 @@ Distance along the centroid chord corresponding to reference position `s_ref` fr
 Literal port of Bmad's `s_ref_to_s_chord`; see `planning/PLAN.md` (open question V3) about the bend branch.
 """
 function s_ref_to_s_chord(s_ref, e::CSRElementInfo)
-  if abs(e.g) > 1e-5
+  if abs(primal(e.g)) > 1e-5
     rho = 1 / e.g
     dtheta = e.floor0.theta - e.ref_floor0.theta
     dr = e.ref_floor0.r - e.floor0.r

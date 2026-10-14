@@ -85,7 +85,7 @@
       @test maxrel(t[4], Jq' * ybar) < 1e-12
       @test all(iszero, t[3][dead]) && all(iszero, t[4][dead])
       @test all(x -> x isa NoTangent, t[[1, 5, 7, 10, 11]])
-      @test all(x -> x isa ChainRulesCore.NotImplemented, t[[6, 8, 9]])
+      @test t[6] isa Tangent{typeof(geom)} && t[8] isa Real && t[9] isa Real   # checked in ad_rrule_test.jl
     end
     # Thunked and zero cotangents
     ybar = cos.(1:n)

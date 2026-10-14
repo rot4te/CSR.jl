@@ -31,6 +31,14 @@
     @test ForwardDiff.partials(f.theta, 1) == -0.3
   end
 
+  @testset "modulo2 at a fold boundary" begin
+    # ForwardDiff's mod gives NaN partials at exactly 0 (an on-axis straight element, a source on an element boundary)
+    @test CSR.modulo2(ForwardDiff.Dual(0.0, 1.0), pi / 2) == ForwardDiff.Dual(0.0, 1.0)
+    @test CSR.modulo2(ForwardDiff.Dual(4.0, 2.0), pi / 2) == ForwardDiff.Dual(CSR.modulo2(4.0, pi / 2), 2.0)
+    J = ForwardDiff.jacobian(Lv -> CSR.geometry_to_vector(CSRGeometry(Lv, [0.0, 0.5], zeros(3, 6))), [0.2, 0.3])
+    @test !any(isnan, J)
+  end
+
   @testset "Source root: residual stationary (bmad_compat = $bc)" for bc in (false, true)
     G = CSRGeometry(L3, ForwardDiff.Dual.(g3, 1.0), c3; bmad_compat = bc)
     kp = CSRKickPoint(G, 2, 0.17, ForwardDiff.Dual(200.0, 1.0))

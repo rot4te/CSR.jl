@@ -11,12 +11,12 @@ function triangle_overlap(zp, dz_particle, zb0, zb1)
   zp1 = zp + dz_particle / 2
   inv_dz2 = 1 / dz_particle^2
   overlap = zero(zp * inv_dz2)
-  z1 = max(zp0, zb0)
-  z2 = min(zp, zb1)
-  z2 > z1 && (overlap += 2 * ((z2 - zp0)^2 - (z1 - zp0)^2) * inv_dz2)
-  z1 = max(zp, zb0)
-  z2 = min(zp1, zb1)
-  z2 > z1 && (overlap += 2 * ((z1 - zp1)^2 - (z2 - zp1)^2) * inv_dz2)
+  z1 = primal_max(zp0, zb0)
+  z2 = primal_min(zp, zb1)
+  primal(z2) > primal(z1) && (overlap += 2 * ((z2 - zp0)^2 - (z1 - zp0)^2) * inv_dz2)
+  z1 = primal_max(zp, zb0)
+  z2 = primal_min(zp1, zb1)
+  primal(z2) > primal(z1) && (overlap += 2 * ((z1 - zp1)^2 - (z2 - zp1)^2) * inv_dz2)
   return overlap
 end
 

@@ -15,7 +15,7 @@ centres around `z` (Fortran `int` truncation for the cell, as Bmad). Particles o
     i0 = trunc(Int, (zp - z_center[1]) / dz) + 1   # Fortran int() truncates toward zero
     if 1 <= i0 < n_bin
       r1 = (zp - z_center[i0]) / dz
-      if oftype(r1, -0.01) <= r1 <= oftype(r1, 1.01)
+      if oftype(primal(r1), -0.01) <= primal(r1) <= oftype(primal(r1), 1.01)
         r0 = 1 - r1
         pz[i] += pz_scale * (r0 * kick[i0] + r1 * kick[i0+1])
       else
