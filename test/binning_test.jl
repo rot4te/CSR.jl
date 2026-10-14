@@ -1,5 +1,9 @@
 using CSR: triangle_overlap
 
+# Mock GPU backend without Float64 (as Metal), for the number-type helpers.
+struct NoFloat64Backend <: CSR.KernelAbstractions.GPU end
+CSR.KernelAbstractions.supports_float64(::NoFloat64Backend) = false
+
 @testset "Binning" begin
   @testset "triangle_overlap" begin
     dz = 0.1
@@ -34,6 +38,18 @@ using CSR: triangle_overlap
     @test eltype(b32.z0_edge) == eltype(b32.charge) == Float32
     @test b32.z0_edge ≈ bins.z0_edge rtol = 1e-5
     @test sum(b32.charge) ≈ sum(q[alive]) rtol = 1e-5
+  end
+
+  @testset "Backend number types" begin
+    @test CSR.csr_float_type(CSR.CPU()) == Float64
+    @test CSR.device_scalar(CSR.CPU(), 1.3) === 1.3
+    A = rand(4)
+    @test CSR.to_backend(CSR.CPU(), A) === A
+    @test CSR.table_backend(CSR.CPU()) === CSR.CPU()
+    # A backend without Float64 (as Metal): Float32 scalars, tables computed on the CPU
+    @test CSR.csr_float_type(NoFloat64Backend()) == Float32
+    @test CSR.device_scalar(NoFloat64Backend(), 1.3) === 1.3f0
+    @test CSR.table_backend(NoFloat64Backend()) isa CSR.CPU
   end
 
   @testset "CSRParams" begin

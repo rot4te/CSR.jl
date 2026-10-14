@@ -114,7 +114,7 @@ function csr_kick_reference!(pz::AbstractVector, z::AbstractVector, q::AbstractV
   # Image charges: lags -n_bin:n_bin, one warm-started walk; kick(i) += coef Σ_j image(i - j) charge(j)
   for ns in 1:params.n_shield_images
     kp_ns = CSRKickPoint(geom, ix_ele_kick, s_kick, gamma; y_source = ns * params.beam_chamber_height,
-                         kick_factor = (-1)^ns * 2 * kick_factor)
+                         kick_factor = (-1)^ns * 2 * image_layer_weight(ns, params) * kick_factor)
     image = zeros(2n_bin + 1)
     k = CSRKick1()
     k.ix_ele_source = ix_ele_kick

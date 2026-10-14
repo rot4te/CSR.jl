@@ -205,13 +205,48 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) * (r.z_center[2] - r.z_ce
     @test 0.9 < ratio[0.1] < 0.95   # mild shielding
     @test ratio[1.0] ≈ 1 rtol = 1e-3
     # h = 3 mm: the image kernel's structure is much finer than a bin. The hat-weighted table gives the same
-    # result for coarse and fine bins (fixed layer count); point sampling (bmad_compat) does not.
+    # result for coarse and fine bins (fixed layer count, plain sum); point sampling (bmad_compat) does not.
     geom_c = CSRGeometry(circle_lattice(10.0, 0.1, 80)...; bmad_compat = true)
     kick3(p) = csr_kick!(zeros(N), zb, qb, aliveb, p.bmad_compat ? geom_c : geom, 80, 0.05, 1e4, electron, p)
     ratio3(n_bin; bc = false) =
       eloss(kick3(CSRParams(n_bin = n_bin, ds_step = 0.1, n_shield_images = 16, beam_chamber_height = 0.003,
-                            bmad_compat = bc))) / eloss(kick3(CSRParams(n_bin = n_bin, ds_step = 0.1, bmad_compat = bc)))
+                            image_sum_order = 0, bmad_compat = bc))) /
+      eloss(kick3(CSRParams(n_bin = n_bin, ds_step = 0.1, bmad_compat = bc)))
     @test ratio3(60) ≈ ratio3(480) rtol = 0.03
     @test !isapprox(ratio3(60; bc = true), ratio3(480; bc = true); rtol = 0.5)
+  end
+
+  @testset "Averaged image-layer sum (image_sum_order)" begin
+    @test CSRParams().image_sum_order == 8
+    @test_throws ErrorException CSRParams(image_sum_order = -1)
+    @test_throws ErrorException CSRParams(image_sum_order = 61)
+    w(M, k; bc = false) = [CSR.image_layer_weight(n, CSRParams(n_shield_images = M, beam_chamber_height = 0.01,
+                                                               image_sum_order = k, bmad_compat = bc)) for n in 1:M]
+    @test all(==(1), w(20, 0))
+    @test all(==(1), w(20, 8; bc = true))
+    # Weights reproduce the binomial average of the partial sums S_{M-k} … S_M (S_0 = free space only)
+    a = [(-1)^n * (1 + 0.3sin(n)) / n for n in 1:20]
+    S = 1 .+ cumsum(a)
+    @test 1 + sum(w(20, 8) .* a) ≈ sum(binomial(8, j) * S[12+j] for j in 0:8) / 2^8 rtol = 1e-14
+    # k capped at M; weights non-increasing in [0, 1], summing to M - k/2
+    S0 = [1.0; S]
+    @test 1 + sum(w(3, 8) .* a[1:3]) ≈ sum(binomial(3, j) * S0[1+j] for j in 0:3) / 2^3 rtol = 1e-14
+    for (M, k) in ((20, 8), (3, 8), (64, 60))
+      ws = w(M, k)
+      @test issorted(ws; rev = true) && all(0 .<= ws .<= 1)
+      @test sum(ws) ≈ M - min(k, M) / 2 rtol = 1e-14
+    end
+
+    # Steady-state bend on a 40 m arc (sources of high layers stay on the arc), h = 3 mm: the averaged sum is
+    # converged at 32 layers, the plain sum is not (planning/PLAN_continued.md, D24).
+    N = 20001
+    zb, qb, aliveb = gaussian_line_bunch(1e-3, 1e-9, N)
+    geom = CSRGeometry(circle_lattice(10.0, 0.1, 400)...)
+    kick(M, k) = csr_kick!(zeros(N), zb, qb, aliveb, geom, 400, 0.05, 1e4, electron,
+                           CSRParams(n_bin = 120, ds_step = 0.1, n_shield_images = M, beam_chamber_height = 0.003,
+                                     image_sum_order = k)).kick_per_meter
+    k32, k64 = kick(32, 8), kick(64, 8)
+    @test maxrel(k32, k64) < 1e-4
+    @test maxrel(kick(32, 0), k64) > 1
   end
 end

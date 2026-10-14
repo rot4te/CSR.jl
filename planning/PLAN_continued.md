@@ -17,7 +17,29 @@ run on `MtlArray{Float32}` (scratch probe, not in the test suite: charge 2e-6, c
 CPU Float32). Wake/image tables remain CPU/Float64 (Phase 8). Float64 results unchanged (oftype on Float64 is exact).
 `KernelAbstractions.supports_float64(backend)` exists (KA ≥ 0.9.35 checked; Metal returns false).
 
-**D24 investigation (2026-10-14), nothing implemented; proposal pending with the user.** Scripts in
+**D24 implemented (2026-10-14, user approved):** `CSRParams(image_sum_order = 8)` (0:60; 0 = plain sum; ignored with
+`bmad_compat`). `image_layer_weight(ns, params)` multiplies layer ns's `kick_factor` in `csr_binned_kick` and
+`csr_kick_reference!` (weights = binomial average of partial sums S_{M−k}…S_M, k = min(order, M); Σw = M − k/2).
+The adjoint reuses the weighted tables, so AD is unchanged. Tests: weights, convergence 32 vs 64 layers (< 1e-4) on
+the 40 m arc, plain sum not converged (> 1). The h = 3 mm coarse-vs-fine-bin test now pins `image_sum_order = 0`
+(the averaged result ~0.003 is resolution-limited at 60 bins, as at 1 cm).
+
+**GPU number types (2026-10-14):** `src/backend.jl`: `csr_float_type(backend)` (Float64, or Float32 when
+`!KernelAbstractions.supports_float64`), `device_scalar`, `table_backend` (tables always on the CPU), `to_backend`
+(copy tables to the device in `csr_float_type`). `csr_binned_kick`: tables from the CPU with Float64 lags, coef,
+ds_kick and pz_scale converted on such backends; CPU paths unchanged. Full `csr_kick!` runs on Metal: vs CPU
+Float32 2.7e-6 (free space), 3e-4 (32 layers, h = 3 mm: Float32 cancellation, the result is ~3e-3 of its terms).
+Tests: helper unit tests with a mock no-Float64 backend (`binning_test.jl`). 883/883 on 1 and 4 threads.
+
+**Large-y kernel error: hypothesis verified** (`image_large_y.jl`). K_csr = exact LW field at CSR.jl's own source
+position (≤ 2e-3, mostly 1e-5): the field formula is right, the source position is not. CSR.jl's in-plane excess
+exceeds the exact circle value Ls − 2ρ sin(Ls/2ρ) by Ls⁵/(1920ρ⁴) (1.8e-5, 1.9e-4, 1.9e-3 m at Ls = 3.2, 5.2, 8.2 m),
+i.e. the dropped 4th-order term of `dspline_len`'s small-angle form (C2). This acts as a lag shift; near lag 0 the
+kernel slope turns it into the ~14% (e.g. y = 3 cm: slope ~2.3e6 /m × 5.5e-8 m ≈ 0.13 vs observed 0.16).
+Possible fix (not done, user decision): exact element excess
+`∫ x'²/(1+√(1+x'²)) dt + 2 sin²(dθ/2) Δt − sin(dθ) Δx` (from L = ∫cos(θ−θ_L) ds_arc), Gauss–Legendre in t.
+
+**D24 investigation (2026-10-14).** Scripts in
 `planning/diagnostics/`: `layer_shape.jl`, `image_kernel_exact.jl`, `layer_terms.jl 1024 400 <h>` (40 m arc),
 `layer_sum_methods.jl`, `layer_kick_profile.jl`.
 - 8 m arc artifact confirmed: the 1 cm terms are constant (−7.78e-11) once the image source leaves the arc (n ≳ 185,

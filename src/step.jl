@@ -49,17 +49,19 @@ Apply one 1D CSR kick at reference position `s_kick` [m] from the entrance of el
 The kick covers one step, `ds = L / n_step` (see `csr_n_step`) scaled by `L_chord / L`, as in Bmad.
 
 With `params.n_shield_images > 0` the image-charge kicks of the shielding plates are added (Bmad's image part of
-`csr_bin_kicks`). `kick_per_meter` includes them; `I_csr_per_meter` and `s_source` are for free space only.
+`csr_bin_kicks`), with the layer sum averaged per `params.image_sum_order`. `kick_per_meter` includes them;
+`I_csr_per_meter` and `s_source` are for free space only.
 
-Runs as KernelAbstractions kernels on the backend of `pz` (deposit, edge gradient, wake and image tables,
-convolutions, kick). Only the CPU backend is supported (the wake table needs it). `csr_kick_reference!` is the serial
-phase 1 version.
+Runs as KernelAbstractions kernels on the backend of `pz` (deposit, edge gradient, convolutions, kick). The wake and
+image tables are always computed on the CPU in `Float64` and copied to a GPU backend in `csr_float_type(backend)`
+(`Float32` where the backend has no `Float64`, e.g. Metal); scalars passed to the kernels are converted likewise.
+`csr_kick_reference!` is the serial phase 1 version.
 """
 function csr_kick!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool},
                    geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma, species::Species,
                    params::CSRParams; kick_factor = 1.0, pz_scale = 1.0)
   st = csr_binned_kick(z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor)
-  csr_apply_kicks!(pz, z, alive, st.bins, st.kick; pz_scale)
+  csr_apply_kicks!(pz, z, alive, st.bins, st.kick; pz_scale = device_scalar(get_backend(pz), pz_scale))
   return csr_step_result(st)
 end
 
@@ -91,6 +93,7 @@ function csr_binned_kick(z::AbstractVector, q::AbstractVector, alive::AbstractVe
   params.bmad_compat == geom.bmad_compat || error("csr_kick!: params.bmad_compat and geom.bmad_compat differ")
   count(alive) >= n_bin || error("csr_kick!: number of live particles ($(count(alive))) is less than n_bin ($n_bin)")
   backend = get_backend(z)
+  tb = table_backend(backend)
 
   e = geom.ele[ix_ele_kick]
   _, ds_step = csr_n_step(e.L, params)
@@ -98,22 +101,26 @@ function csr_binned_kick(z::AbstractVector, q::AbstractVector, alive::AbstractVe
 
   bins = csr_bin_particles(z, q, alive, params)
   kp = CSRKickPoint(geom, ix_ele_kick, s_kick, gamma; kick_factor)
-  I_csr, I_int, s_source = csr_wake_table(geom, kp, bins.dz, n_bin, backend;
-                                          all_bin_quadrature = params.all_bin_quadrature && !params.bmad_compat)
+  dz_t = tb === backend ? bins.dz : Float64(bins.dz)   # tables off the particle backend: Float64 lags
+  I_csr, I_int, s_source = to_backend.(Ref(backend),
+    csr_wake_table(geom, kp, dz_t, n_bin, tb; all_bin_quadrature = params.all_bin_quadrature && !params.bmad_compat))
 
-  coef = csr_kick_coef(species, gamma, actual_track_step)
+  coef = device_scalar(backend, csr_kick_coef(species, gamma, actual_track_step))
   edge = bins.edge_dcharge_density_dz
   kick = KernelAbstractions.zeros(backend, promote_type(typeof(coef), eltype(I_int), eltype(edge)), n_bin)
   csr_convolve!(kick, I_int, edge, coef)
   # Shielding: image layer ns at height ns*h with sign (-1)^ns; the factor 2 counts the images above and below.
+  # image_layer_weight averages the slowly converging layer sum (params.image_sum_order).
   images = map(1:params.n_shield_images) do ns
     kp_ns = CSRKickPoint(geom, ix_ele_kick, s_kick, gamma; y_source = ns * params.beam_chamber_height,
-                         kick_factor = (-1)^ns * 2 * kick_factor)
-    image, _ = csr_image_table(geom, kp_ns, bins.dz, n_bin, backend; bin_integrate = !params.bmad_compat)
+                         kick_factor = (-1)^ns * 2 * image_layer_weight(ns, params) * kick_factor)
+    image, _ = csr_image_table(geom, kp_ns, dz_t, n_bin, tb; bin_integrate = !params.bmad_compat)
+    image = to_backend(backend, image)
     csr_image_convolve!(kick, image, bins.charge, coef)
     image
   end
-  return (; bins, kick, I_csr, I_int, s_source, images, coef, ds_kick = kick_factor * actual_track_step)
+  return (; bins, kick, I_csr, I_int, s_source, images, coef,
+          ds_kick = device_scalar(backend, kick_factor * actual_track_step))
 end
 
 csr_step_result(st) = CSRStepResult(st.bins.z_center, st.bins.charge ./ st.bins.dz, st.kick ./ st.ds_kick,

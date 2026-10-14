@@ -12,6 +12,7 @@ export planar_survey, csr_bin_particles, csr_kick!, csr_kick_pz, csr_kick_coef, 
 export track_csr!
 
 include("params.jl")
+include("backend.jl")
 include("geometry.jl")
 include("binning.jl")
 include("source_point.jl")
