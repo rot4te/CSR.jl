@@ -27,7 +27,7 @@ Contents
 Bmad's Fortran `csr_method = one_dim`; GPU-capable (KernelAbstractions) and differentiable (ForwardDiff, ChainRules,
 GTPSA TPS).
 
-**Current branch: `stage-c`** (from `phase6-open-questions` `468fc83`), not pushed. 914/914 tests on 1 and 4 threads.
+**Current branch: `stage-c`** (from `phase6-open-questions` `468fc83`), not pushed. 1035/1035 tests on 1 and 4 threads.
 
 | Commit | Content |
 |---|---|
@@ -36,18 +36,17 @@ GTPSA TPS).
 | `6d1b8ea` | D24 diagnostics |
 | `9cbc8bf` | D24 averaged image-layer sum (`image_sum_order = 8`); GPU float-type fallback; large-y diagnosis |
 | `ffb4004` | Exact path-length excess in default mode (`path_excess`); D24 layer-term data tracked |
+| `a908ef9` | This merged PLAN.md |
+| (next) | D22: exact SaganCavity split |
 
 **Done:** phases 0–5, phase 3 (Bmad cross-check), phase 6 steps 0–2 (AD w.r.t. particles), lcavity mode, Stage B
-(D20, D21, D23), D24, GPU number types, exact path excess.
+(D20, D21, D23), D24, GPU number types, exact path excess, D22.
 
 **Next, in order:**
-1. **D22** — exact split of the SaganCavity standing-wave ponderomotive and multipole half kicks at slice boundaries
-   (`ext/CSRBeamTrackingBeamlinesExt/sagan.jl`; test bounds in `lcavity_test.jl`: ≤ 2e-7 standing wave, ≤ 1e-7
-   multipoles). Report back if no exact split exists.
-2. **Phase 6 step 3** — derivatives w.r.t. geometry and γ by implicit differentiation of the source root
+1. **Phase 6 step 3** — derivatives w.r.t. geometry and γ by implicit differentiation of the source root
    (`ds/dp = −F_p/F_s`); replace `@not_implemented` tangents for `geom`, `s_kick`, `gamma`; adjoints for the image
    tables too.
-3. Phase 7 (TPS), Phase 8 (FFT convolution, benchmarks, GPU wake table, upstream hook proposal).
+2. Phase 7 (TPS), Phase 8 (FFT convolution, benchmarks, GPU wake table, upstream hook proposal).
 
 **For the user:** file the upstream reports drafted in `planning/upstream_reports.md` (Section 4). Optionally rerun
 the cross-check: default-mode free-space results changed slightly with the exact path excess (compat sections are
@@ -115,7 +114,7 @@ extensions silently do not load.
 | D19 | 10-08 | All open questions handled before phase 6 step 3. |
 | D20 | 10-09 | Image kernel integrated against the bin hat function (adaptive quadrature) in default mode; compat keeps point sampling. |
 | D21 | 10-09 | V6 fixed in Bmad (PR #2199, 2026-10-06): `bmad_compat` follows current Bmad; V6 compat branch removed. |
-| D22 | 10-09 | SaganCavity standing-wave ~1e-7 sliced-vs-unsliced difference: investigate an exact split (not accepted as is). **Next.** |
+| D22 | 10-09 | SaganCavity standing-wave ~1e-7 sliced-vs-unsliced difference: investigate an exact split (not accepted as is). Done 2026-10-14: half kicks as point events at drift-segment ends; slices == whole cavity to round-off. |
 | D23 | 10-09 | Compat entries: Beamlines when registered with `EMFieldParams`, BeamTracking when a release has `RungeKutta`. Done 2026-10-14: `Beamlines = "0.10.6, 0.11"`, `BeamTracking = "0.8.7"`. |
 | D24 | 10-10 | Image-layer sum by a transformed sum, default mode only. Done 2026-10-14: `image_sum_order = 8` (binomial averaging of the last partial sums). |
 | — | 10-14 | GPU: fall back to `Float32` where `KernelAbstractions.supports_float64(backend)` is false. |
@@ -205,8 +204,9 @@ move. Candidate addition: V9 (small-angle path excess) — not yet drafted.
 - lcavity in SciBmad: RF element with `tracking_method = SaganCavity` in its own Beamline with `dE_ref` (a Branch
   splits it out). `dE_ref` is seen only by the first element of a Beamline, only used by SaganCavity. RFParams with
   `voltage = 0` count as inactive.
-- Splitting a SaganCavity cell drift is exact for traveling waves without multipoles; standing-wave ponderomotive and
-  multipole half kicks give integrator-order differences (∝ V² for the ponderomotive part) — D22.
+- SaganCavity slices (D22): only drifts/solenoids are split; the half ponderomotive and multipole kicks of each drift
+  segment are point events at the segment ends (window rule s0 ≤ p < s1, ≤ for the last slice), so slices reproduce
+  the whole cavity to round-off. Segment ends use the same expressions as the neighbouring events (`Lo + i·lc`).
 - Image-layer series (D24): terms alternate, amplitude smooth with one sign change, tail ∝ 1/n (exact LW field at lag
   0 also ∝ 1/y). Plain truncation error ~|a_M|/2. Image source arc distance Ls ≈ (12ρ²y²)^{1/4} (γ → ∞ estimate);
   test lattices must be long enough that high layers' sources stay on the arc (use `circle_lattice(10.0, 0.1, 400)`).
@@ -321,7 +321,7 @@ kernels 1.1 ms (1 thread) / 0.5 ms (4 threads); wake table dominates.
 ### lcavity mode (10-02)
 `SaganSlice` windows of the cavity's kernel sequence; `track_csr!(bunch, ::Branch)`; γ linear between
 E_ref − dE_ref and E_ref; Δpz × pc_lin(s)/P0c_step(s). One slice == whole cavity exactly; n slices ≤ 1e-18 traveling
-wave, ≤ 1e-7 standing wave and multipoles (D22). Cavity doubling the energy: 2 vs 8 cells agree to 5e-4 with the
+wave, ≤ 1e-7 standing wave and multipoles (fixed by D22, Stage C). Cavity doubling the energy: 2 vs 8 cells agree to 5e-4 with the
 rescale, 4% without.
 
 ### Type stability and latency (10-06)
@@ -400,6 +400,12 @@ Hat costs ~5× the source solves of point sampling.
   circle excess ≤ 1e-8 relative (compat 4e-5–6.5e-4 = Ls²/(80ρ²)), free-space I_csr at 6 mm lag 1.0009 → 0.99999.
   Cost: `csr_kick!` 6.68 → 6.79 ms (free space), 70.4 → 70.6 ms (16 layers), 1 thread (`diagnostics/bench_excess.jl`).
   Default free-space I_csr changes up to ~7e-4 relative at long lags.
+- **D22, exact SaganCavity split.** `sagan_segment!` in `sagan.jl`: a drift segment [a, b] applies its half kicks
+  (ponderomotive for standing waves, multipoles with radiation) at a and b as point events with the full segment
+  strength, and only the drift/solenoid is split. Sliced vs whole (max |Δv|, 3/4/7/20 slices): standing wave 2e-7 →
+  ≤ 7e-19; n_cells = 0 and multipoles with radiation damping ≤ 9e-19; with a solenoid ≤ 2e-16 (BeamTracking's own
+  Solenoid split once: 6e-17, the exact solenoid map's round-off). `lcavity_test.jl` bounds 1e-17 (1e-15 with a
+  solenoid), new cases added. 1035/1035.
 
 ---
 

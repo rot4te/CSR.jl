@@ -55,9 +55,9 @@ end
 is_sagan(ele) = ele.tracking_method isa SaganCavity
 
 @testset "lcavity (SaganCavity) mode" begin
-  # Exact up to round-off unless a split cell drift has half-kick/drift/half-kick structure: the standing-wave
-  # ponderomotive kick and multipoles. Then sliced and unsliced differ at integrator order (∝ voltage² for
-  # the ponderomotive part; it vanishes for traveling waves).
+  # Exact up to round-off: only drifts are split; the half ponderomotive and multipole kicks of each drift segment
+  # are point events at its ends (D22). With a solenoid the exact solenoid map's own round-off shows (BeamTracking's
+  # Solenoid split once in two: 6e-17).
   @testset "Slices reproduce the whole cavity: $name" for (name, cav, tol) in (
       ("traveling wave", lc_cavity(tracking_method = SaganCavity(n_cells = 3), traveling_wave = true), 1e-17),
       ("single kick (n_cells = 0)", lc_cavity(tracking_method = SaganCavity(n_cells = 0), traveling_wave = true), 1e-17),
@@ -67,16 +67,23 @@ is_sagan(ele) = ele.tracking_method isa SaganCavity
       ("aperture and misalignment", lc_cavity(tracking_method = SaganCavity(n_cells = 3), traveling_wave = true,
                                               x_offset = 1e-4, tilt = 0.1, x1_limit = -1.5e-3, x2_limit = 1.5e-3,
                                               y1_limit = -1.0, y2_limit = 1.0), 1e-17),
-      ("standing wave", lc_cavity(tracking_method = SaganCavity(n_cells = 2), traveling_wave = false), 2e-7),
+      ("standing wave", lc_cavity(tracking_method = SaganCavity(n_cells = 2), traveling_wave = false), 1e-17),
+      ("standing wave, n_cells = 0", lc_cavity(tracking_method = SaganCavity(n_cells = 0, L_active = 1.5), Kn1L = 0.001,
+                                               traveling_wave = false), 1e-17),
+      ("multipoles, radiation damping", lc_cavity(tracking_method = SaganCavity(n_cells = 3, L_active = 1.0,
+                                                  radiation_damping_on = true), Kn1L = 0.001, Kn2L = 0.01,
+                                                  traveling_wave = false), 1e-17),
       ("L_active < L, multipoles", lc_cavity(tracking_method = SaganCavity(n_cells = 3, L_active = 1.0), Ksol = 0.01,
-                                             Kn1L = 0.001, traveling_wave = true), 1e-7),
+                                             Kn1L = 0.001, traveling_wave = true), 1e-15),
+      ("standing wave, multipoles", lc_cavity(tracking_method = SaganCavity(n_cells = 3, L_active = 1.0), Ksol = 0.01,
+                                              Kn1L = 0.001, traveling_wave = false), 1e-15),
     )
     ele = lc_in_branch(cav)
     b1 = lc_track_whole(ele)
     b0, s1 = lc_track_sliced(ele, 1)
     @test b0.coords.v == b1.coords.v
     @test b0.coords.state == b1.coords.state
-    for n in (4, 20)
+    for n in (3, 4, 7, 20)
       b, s = lc_track_sliced(ele, n)
       @test maximum(abs, b.coords.v .- b1.coords.v) <= tol
       @test b.coords.state == b1.coords.state

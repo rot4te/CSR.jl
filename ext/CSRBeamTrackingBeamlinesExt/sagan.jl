@@ -2,7 +2,9 @@
 # the window: outer drifts, entrance/exit fringe, cell kicks with their reference-energy steps, cell drifts.
 # Built from BeamTracking's internal Sagan kernels (ext/BeamTrackingBeamlinesExt/sagan_cavity_bl.jl,
 # src/kernels/sagan_cavity.jl), since SaganCavity has no fringe_at and cannot be split with track!.
-# Point events (kicks, fringes) at position p belong to the slice with s0 <= p < s1 (p <= s1 for the last slice).
+# Point events (cell kicks, fringes, and the half multipole/ponderomotive kicks at drift-segment ends) at position p
+# belong to the slice with s0 <= p < s1 (p <= s1 for the last slice). Only drifts are split, so slices reproduce the
+# whole cavity to round-off (planning/PLAN.md, D22).
 # Consecutive slices must share their boundary exactly (s0 + L_slice of one == s0 of the next), or an event on a
 # boundary can be dropped or applied twice.
 
@@ -87,31 +89,58 @@ function sagan_dt_ref(c::SaganSlice, s)
   return dt
 end
 
+# Drift segment [a, b] (nominal length len) of the whole cavity, as BeamTracking's sagan_cavity_inside_drift!
+# (inside = true: half ponderomotive kicks, standing wave only) or sagan_cavity_outside_drift!: half kicks of strength
+# len/2 at a and b, drift or solenoid over len. The half kicks are point events at the segment ends (same window rule
+# as the cell kicks); only the drift is split, and drifts compose exactly, so slices reproduce the whole cavity.
+@inline function sagan_segment!(i, coords, val_rad_damping_on, val_rad_fluctuations_on, ::Val{traveling_wave},
+                                ::Val{has_mult}, ::Val{has_sol}, m_order, Kn, Ks, q, q_gradient, a_spin, mass, P0c,
+                                a, b, len, s0, s1, last, inside) where {traveling_wave, has_mult, has_sol}
+  len > 0 || return nothing
+  pond = inside && !traveling_wave
+  beta0 = P0c / sqrt(P0c^2 + mass^2)
+  gamma0 = P0c / (mass * beta0)
+  if sagan_in_window(a, s0, s1, last)
+    pond && BeamTracking.rf_pondermotive_kick!(i, coords, q_gradient, a_spin, mass, P0c, len / 2)
+    has_mult && BeamTracking.multipole_kick_with_rad!(i, coords, val_rad_damping_on, val_rad_fluctuations_on,
+                                                      q, m_order, Kn, Ks, a_spin, mass, P0c, beta0, len / 2)
+  end
+  d = sagan_overlap(a, b, len, s0, s1)
+  if d > 0
+    if has_sol
+      BeamTracking.exact_solenoid!(i, coords, Kn[1], beta0, gamma0 * gamma0, mass / P0c, nothing, d)
+    else
+      BeamTracking.exact_drift!(i, coords, 0, beta0, gamma0 * gamma0, mass / P0c, d)
+    end
+  end
+  if sagan_in_window(b, s0, s1, last)
+    has_mult && BeamTracking.multipole_kick_with_rad!(i, coords, val_rad_damping_on, val_rad_fluctuations_on,
+                                                      q, m_order, Kn, Ks, a_spin, mass, P0c, beta0, len / 2)
+    pond && BeamTracking.rf_pondermotive_kick!(i, coords, q_gradient, a_spin, mass, P0c, len / 2)
+  end
+  return nothing
+end
+
 # Kernel: the window [s0, s1] of sagan_cavity_thick! / sagan_cavity_zero_L_active!. Branches only on scalars
-# (BeamTracking may call it with SIMD lanes).
+# (BeamTracking may call it with SIMD lanes). Segment ends use the same expressions as the neighbouring events.
 function sagan_slice_kernel!(i, coords, val_rad_damping_on, val_rad_fluctuations_on, val_traveling_wave,
                              mass, q, P0c, dE_ref, t_ref, n_cells, val_has_mult, val_has_sol, m_order, Bn, Bs,
                              a, q_gradient, q_voltage, rf_omega, t_phi0, L_active, L, s0, s1, last)
   c_l = BeamTracking.c_light(eltype(coords.v))
   Lo = (L - L_active) / 2
   qp = q * c_l / P0c
+  seg!(qp, P0c, sa, sb, len, inside) = sagan_segment!(i, coords, val_rad_damping_on, val_rad_fluctuations_on,
+    val_traveling_wave, val_has_mult, val_has_sol, m_order, Bn .* qp, Bs .* qp, q, q_gradient, a, mass, P0c,
+    sa, sb, len, s0, s1, last, inside)
 
-  d = sagan_overlap(0.0, Lo, Lo, s0, s1)
-  if d > 0
-    BeamTracking.sagan_cavity_outside_drift!(i, coords, val_rad_damping_on, val_rad_fluctuations_on,
-      val_has_mult, val_has_sol, m_order, Bn .* qp, Bs .* qp, q, a, mass, P0c, d)
-  end
+  seg!(qp, P0c, 0.0, Lo, Lo, false)
   if L_active > 0 && sagan_in_window(Lo, s0, s1, last)
     BeamTracking.sagan_cavity_fringe!(i, coords, a, q_gradient, rf_omega, t_phi0, t_ref, mass, P0c, +1)
   end
 
   if n_cells == 0
     h = L_active / 2
-    if L_active > 0
-      d = sagan_overlap(Lo, Lo + h, h, s0, s1)
-      d > 0 && BeamTracking.sagan_cavity_inside_drift!(i, coords, val_rad_damping_on, val_rad_fluctuations_on,
-        val_traveling_wave, val_has_mult, val_has_sol, m_order, Bn .* qp, Bs .* qp, q, q_gradient, a, mass, P0c, d)
-    end
+    L_active > 0 && seg!(qp, P0c, Lo, Lo + h, h, true)
     if sagan_in_window(Lo + h, s0, s1, last)
       BeamTracking.sagan_cavity_kick!(i, coords, a, L_active > 0 ? q_gradient * L_active : q_voltage,
                                       rf_omega, t_phi0, t_ref, mass, P0c)
@@ -120,11 +149,7 @@ function sagan_slice_kernel!(i, coords, val_rad_damping_on, val_rad_fluctuations
       P0c += dP0c
       qp = q * c_l / P0c
     end
-    if L_active > 0
-      d = sagan_overlap(Lo + h, Lo + L_active, h, s0, s1)
-      d > 0 && BeamTracking.sagan_cavity_inside_drift!(i, coords, val_rad_damping_on, val_rad_fluctuations_on,
-        val_traveling_wave, val_has_mult, val_has_sol, m_order, Bn .* qp, Bs .* qp, q, q_gradient, a, mass, P0c, d)
-    end
+    L_active > 0 && seg!(qp, P0c, Lo + h, Lo + L_active, h, true)
   else
     lc = L_active / n_cells
     for i_step in 0:n_cells
@@ -139,20 +164,14 @@ function sagan_slice_kernel!(i, coords, val_rad_damping_on, val_rad_fluctuations
         qp = q * c_l / P0c
       end
       i_step == n_cells && break
-      d = sagan_overlap(p, p + lc, lc, s0, s1)
-      d > 0 && BeamTracking.sagan_cavity_inside_drift!(i, coords, val_rad_damping_on, val_rad_fluctuations_on,
-        val_traveling_wave, val_has_mult, val_has_sol, m_order, Bn .* qp, Bs .* qp, q, q_gradient, a, mass, P0c, d)
+      seg!(qp, P0c, p, Lo + (i_step + 1) * lc, lc, true)
     end
   end
 
   if L_active > 0 && sagan_in_window(Lo + L_active, s0, s1, last)
     BeamTracking.sagan_cavity_fringe!(i, coords, a, q_gradient, rf_omega, t_phi0, t_ref, mass, P0c, -1)
   end
-  d = sagan_overlap(L - Lo, L, Lo, s0, s1)
-  if d > 0
-    BeamTracking.sagan_cavity_outside_drift!(i, coords, val_rad_damping_on, val_rad_fluctuations_on,
-      val_has_mult, val_has_sol, m_order, Bn .* qp, Bs .* qp, q, a, mass, P0c, d)
-  end
+  seg!(qp, P0c, Lo + L_active, L, Lo, false)
   return nothing
 end
 
