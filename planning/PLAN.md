@@ -27,31 +27,48 @@ Contents
 Bmad's Fortran `csr_method = one_dim`; GPU-capable (KernelAbstractions) and differentiable (ForwardDiff, ChainRules,
 GTPSA TPS).
 
-**Current branch: `reorg`** (from `stage-c` `f3c69bf`), not pushed: source layout as BeamTracking.jl (`src/kernels/`,
-`src/utils/`), docstrings for every function, README.md, Documenter docs (`docs/`, GitHub Actions workflow).
-1035/1035 tests on 1 and 4 threads; docs build clean. `stage-c` (from `phase6-open-questions` `468fc83`) holds the
-physics work below.
+**Branches (2026-10-14, none pushed by Claude):**
+- `stage-c` (from `phase6-open-questions` `468fc83`): the physics work of 2026-10-14 (commits below).
+- **`reorg`** (from `stage-c` `f3c69bf`), head `5ee107c` + this handoff edit: source layout as BeamTracking.jl
+  (`src/kernels/`, `src/utils/`), a docstring for every function, README.md, Documenter docs (`docs/`, GitHub
+  Actions workflow). 1035/1035 tests on 1 and 4 threads; docs build clean (`checkdocs = :all`). **Latest state.**
 
-| Commit | Content |
-|---|---|
-| `59e86fa` | Step 0: compat `Beamlines = "0.10.6, 0.11"`, `BeamTracking = "0.8.7"`; `~` paths in planning |
-| `1b92650` | Particle-side kernels run on Metal (Float32 grid, Int32 counters, typed literals) |
-| `6d1b8ea` | D24 diagnostics |
-| `9cbc8bf` | D24 averaged image-layer sum (`image_sum_order = 8`); GPU float-type fallback; large-y diagnosis |
-| `ffb4004` | Exact path-length excess in default mode (`path_excess`); D24 layer-term data tracked |
-| `a908ef9` | This merged PLAN.md |
-| `bf3d3c9` | D22: exact SaganCavity split |
+| Commit | Branch | Content |
+|---|---|---|
+| `59e86fa` | stage-c | Step 0: compat `Beamlines = "0.10.6, 0.11"`, `BeamTracking = "0.8.7"`; `~` paths in planning |
+| `1b92650` | stage-c | Particle-side kernels run on Metal (Float32 grid, Int32 counters, typed literals) |
+| `6d1b8ea` | stage-c | D24 diagnostics |
+| `9cbc8bf` | stage-c | D24 averaged image-layer sum (`image_sum_order = 8`); GPU float-type fallback; large-y diagnosis |
+| `ffb4004` | stage-c | Exact path-length excess in default mode (`path_excess`, V9); D24 layer-term data tracked |
+| `a908ef9` | stage-c | Merged PLAN.md |
+| `bf3d3c9` | stage-c | D22: exact SaganCavity split |
+| `f3c69bf` | stage-c | Cross-check rerun (Section 9, Phase 3); V9 upstream report draft |
+| `5ee107c` | reorg | Reorganized src, docstrings, README, docs |
 
-**Done:** phases 0–5, phase 3 (Bmad cross-check), phase 6 steps 0–2 (AD w.r.t. particles), lcavity mode, Stage B
-(D20, D21, D23), D24, GPU number types, exact path excess, D22.
+**Done:** phases 0–5, phase 3 (Bmad cross-check, rerun 2026-10-14), phase 6 steps 0–2 (AD w.r.t. particles),
+lcavity mode, Stage B (D20, D21, D23), D24, GPU number types, exact path excess (V9), D22, source reorganization,
+README, Documenter docs.
 
-**Next, in order:**
-1. **Phase 6 step 3** — derivatives w.r.t. geometry and γ by implicit differentiation of the source root
-   (`ds/dp = −F_p/F_s`); replace `@not_implemented` tangents for `geom`, `s_kick`, `gamma`; adjoints for the image
-   tables too.
-2. Phase 7 (TPS), Phase 8 (FFT convolution, benchmarks, GPU wake table, upstream hook proposal).
+**Next session: Phase 6 step 3** on a new branch **`phase6-geom_speed-deltas`** created from `reorg` (user decision,
+2026-10-14). Goal: derivatives of a kick w.r.t. the geometry and the reference speed/energy (γ), and `s_kick`.
+Starting points (suggestions, not decided):
+- Today the `rrule` (`ext/CSRChainRulesCoreExt/CSRChainRulesCoreExt.jl`) returns `@not_implemented` for `geom`,
+  `s_kick`, `gamma`; ForwardDiff passes only through the particle side (tables are `Float64`, built on the CPU in
+  `src/tables.jl` with the mutable `CSRKick1` work struct).
+- The tables depend on the parameters through the retarded source point: implicit differentiation of the root of
+  `ddz(s; p) = L/(2γ²) + ΔL − dz = 0` (`kernels/source_point.jl`), `ds/dp = −∂ddz/∂p / ∂ddz/∂s`, then the chain rule
+  through `I_csr_value` / `I_csr!` / quadratures (`kernels/wake.jl`) and `image_charge_kick` + hat integration
+  (`kernels/image_charges.jl`). Also `csr_kick_coef` (∝ 1/γ, `utils/kick_setup.jl`).
+- Decide with the user first: which parameters count as "geometry" (centroid orbit rows? element L, g? `s_kick`),
+  forward (Duals through the table kernels: needs the work struct and tables generic in the number type) vs reverse
+  (adjoint of the table w.r.t. parameters), and test strategy (D18: by hand vs ForwardDiff and finite differences).
+- Docs: update `docs/src/usage.md` ("Derivatives") and Section 3 / "Physics decisions" if any physics changes.
 
-**For the user:** file the upstream reports drafted in `planning/upstream_reports.md` (Section 4, now incl. V9).
+Later: Phase 7 (TPS), Phase 8 (FFT convolution, benchmarks, GPU wake table, upstream hook proposal).
+
+**For the user:** file the upstream reports in `planning/upstream_reports.md` (Section 4, incl. V9); verify the
+action versions in `.github/workflows/Documentation.yml` (from memory) and enable GitHub Pages (`gh-pages`) after
+pushing.
 
 ---
 
@@ -74,7 +91,8 @@ physics work below.
 - Julia 1.12.7 via juliaup. `Project.toml`: `julia = "1.10"`.
 
 ### Git
-- Remote `origin`. Branches: `main` (`ae0ae77`), `phase6-open-questions` (`468fc83`, pushed by the user), `stage-c`.
+- Remote `origin` (`github.com/rot4te/CSR.jl`). Branches: `main` (`ae0ae77`), `phase6-open-questions` (`468fc83`, pushed
+  by the user), `stage-c`, `reorg` (unpushed). Next: `phase6-geom_speed-deltas` from `reorg`.
 - Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
 ### Test environment
