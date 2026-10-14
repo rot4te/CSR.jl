@@ -37,7 +37,7 @@ GTPSA TPS).
 | `9cbc8bf` | D24 averaged image-layer sum (`image_sum_order = 8`); GPU float-type fallback; large-y diagnosis |
 | `ffb4004` | Exact path-length excess in default mode (`path_excess`); D24 layer-term data tracked |
 | `a908ef9` | This merged PLAN.md |
-| (next) | D22: exact SaganCavity split |
+| `bf3d3c9` | D22: exact SaganCavity split |
 
 **Done:** phases 0–5, phase 3 (Bmad cross-check), phase 6 steps 0–2 (AD w.r.t. particles), lcavity mode, Stage B
 (D20, D21, D23), D24, GPU number types, exact path excess, D22.
