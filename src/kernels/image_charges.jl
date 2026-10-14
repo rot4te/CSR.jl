@@ -64,12 +64,14 @@ function image_kernel_at(k::CSRKick1, u, geom::CSRGeometry, kp::CSRKickPoint)
 end
 
 """
-    image_simpson(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol, h_min, depth) -> (k, S)
+    image_simpson(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol, h_min, depth, leaf = nothing) -> (k, S)
 
 Adaptive Simpson for S = (∫K, ∫K t) over [a, b], t = (u - u0) / dz; fa, fm, fb are K at a, (a + b)/2, b.
-Intervals narrower than `h_min` are not split (the kernel has round-off noise from the source search).
+Intervals narrower than `h_min` are not split (the kernel has round-off noise from the source search). Each accepted
+interval `[a, b]` contributes Boole's rule on its 5 nodes; `leaf(a, b)` is called for it unless `leaf === nothing`
+(`csr_kick_param_adjoint`).
 """
-function image_simpson(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol, h_min, depth)
+function image_simpson(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol, h_min, depth, leaf = nothing)
   m = (a + b) / 2
   k, fl = image_kernel_at(k, (a + m) / 2, geom, kp)
   k, fr = image_kernel_at(k, (m + b) / 2, geom, kp)
@@ -77,33 +79,36 @@ function image_simpson(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol, h_min, depth)
   h = b - a
   S1 = h / 6 * (g(a, fa) + 4g(m, fm) + g(b, fb))
   S2 = h / 12 * (g(a, fa) + 4g((a + m) / 2, fl) + 2g(m, fm) + 4g((m + b) / 2, fr) + g(b, fb))
-  (depth <= 0 || h <= h_min || maximum(abs, primal.(S2 - S1)) <= 15primal(tol)) && return k, S2 + (S2 - S1) / 15
-  k, Sl = image_simpson(k, geom, kp, a, m, fa, fl, fm, u0, dz, tol / 2, h_min, depth - 1)
-  k, Sr = image_simpson(k, geom, kp, m, b, fm, fr, fb, u0, dz, tol / 2, h_min, depth - 1)
+  if depth <= 0 || h <= h_min || maximum(abs, primal.(S2 - S1)) <= 15primal(tol)
+    leaf === nothing || leaf(a, b)
+    return k, S2 + (S2 - S1) / 15
+  end
+  k, Sl = image_simpson(k, geom, kp, a, m, fa, fl, fm, u0, dz, tol / 2, h_min, depth - 1, leaf)
+  k, Sr = image_simpson(k, geom, kp, m, b, fm, fr, fb, u0, dz, tol / 2, h_min, depth - 1, leaf)
   return k, Sl + Sr
 end
 
 """
-    image_segment(k, geom, kp, a, b, u0, dz, tol, h_min) -> (k, S)
+    image_segment(k, geom, kp, a, b, u0, dz, tol, h_min, leaf = nothing) -> (k, S)
 
 `S = (∫K, ∫K t)` over `[a, b]`, `t = (u - u0)/dz`, by `image_simpson` from the kernel at `a`, the midpoint and `b`.
 """
-function image_segment(k, geom, kp, a, b, u0, dz, tol, h_min)
+function image_segment(k, geom, kp, a, b, u0, dz, tol, h_min, leaf = nothing)
   k, fa = image_kernel_at(k, a, geom, kp)
   k, fm = image_kernel_at(k, (a + b) / 2, geom, kp)
   k, fb = image_kernel_at(k, b, geom, kp)
-  return image_simpson(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol, h_min, 40)
+  return image_simpson(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol, h_min, 40, leaf)
 end
 
 """
-    image_interval_moments(k, geom, kp, m, dz, tol, u_min) -> (k, moments)
+    image_interval_moments(k, geom, kp, m, dz, tol, u_min, leaf = nothing) -> (k, moments)
 
 Hat-function moments of the image kernel over lag interval m, [m dz, (m+1) dz]: (∫K t, ∫K (1 - t)),
 t = u/dz - m. `tol` is the absolute tolerance on the interval. The intervals touching u = 0 are split
 geometrically down to `u_min` first, so that structure finer than the first Simpson nodes is not missed
-(on a drift the kernel peaks at |u| = y/(√2 γ)).
+(on a drift the kernel peaks at |u| = y/(√2 γ)). `leaf` as in `image_simpson`.
 """
-function image_interval_moments(k, geom, kp, m, dz, tol, u_min)
+function image_interval_moments(k, geom, kp, m, dz, tol, u_min, leaf = nothing)
   a = m * dz
   if m == 0 || m == -1
     sgn = m == 0 ? 1 : -1
@@ -111,15 +116,15 @@ function image_interval_moments(k, geom, kp, m, dz, tol, u_min)
     x = dz
     while x / 2 > u_min
       lo, hi = minmax(sgn * x / 2, sgn * x)
-      k, S = image_segment(k, geom, kp, lo, hi, a, dz, tol * (x / 2) / dz, u_min)
+      k, S = image_segment(k, geom, kp, lo, hi, a, dz, tol * (x / 2) / dz, u_min, leaf)
       acc += S
       x /= 2
     end
     lo, hi = minmax(0.0, sgn * x)
-    k, S = image_segment(k, geom, kp, lo, hi, a, dz, tol * x / dz, u_min)
+    k, S = image_segment(k, geom, kp, lo, hi, a, dz, tol * x / dz, u_min, leaf)
     acc += S
   else
-    k, acc = image_segment(k, geom, kp, a, a + dz, a, dz, tol, u_min)
+    k, acc = image_segment(k, geom, kp, a, a + dz, a, dz, tol, u_min, leaf)
   end
   return k, SVector(acc[2], acc[1] - acc[2])
 end

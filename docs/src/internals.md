@@ -17,7 +17,7 @@ Pages = ["src/CSR.jl", "src/types.jl", "src/geometry.jl"]
 ```@autodocs
 Modules = [CSR]
 Public = false
-Pages = ["src/binning.jl", "src/tables.jl", "src/kick.jl", "src/adjoint.jl"]
+Pages = ["src/binning.jl", "src/tables.jl", "src/kick.jl", "src/adjoint.jl", "src/param_adjoint.jl"]
 ```
 
 ## Kernels

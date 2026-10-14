@@ -35,6 +35,7 @@ include("binning.jl")
 include("tables.jl")
 include("kick.jl")
 include("adjoint.jl")
+include("param_adjoint.jl")
 include("reference.jl")
 include("interface.jl")
 

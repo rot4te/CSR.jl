@@ -79,31 +79,37 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry, msg = ""; kw...)
     @test maxrel(reduce(vcat, [[ft.r; ft.theta] for ft in tg4[4]]), rx) < 1e-9
   end
 
-  # Sparse seeding (geometry_active_indices) == all numbers seeded, in cases that exercise each rule
-  @testset "Sparse == dense parameter adjoint: $name" for (name, Lv, gv, ix, sk, n_img, bc) in (
-      ("mid-lattice kick, long lattice", fill(0.1, 20), fill(0.1, 20), 15, 0.05, 0, false),
-      ("kick at element entrance", fill(0.1, 20), fill(0.1, 20), 15, 0.0, 0, false),
-      ("sources on the upstream drift", [0.05, 0.1], [0.0, 1.0], 2, 0.03, 0, false),
-      ("images, sources past the lattice end", [0.1, 0.1, 0.05], [0.0, 1.0, 2.0], 3, 0.03, 2, false),
-      ("images, bmad_compat", [0.1, 0.1, 0.05], [0.0, 1.0, 2.0], 3, 0.03, 2, true))
+  # Per-evaluation local derivatives (csr_kick_param_adjoint) == ForwardDiff through csr_bins_kick with every geometry
+  # number seeded, in cases that exercise each source branch and table type
+  @testset "Parameter adjoint == ForwardDiff: $name" for (name, Lv, gv, ix, sk, n_img, bc, abq) in (
+      ("mid-lattice kick, long lattice", fill(0.1, 20), fill(0.1, 20), 15, 0.05, 0, false, true),
+      ("trapezoid bins", fill(0.1, 20), fill(0.1, 20), 15, 0.05, 0, false, false),
+      ("kick at element entrance", fill(0.1, 20), fill(0.1, 20), 15, 0.0, 0, false, true),
+      ("sources on the upstream drift", [0.05, 0.1], [0.0, 1.0], 2, 0.03, 0, false, true),
+      ("images, sources past the lattice end", [0.1, 0.1, 0.05], [0.0, 1.0, 2.0], 3, 0.03, 2, false, true),
+      ("images, mid-lattice", fill(0.1, 8), fill(0.5, 8), 5, 0.05, 2, false, true),
+      ("free space, bmad_compat", fill(0.1, 20), fill(0.1, 20), 15, 0.05, 0, true, false),
+      ("images, bmad_compat", [0.1, 0.1, 0.05], [0.0, 1.0, 2.0], 3, 0.03, 2, true, false))
     n_ele = length(Lv)
     c = zeros(n_ele + 1, 6)
     c[:, 1] .= 1e-4 .* sin.(1:n_ele+1)
     c[:, 2] .= 1e-3 .* cos.(1:n_ele+1)
     geom = CSRGeometry(Lv, gv, c; bmad_compat = bc)
     p = CSRParams(n_bin = 40, ds_step = 0.05, n_shield_images = n_img, beam_chamber_height = n_img > 0 ? 0.01 : 0.0,
-                  bmad_compat = bc)
+                  bmad_compat = bc, all_bin_quadrature = abq)
     zz, qq, aa = kernel_test_bunch(3e-3, 1e-9, 400)
     st = CSR.csr_binned_kick(zz, qq, aa, geom, ix, sk, 100.0, electron, p; kick_factor = 0.5)
     kbar = cos.(1:40)
-    gs, ss, γs = CSR.csr_kick_param_adjoint(kbar, st.bins, geom, ix, sk, 100.0, electron, p; kick_factor = 0.5)
-    gd, sd, γd = CSR.csr_kick_param_adjoint(kbar, st.bins, geom, ix, sk, 100.0, electron, p; kick_factor = 0.5,
-                                            sparse = false)
-    @test maximum(abs, gs .- gd) <= 1e-12 * maximum(abs, gd)
-    @test ss ≈ sd rtol = 1e-12
-    @test γs ≈ γd rtol = 1e-12
-    n_active = length(CSR.geometry_active_indices(geom, ix, sk, 100.0, p, st.bins.dz; kick_factor = 0.5))
-    @test n_active < length(gd)
+    g, s, γ = CSR.csr_kick_param_adjoint(kbar, st.bins, geom, ix, sk, 100.0, electron, p; kick_factor = 0.5)
+    n_g = 4 + 26n_ele
+    phi(x) = sum(kbar .* CSR.csr_bins_kick(st.bins, CSR.CPU(), CSR.geometry_from_vector(view(x, 1:n_g), n_ele, bc), ix,
+                                           x[n_g+1], x[n_g+2], electron, p; kick_factor = 0.5).kick)
+    ref = ForwardDiff.gradient(phi, [CSR.geometry_to_vector(geom); sk; 100.0])
+    # Relative to the largest component: the s_kick derivative can be much smaller than the geometry's (cancellation)
+    scale = maximum(abs, ref)
+    @test maximum(abs, g .- ref[1:n_g]) <= 1e-10 * scale
+    @test abs(s - ref[n_g+1]) <= 1e-10 * scale
+    @test abs(γ - ref[n_g+2]) <= 1e-10 * scale
   end
 
   @testset "Zero cotangents" begin
