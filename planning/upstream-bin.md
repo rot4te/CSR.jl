@@ -148,7 +148,7 @@ bend is in the regime where the approximation matters.
 ### Caveats
 
 - The comparison integrates Bmad's own kernel `I_csr`. Whether that kernel is right is a separate question
-  (Sagan & Mayes, IPAC2017 THPAB076; see `PLAN.md` Section 7).
+  (Sagan & Mayes, IPAC2017 THPAB076; see `PLAN.md` Section 8).
 - The transient numbers use CSR.jl's port, which differs from Bmad in the `dspline_len` s⁴ term
   (`dspline_coeff.md`). For an on-axis centroid that term is zero, so it does not affect these results.
 - Not checked against Bmad output.

@@ -144,7 +144,7 @@ Gauss–Legendre (exact for its `x′²/2` part; `x′` is the small slope relat
 
 With `bmad_compat = true`, Bmad's small-angle form `dspline_len(...; bmad_compat = true)`. That form drops the
 `dθ⁴` terms: on a circle of radius ρ it overestimates the excess over an arc Ls by `Ls⁵/(1920ρ⁴)`, which shifts image
-sources at large heights (`planning/PLAN.md`).
+sources at large heights (`planning/PLAN.md`, V9).
 """
 function path_excess(s0, s1, c, dtheta_ref = 0.0; bmad_compat::Bool = false)
   bmad_compat && return dspline_len(s0, s1, c, dtheta_ref; bmad_compat)

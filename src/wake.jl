@@ -292,7 +292,7 @@ Image-charge kick (`image_charge_kick`) and reference s of the source point for 
 function of width `2dz` centred on each lag (the charge density interpolated linearly between bin centres), by
 adaptive Simpson with absolute tolerance `rtol * dz * max|K|` per interval (`image_hat_tol`), down to lag widths of
 `0.01 y/γ`. The kernel's structure can be much finer than a bin (`~y/γ` on a drift, `~Ls³/24ρ²` in a bend), which
-point sampling does not resolve (`planning/PLAN.md` Section 13). `s_source` is at the lags in both cases.
+point sampling does not resolve (`planning/PLAN.md`, Phase 5 and Stage B). `s_source` is at the lags in both cases.
 """
 function csr_image_table(geom::CSRGeometry, kp::CSRKickPoint, dz, n_bin, backend;
                          n_block = min(2n_bin + 1, 4 * Threads.nthreads()), bin_integrate::Bool = false,

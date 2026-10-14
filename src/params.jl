@@ -17,7 +17,7 @@ Parameters for the 1D CSR calculation. Names follow Bmad's `space_charge_com` co
     kick is the binomially weighted average `2^-k Σ_j C(k, j) S_{M-k+j}` of the partial sums `S_m` (free space plus
     layers 1..m), i.e. layer `n` is weighted by `2^-k Σ_{j ≥ n-M+k} C(k, j)` (1 for `n ≤ M - k`); `k` is capped at `M`.
     Default 8: with `M ≥ 32` the steady-state kick agrees with a 1024-layer reference to ~1e-6
-    (`planning/PLAN_continued.md`, D24). Use `M` of 32–64 when the chamber height is comparable to or smaller than the
+    (`planning/PLAN.md`, D24). Use `M` of 32–64 when the chamber height is comparable to or smaller than the
     bunch length. Ignored with `bmad_compat = true` (Bmad: plain sum).
 - `all_bin_quadrature`: Integrate the kick integrand over every bin by quadrature (Simpson in `u^(1/3)`, 8 nodes per
     bin), instead of the trapezoid `(I_csr[i] + I_csr[i-1]) dz / 2` for bins `i ≥ 2`. Default `true`
