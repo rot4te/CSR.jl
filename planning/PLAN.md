@@ -59,6 +59,20 @@ choose):** Phase 8 GPU table work (Adapt-based `CSRGeometry` with the element ve
 source search as return codes; iterative adaptive Simpson), Phase 7 (TPS), or forward mode with the search on primal
 geometry (the forward path still runs zbrent in Duals, ~70% of its derivative cost).
 
+**Decisions pending for the user (as of 2026-10-14, end of the D30 session):**
+1. **Next work item.** Options: (a) Phase 8 GPU tables, (b) Phase 7 TPS, (c) forward mode with the source search on
+   primal geometry (same idea as D30, for `csr_kick_pz` with `Dual` geometry), (d) investigate item 3 below first.
+2. **Flaky FD test** (`test_rrule` "images, bmad_compat", ∂/∂s_kick fails ~2 of 3 runs; pre-existing, Section 4).
+   Options: seed the RNG in `ad_rrule_test.jl` (deterministic, hides the noise), or drop s_kick from that FD check
+   (keep it in the exact rrule == ForwardDiff checks). Recommendation: drop s_kick from the FD check, since the FD
+   reference is the noisy side.
+3. **Blocking-dependent forward-mode derivative** (~3e-9; `ad_rrule_test.jl` alone on 1 thread fails two composed
+   checks; pre-existing, Section 4). Investigate now, or log and loosen the composed bounds to 1e-8?
+4. **Branch `geom-pullback`** (`94edcb7`, not pushed): review and push/merge when satisfied.
+5. **Julia version:** juliaup `release` is now 1.13.1 (PLAN listed 1.12.7). Keep testing on 1.13.1, or pin 1.12?
+6. Still open from before: V2 (ion kick prefactor), V3 (`s_ref_to_s_chord`), filing the upstream reports
+   (`planning/upstream_reports.md`), GitHub Pages setup (see "For the user" below).
+
 Original notes for step 3 (from the reorg handoff, 2026-10-14): Goal: derivatives of a kick w.r.t. the geometry and the reference speed/energy (γ), and `s_kick`.
 Starting points (suggestions, not decided):
 - Today the `rrule` (`ext/CSRChainRulesCoreExt/CSRChainRulesCoreExt.jl`) returns `@not_implemented` for `geom`,
