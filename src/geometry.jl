@@ -19,17 +19,19 @@ end
 As above, with the reference floor positions `ref_exit[i]` at the exit of each element given
 (e.g. for lattices with patches; see `advance_floor`, `advance_floor_patch`).
 """
-function CSRGeometry(L::AbstractVector, g::AbstractVector, ref_exit::AbstractVector{FloorPosition},
+function CSRGeometry(L::AbstractVector, g::AbstractVector, ref_exit::AbstractVector{<:FloorPosition},
                      centroid::AbstractMatrix; ref_start::FloorPosition = FloorPosition(), bmad_compat::Bool = false)
   n = length(L)
   length(g) == n && length(ref_exit) == n || error("CSRGeometry: L, g and ref_exit must have the same length")
   size(centroid) == (n + 1, 6) || error("CSRGeometry: centroid must be an (n+1) × 6 matrix with n = length(L)")
+  T = float(promote_type(eltype(L), eltype(g), mapreduce(number_type, promote_type, ref_exit; init = Float64),
+                         eltype(centroid), number_type(ref_start)))
 
   cfloor(ref, row) = centroid_floor(ref, centroid[row, 1], centroid[row, 2], centroid[row, 6])
   start = cfloor(ref_start, 1)
 
-  ele = Vector{CSRElementInfo}(undef, n)
-  s = 0.0
+  ele = Vector{CSRElementInfo{T}}(undef, n)
+  s = zero(T)
   for i in 1:n
     ref_floor0 = i == 1 ? ref_start : ref_exit[i-1]
     ref_floor1 = ref_exit[i]
@@ -39,8 +41,8 @@ function CSRGeometry(L::AbstractVector, g::AbstractVector, ref_exit::AbstractVec
     dr = floor1.r - floor0.r
     theta_chord = atan(dr[1], dr[3])
     L_chord = sqrt(dr[1]^2 + dr[3]^2)
-    spline = SVector(0.0, 0.0, 0.0, 0.0)
-    dL_s = 0.0
+    spline = zero(SVector{4,T})
+    dL_s = zero(T)
 
     if abs(L_chord) >= 1e-8   # Bmad's threshold for a zero-length chord
       # An element with a negative step (e.g. off-center beam in a patch with only an x-pitch) can have
@@ -55,10 +57,10 @@ function CSRGeometry(L::AbstractVector, g::AbstractVector, ref_exit::AbstractVec
       dL_s = path_excess(0.0, L_chord, spline; bmad_compat)
     end
 
-    ele[i] = CSRElementInfo(L[i], g[i], s, ref_floor0, ref_floor1, floor0, floor1, theta_chord, L_chord, spline, dL_s)
+    ele[i] = CSRElementInfo{T}(L[i], g[i], s, ref_floor0, ref_floor1, floor0, floor1, theta_chord, L_chord, spline, dL_s)
     s += L[i]
   end
-  return CSRGeometry(start, ele, bmad_compat)
+  return CSRGeometry{T}(start, ele, bmad_compat)
 end
 
 """

@@ -31,7 +31,9 @@ GTPSA TPS).
 - `stage-c` (from `phase6-open-questions` `468fc83`): the physics work of 2026-10-14 (commits below).
 - **`reorg`** (from `stage-c` `f3c69bf`), head `5ee107c` + this handoff edit: source layout as BeamTracking.jl
   (`src/kernels/`, `src/utils/`), a docstring for every function, README.md, Documenter docs (`docs/`, GitHub
-  Actions workflow). 1035/1035 tests on 1 and 4 threads; docs build clean (`checkdocs = :all`). **Latest state.**
+  Actions workflow). 1035/1035 tests on 1 and 4 threads; docs build clean (`checkdocs = :all`).
+- **`phase6-geom_speed-deltas`** (from `reorg` `08da04e`): Phase 6 step 3a, forward-mode derivatives w.r.t. geometry,
+  `s_kick`, γ. 1141/1141 on 1 and 4 threads. **Latest state.**
 
 | Commit | Branch | Content |
 |---|---|---|
@@ -49,8 +51,13 @@ GTPSA TPS).
 lcavity mode, Stage B (D20, D21, D23), D24, GPU number types, exact path excess (V9), D22, source reorganization,
 README, Documenter docs.
 
-**Next session: Phase 6 step 3** on a new branch **`phase6-geom_speed-deltas`** created from `reorg` (user decision,
-2026-10-14). Goal: derivatives of a kick w.r.t. the geometry and the reference speed/energy (γ), and `s_kick`.
+**Phase 6 step 3a (forward mode) done** on branch **`phase6-geom_speed-deltas`** (from `reorg`); see Section 9.
+**Next: step 3b** (D26): hybrid `rrule` for `csr_kick_pz` w.r.t. `geom`, `s_kick`, γ and an `rrule` for
+`CSRGeometry(L, g, centroid)`; tests with ChainRulesTestUtils (D27; add it to `[extras]`/test target). Open point
+for the user: the hybrid rrule needs ForwardDiff inside a ChainRulesCore extension (ForwardDiff as a hard
+dependency, or an extension triggered by both packages).
+
+Original notes for step 3 (from the reorg handoff, 2026-10-14): Goal: derivatives of a kick w.r.t. the geometry and the reference speed/energy (γ), and `s_kick`.
 Starting points (suggestions, not decided):
 - Today the `rrule` (`ext/CSRChainRulesCoreExt/CSRChainRulesCoreExt.jl`) returns `@not_implemented` for `geom`,
   `s_kick`, `gamma`; ForwardDiff passes only through the particle side (tables are `Float64`, built on the CPU in
@@ -138,6 +145,9 @@ extensions silently do not load.
 | D24 | 10-10 | Image-layer sum by a transformed sum, default mode only. Done 2026-10-14: `image_sum_order = 8` (binomial averaging of the last partial sums). |
 | — | 10-14 | GPU: fall back to `Float32` where `KernelAbstractions.supports_float64(backend)` is false. |
 | — | 10-14 | Exact path-length excess (`path_excess`) in default mode, accepted because it costs < 10% (measured +1%). |
+| D25 | 10-14 | Phase 6 step 3 parameters: all geometry builder inputs (centroid rows, element L and g), `s_kick`, γ. |
+| D26 | 10-14 | Phase 6 step 3 route: forward first (number-type-generic tables, primal root + implicit tangent), then a hybrid `rrule` (convolution adjoint × table Jacobian by chunked Duals) plus an `rrule` for `CSRGeometry(L, g, centroid)`. |
+| D27 | 10-14 | Tests may use ChainRulesTestUtils (reverses D18 for new rrule tests; existing hand tests stay). |
 
 ---
 
@@ -431,6 +441,30 @@ far too tight when dz ≫ y/γ (Simpson recursed to depth 40). Steady-state bend
 point 2.68/3.41/4.88/0.365/0.355, hat 0.345/0.342/0.341/0.340/0.340 (16-layer values: not converged in layers).
 Hat costs ~5× the source solves of point sampling.
 
+### Phase 6 step 3a — forward-mode derivatives w.r.t. geometry, s_kick, γ (10-14, branch `phase6-geom_speed-deltas`)
+- `FloorPosition{T}`, `CSRElementInfo{T}`, `CSRGeometry{T}`, `CSRKickPoint{T}`, `CSRKick1{T}` (immutable except
+  `CSRKick1`, as before); promoting constructors; `number_type`, `table_type`; tables allocated in `T`;
+  `csr_kick_pz` promotes over geometry, `s_kick`, γ, `kick_factor`, `pz_scale`.
+- Source root: `zbrent` on primal values (Float64 results unchanged), then `root_tangent` (identity in core;
+  `CSRForwardDiffExt`: `ds/dp = −∂ₚddz/∂ₛddz` with ∂ₛddz from a nested Dual under a private tag `RootTag` ordered
+  inside any tag, so untagged `Dual{Nothing}` works). `k` is re-evaluated at the Dual root (default) or at zbrent's last
+  point with the root's tangent (compat, V7). `ddz_calc_csr!` now stores `s_chord_source`.
+- Bugs found on the way: ForwardDiff ≥ 1.0 `==` compares partials (`Dual(0, 1) == 0` is false). `advance_floor`'s
+  `angle == 0` gave NaN for a Dual g at 0 (now `primal(angle) == 0` + second-order expansion); same fix in
+  `I_csr!` (`s_chord_kick == 0`) and `y_source != 0`. First version kept `k` at the primal root in default mode:
+  0.4% derivative error, found by FD (FD converged over h = 0.1…1e-5).
+- Primal choices: `csr_n_step` rounds `primal(L)`; `image_u_min`, `image_hat_tol` primal.
+- Checks (`test/ad_geometry_test.jl`, 106 tests): AD vs best-of-steps central FD. Free space ≤ 1e-5 (typ. 1e-8);
+  images compat ≤ 1e-4; default images at kick level ≤ 1e-3 because the shielded kick's derivative is 7–25× smaller
+  than its free-space part (cancellation amplifies FD noise of the hat quadrature); hat image table alone (rtol 1e-10)
+  ≤ 2e-5 (measured ≤ 5e-6). Exact identity J[:,pz] = J[:,px]·(−px/(1+pz)) to ≤ 3e-10; residual of ddz at the Dual
+  root has zero first-order partials; `advance_floor` at g = 0 vs analytic. FD outliers (centroid pz columns, L₁ at
+  ~1e-4) traced to zbrent `abs_tol = 1e-8` noise in FD, not AD.
+- Float64 path: 1141/1141 on 1 and 4 threads; `csr_kick!` 6.81 ms (free, was 6.94) and 70.5 ms (16 layers, was
+  71.0), `diagnostics/bench_excess.jl`, 1 thread. Docs: `usage.md` "Derivatives" updated with an example; build clean.
+- Not done: nested Duals (Hessians) in `root_tangent` (errors); GTPSA/TPS (Phase 7: needs Newton iterations per
+  order); Duals on GPU backends.
+
 ### Stage C (10-14, branch `stage-c`)
 - **Step 0.** Compat `Beamlines = "0.10.6, 0.11"`, `BeamTracking = "0.8.7"` (registered 0.8.5–0.8.7 contain
   `RungeKutta`; only 0.8.7 tested). 857/857 against dev BeamTracking 0.8.7, Beamlines 0.11.0.
@@ -481,7 +515,7 @@ Hat costs ~5× the source solves of point sampling.
 | 3 | Bmad cross-check | done |
 | 4 | KernelAbstractions kernels | done (GPU: particle side + CPU tables, Stage C) |
 | 5 | Shielding (image charges) | done (+ D20, D24, V9) |
-| 6 | AD: steps 0–2 particles (done); step 3 geometry/γ via implicit differentiation of the source root | step 3 next after D22 |
+| 6 | AD: steps 0–2 particles (done); step 3 geometry/γ via implicit differentiation of the source root | 3a forward done; 3b rrule next |
 | 7 | TPS (serial deposit, optional smooth shape function); tests: first order = Jacobian, second = ForwardDiff Hessian | not started |
 | 8 | FFT convolution (`CSRAbstractFFTsExt`) for large n_bin; benchmarks; GPU wake table (isbits geometry via Adapt, immutable work struct); issue for a BeamTracking collective-step hook (route b) | not started |
 

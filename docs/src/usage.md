@@ -92,9 +92,13 @@ In `Float32`, strongly shielded kicks (a small residual of large image terms) ar
 
 ## Derivatives
 
-[`csr_kick_pz`](@ref) is the non-mutating form of `csr_kick!` and is differentiable with respect to `pz`, `z` and
-`q`. The bin grid (from the extreme live particles) and the kick tables (from the geometry and γ) are held
-constant; derivatives with respect to the geometry and γ are not provided yet.
+[`csr_kick_pz`](@ref) is the non-mutating form of `csr_kick!`. ForwardDiff `Dual`s pass through it in the particles
+(`pz`, `z`, `q`), in the geometry (build `CSRGeometry` from `Dual` element lengths, curvatures or centroid), in
+`s_kick` and in γ. The kick tables then carry derivatives: each retarded source point gets its derivative by implicit
+differentiation of its root, `ds/dp = −(∂ddz/∂p)/(∂ddz/∂s)`, not by differentiating the root finder. Held
+constant: the bin grid (from the extreme live particles) and the discrete choices (number of steps, the element each
+source lies in, the adaptive quadrature's subdivision), so derivatives are one-sided where these switch, e.g. at an
+element entrance. With ChainRulesCore an `rrule` gives the pullback with respect to `pz`, `z` and `q`.
 
 ```@example usage
 using ForwardDiff, ChainRulesCore
@@ -105,4 +109,14 @@ J = ForwardDiff.jacobian(f, qs)
 y, back = ChainRulesCore.rrule(csr_kick_pz, zeros(length(zs)), zs, qs, as, geom, 80, 0.05, 1e4, e, p)
 ȳ = randn(length(zs))
 maximum(abs, back(ȳ)[4] .- J' * ȳ) / maximum(abs, J' * ȳ)
+```
+
+Derivative of the kick with respect to the bend curvature of the last 10 elements and γ:
+
+```@example usage
+dg = ForwardDiff.derivative(t -> csr_kick_pz(zeros(length(zs)), zs, qs, as,
+                                             CSRGeometry(fill(0.1, 80), [fill(1 / rho, 70); fill(t, 10)], zeros(81, 6)),
+                                             80, 0.05, 1e4, e, p), 1 / rho)
+dγ = ForwardDiff.derivative(γ -> csr_kick_pz(zeros(length(zs)), zs, qs, as, geom, 80, 0.05, γ, e, p), 1e4)
+maximum(abs, dg), maximum(abs, dγ)
 ```

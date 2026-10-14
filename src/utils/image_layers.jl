@@ -21,7 +21,7 @@ end
 
 Finest lag scale resolved by the hat-weighted image table: 1% of y/γ, the width of the drift kernel's peak.
 """
-image_u_min(kp::CSRKickPoint) = 0.01 * abs(kp.y_source) / kp.gamma
+image_u_min(kp::CSRKickPoint) = 0.01 * abs(primal(kp.y_source)) / primal(kp.gamma)
 
 """
     image_hat_tol(geom, kp, image, dz, rtol, u_min)
@@ -31,7 +31,7 @@ lags (`image`, point-sampled) and at the nodes ±dz/2^j > u_min. The lags alone 
 dz ≫ y/γ, which would give a tolerance below the kernel's round-off noise.
 """
 function image_hat_tol(geom::CSRGeometry, kp::CSRKickPoint, image, dz, rtol, u_min)
-  k = CSRKick1()
+  k = CSRKick1(geom, kp)
   k.ix_ele_source = kp.ix_ele_kick
   K = maximum(abs, image)
   x = dz / 2
@@ -39,5 +39,5 @@ function image_hat_tol(geom::CSRGeometry, kp::CSRKickPoint, image, dz, rtol, u_m
     K = max(K, abs(image_kernel_at!(k, x, geom, kp)), abs(image_kernel_at!(k, -x, geom, kp)))
     x /= 2
   end
-  return rtol * K * dz
+  return rtol * primal(K) * dz
 end

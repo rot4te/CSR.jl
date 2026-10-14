@@ -5,9 +5,11 @@
     ddz_calc_csr!(k, s_chord_source, geom, kp)
 
 Separation (at constant time) between the kicked particle and a source at chord position `s_chord_source`
-in element `k.ix_ele_source`, minus the target `k.dz_particles`. Updates the geometry fields of `k`.
+in element `k.ix_ele_source`, minus the target `k.dz_particles`. Updates the geometry fields of `k`, and
+`k.s_chord_source` to `s_chord_source`.
 """
 function ddz_calc_csr!(k::CSRKick1, s_chord_source, geom::CSRGeometry, kp::CSRKickPoint)
+  k.s_chord_source = s_chord_source
   es = geom.ele[k.ix_ele_source]
   bc = geom.bmad_compat
   x = spline_val(es.spline, s_chord_source)
@@ -69,7 +71,7 @@ function ddz_calc_csr!(k::CSRKick1, s_chord_source, geom::CSRGeometry, kp::CSRKi
   k.floor_s = FloorPosition(rs, theta_s)
 
   # The dL calculation above neglects y_source, so correct for it.
-  kp.y_source != 0 && (dL -= k.L - sqrt(k.L_vec[1]^2 + k.L_vec[3]^2))
+  primal(kp.y_source) != 0 && (dL -= k.L - sqrt(k.L_vec[1]^2 + k.L_vec[3]^2))
   k.dL = dL
   return k.L / (2kp.gamma2) + dL - k.dz_particles
 end
@@ -200,15 +202,35 @@ function s_source_calc!(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
       continue
     end
 
-    # Root is bracketed
-    s_source, ok = zbrent(ddz, 0.0, es.L_chord, 1e-12, 1e-8)
+    # Root is bracketed. The search uses primal values; root_tangent then attaches the root's derivatives with
+    # respect to the parameters (implicit function theorem), so that it does not differentiate zbrent's iterations.
+    s_root, ok = zbrent(s -> primal(ddz(s)), 0.0, primal(es.L_chord), 1e-12, 1e-8)
     ok || error("s_source_calc!: root finder failed in element $(k.ix_ele_source)")
+    s_last = primal(k.s_chord_source)
+    s_source = root_tangent(s -> ddz_calc_csr!(csr_kick1_like(k, s), s, geom, kp), s_root, ddz(s_root))
     # zbrent leaves k describing its last evaluation, not the returned root (Bmad does the same). These differ
     # by up to the tolerance, or completely when the root is an endpoint with ddz exactly 0 (zbrent then
-    # returns without evaluating there). Re-evaluate at the root (planning/PLAN.md, V7).
-    geom.bmad_compat || ddz(s_source)
+    # returns without evaluating there). Re-evaluated at the root above unless compat (planning/PLAN.md, V7);
+    # with compat, k is evaluated again at zbrent's last point. With derivatives, k is evaluated again with the
+    # root's derivatives attached.
+    if geom.bmad_compat || !(s_source isa typeof(s_root))
+      ddz((geom.bmad_compat ? s_last : s_root) + (s_source - s_root))
+    end
     k.s_chord_source = s_source
     return s_source
   end
   error("s_source_calc!: CSR source-point search failed (element walk did not converge)")
+end
+
+"""
+    csr_kick1_like(k, s)
+
+Zeroed work struct for the number types of `k` and `s`, with `k`'s source element and lag (for evaluating
+`ddz_calc_csr!` at an `s` of another number type, e.g. a nested `Dual` in `root_tangent`).
+"""
+function csr_kick1_like(k::CSRKick1, s)
+  kd = CSRKick1{promote_type(number_type(k), typeof(s))}()
+  kd.ix_ele_source = k.ix_ele_source
+  kd.dz_particles = k.dz_particles
+  return kd
 end

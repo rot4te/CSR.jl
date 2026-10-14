@@ -59,3 +59,13 @@ function zbrent(f, x1, x2, rel_tol, abs_tol)
   end
   return b, false
 end
+
+"""
+    root_tangent(f, s0, f0) -> s
+
+Root `s0` of `f(s) = 0`, found from primal values, with the root's derivatives with respect to the parameters of
+`f` attached by implicit differentiation: `ds/dp = -(∂f/∂p) / (∂f/∂s)`, where `f0 = f(s0)` carries `∂f/∂p` at
+fixed `s` and `∂f/∂s` comes from differentiating `f` at `s0`. Returns `s0` when `f0` carries no derivatives;
+extensions add methods (ForwardDiff `Dual`).
+"""
+root_tangent(f, s0, f0) = s0

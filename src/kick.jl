@@ -82,16 +82,22 @@ end
     csr_kick_pz(pz, z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor = 1.0,
                 pz_scale = 1.0) -> pz_new
 
-Non-mutating `csr_kick!`: returns `pz` after the kick in a new vector (element type promoted with `z` and `q`),
-leaving `pz` unchanged. Differentiable with respect to `pz`, `z` and `q`: ForwardDiff Duals pass through, and with
-ChainRulesCore loaded an `rrule` gives the pullback by explicit adjoint kernels. In both, the bin grid and the kick
-table are held constant (the grid depends on the extreme live particles, the table on the geometry and `gamma`);
-derivatives with respect to `geom`, `s_kick`, `gamma` and the keywords are not provided.
+Non-mutating `csr_kick!`: returns `pz` after the kick in a new vector (element type promoted with `z`, `q`, the
+geometry's number type, `s_kick`, `gamma`, `kick_factor` and `pz_scale`), leaving `pz` unchanged.
+
+Differentiable with ForwardDiff `Dual`s in any of these: the particles (`pz`, `z`, `q`), the geometry (built by
+`CSRGeometry` from `Dual` lengths, curvatures or centroid), `s_kick`, `gamma`, `kick_factor`, `pz_scale`. The kick
+tables then carry derivatives; each retarded source point gets its derivatives by implicit differentiation of its
+root (`root_tangent`). Held constant: the bin grid (it depends on the extreme live particles) and the discrete
+choices (number of steps `csr_n_step`, the element a source lies in, the adaptive quadrature's subdivision).
+With ChainRulesCore loaded an `rrule` gives the pullback with respect to `pz`, `z` and `q` by explicit adjoint
+kernels; there, derivatives with respect to `geom`, `s_kick`, `gamma` and the keywords are not provided.
 """
 function csr_kick_pz(pz::AbstractVector, z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool},
                      geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma, species::Species,
                      params::CSRParams; kick_factor = 1.0, pz_scale = 1.0)
-  pz_new = similar(pz, promote_type(eltype(pz), eltype(z), eltype(q)))
+  pz_new = similar(pz, promote_type(eltype(pz), eltype(z), eltype(q), number_type(geom), typeof(s_kick),
+                                    typeof(gamma), typeof(kick_factor), typeof(pz_scale)))
   copyto!(pz_new, pz)
   csr_kick!(pz_new, z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor, pz_scale)
   return pz_new

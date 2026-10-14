@@ -29,7 +29,7 @@ function I_csr!(k::CSRKick1, i_bin, dz_slice, geom::CSRGeometry, kp::CSRKickPoin
   if i_bin == 1
     ix_ele_kick = kp.ix_ele_kick
     s_chord_kick = kp.s_chord_kick
-    while s_chord_kick == 0   # At the element entrance: use the end of the previous element
+    while primal(s_chord_kick) == 0   # At the element entrance: use the end of the previous element
       ix_ele_kick -= 1
       ix_ele_kick == 0 && return k   # No kick from before the beginning of the lattice
       s_chord_kick = geom.ele[ix_ele_kick].L_chord
@@ -72,7 +72,7 @@ end
 `u^(-1/3)` behaviour smooth. Each node needs its own source-point solve.
 """
 function I_csr_integral(z0, z1, geom::CSRGeometry, kp::CSRKickPoint; n = 16)
-  k = CSRKick1()
+  k = CSRKick1(geom, kp)
   function f(t)
     u = t^3
     k.ix_ele_source = kp.ix_ele_kick
@@ -100,7 +100,7 @@ depend on the warm start.
 function I_csr_quadrature!(k::CSRKick1, z0, z1, geom::CSRGeometry, kp::CSRKickPoint, n)
   t0 = cbrt(z0)
   h = (cbrt(z1) - t0) / n
-  acc = 0.0
+  acc = zero(number_type(k))
   for j in 0:n
     t = j == n ? cbrt(z1) : t0 + j * h
     k.dz_particles = t^3
@@ -121,7 +121,7 @@ For i > 1, I_int is overwritten by csr_trapezoid_kernel!.
 """
 @kernel function csr_wake_kernel!(I_csr, I_int, s_source, geom, kp, dz, n_lag)
   b = @index(Global)
-  k = CSRKick1()
+  k = CSRKick1(geom, kp)
   k.ix_ele_source = kp.ix_ele_kick
   for i in (b - 1) * n_lag + 1:min(b * n_lag, length(I_csr))
     k.dz_particles = i * dz
@@ -155,7 +155,7 @@ the source search is warm-started from node to node and bin to bin within a bloc
 """
 @kernel function csr_bin_quadrature_kernel!(I_int, geom, kp, dz, n_lag, n_quad)
   b = @index(Global)
-  k = CSRKick1()
+  k = CSRKick1(geom, kp)
   k.ix_ele_source = kp.ix_ele_kick
   for i in (b - 1) * n_lag + 2:min(b * n_lag + 1, length(I_int))
     @inbounds I_int[i] = I_csr_quadrature!(k, (i - 1) * dz, i * dz, geom, kp, n_quad)

@@ -34,10 +34,10 @@ end
     csr_n_step(L, params) -> (n_step, ds_step)
 
 Number of CSR steps in an element of length `L` and the true step length, as in Bmad:
-`n_step = max(1, round(L / ds_step))`, `ds_step = L / n_step`.
+`n_step = max(1, round(L / ds_step))`, `ds_step = L / n_step` (`n_step` from the primal value of `L`).
 """
 function csr_n_step(L, params::CSRParams)
   params.ds_step > 0 || error("csr_n_step: params.ds_step must be set")
-  n_step = max(1, round(Int, L / params.ds_step, RoundNearestTiesAway))
+  n_step = max(1, round(Int, primal(L) / params.ds_step, RoundNearestTiesAway))
   return n_step, L / n_step
 end

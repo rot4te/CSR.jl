@@ -139,7 +139,7 @@ function track_csr_line!(bunch::Bunch, line, context; params::CSRParams, csr_on 
   # Reference geometry
   L = zeros(n)
   g = zeros(n)
-  ref_exit = Vector{FloorPosition}(undef, n)
+  ref_exit = Vector{FloorPosition{Float64}}(undef, n)
   f = FloorPosition()
   for (i, ele) in enumerate(line)
     L[i] = float(deval(ele.UniversalParams, context).L)

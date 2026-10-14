@@ -43,7 +43,7 @@ consecutive lags, warm-started within a block as csr_wake_kernel!.
 @kernel function csr_image_kernel!(image, s_source, geom, kp, dz, n_lag)
   b = @index(Global)
   n_bin = (length(image) - 1) ÷ 2
-  k = CSRKick1()
+  k = CSRKick1(geom, kp)
   k.ix_ele_source = kp.ix_ele_kick
   for j in (b - 1) * n_lag + 1:min(b * n_lag, length(image))
     k.dz_particles = (j - n_bin - 1) * dz
@@ -109,7 +109,7 @@ function image_interval_moments!(k, geom, kp, m, dz, tol, u_min)
   a = m * dz
   if m == 0 || m == -1
     sgn = m == 0 ? 1 : -1
-    acc = zero(SVector{2,Float64})
+    acc = zero(SVector{2,number_type(k)})
     x = dz
     while x / 2 > u_min
       lo, hi = minmax(sgn * x / 2, sgn * x)
@@ -132,7 +132,7 @@ Moments for lag intervals m = -n_bin-1:n_bin (index m + n_bin + 2), blocks of `n
 @kernel function csr_image_hat_kernel!(rise, fall, geom, kp, dz, tol, u_min, n_int)
   b = @index(Global)
   n_bin = (length(rise) - 2) ÷ 2
-  k = CSRKick1()
+  k = CSRKick1(geom, kp)
   k.ix_ele_source = kp.ix_ele_kick
   for j in (b - 1) * n_int + 1:min(b * n_int, length(rise))
     mom = image_interval_moments!(k, geom, kp, j - n_bin - 2, dz, tol, u_min)

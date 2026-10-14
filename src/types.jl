@@ -3,12 +3,20 @@
 """
     FloorPosition(r, theta)
 
-Position `r = (X, Y, Z)` [m] and horizontal orientation angle `theta` [rad] in floor coordinates.
+Position `r = (X, Y, Z)` [m] and horizontal orientation angle `theta` [rad] in floor coordinates. The number type
+`T` is promoted from the arguments (`Float64`, or e.g. ForwardDiff `Dual`s for derivatives w.r.t. the geometry).
 """
-struct FloorPosition
-  r::SVector{3,Float64}
-  theta::Float64
+struct FloorPosition{T<:Real}
+  r::SVector{3,T}
+  theta::T
 end
+
+function FloorPosition(r::AbstractVector, theta::Real)
+  T = float(promote_type(eltype(r), typeof(theta)))
+  return FloorPosition{T}(SVector{3,T}(r), T(theta))
+end
+
+Base.convert(::Type{FloorPosition{T}}, f::FloorPosition) where {T} = FloorPosition{T}(f.r, f.theta)
 
 """
     FloorPosition()
@@ -22,77 +30,114 @@ FloorPosition() = FloorPosition(SVector(0.0, 0.0, 0.0), 0.0)
 
 Per-element centroid geometry (Bmad `csr_ele_info_struct`). The centroid "chord" is the line from the
 centroid position at the element entrance to the centroid position at the exit. `spline` gives the
-centroid offset from the chord as a function of distance along the chord.
+centroid offset from the chord as a function of distance along the chord. Number type `T` as `FloorPosition`.
 """
-struct CSRElementInfo
-  L::Float64                   # Element (reference) length
-  g::Float64                   # Reference curvature (0 for straight elements)
-  s_start::Float64             # Reference s at the element entrance
-  ref_floor0::FloorPosition    # Reference floor position at entrance
-  ref_floor1::FloorPosition    # Reference floor position at exit
-  floor0::FloorPosition        # Centroid floor position at entrance
-  floor1::FloorPosition        # Centroid floor position at exit
-  theta_chord::Float64         # Angle of the chord in the floor Z-X plane
-  L_chord::Float64             # Chord length. Negative if the centroid moves backwards in the element
-  spline::SVector{4,Float64}   # Centroid offset from the chord vs. chord distance
-  dL_s::Float64                # Centroid path length minus L_chord
+struct CSRElementInfo{T<:Real}
+  L::T                         # Element (reference) length
+  g::T                         # Reference curvature (0 for straight elements)
+  s_start::T                   # Reference s at the element entrance
+  ref_floor0::FloorPosition{T} # Reference floor position at entrance
+  ref_floor1::FloorPosition{T} # Reference floor position at exit
+  floor0::FloorPosition{T}     # Centroid floor position at entrance
+  floor1::FloorPosition{T}     # Centroid floor position at exit
+  theta_chord::T               # Angle of the chord in the floor Z-X plane
+  L_chord::T                   # Chord length. Negative if the centroid moves backwards in the element
+  spline::SVector{4,T}         # Centroid offset from the chord vs. chord distance
+  dL_s::T                      # Centroid path length minus L_chord
+end
+
+function CSRElementInfo(L, g, s_start, ref_floor0::FloorPosition, ref_floor1::FloorPosition, floor0::FloorPosition,
+                        floor1::FloorPosition, theta_chord, L_chord, spline::StaticVector{4}, dL_s)
+  T = float(promote_type(typeof(L), typeof(g), typeof(s_start), number_type(ref_floor0), number_type(ref_floor1),
+                         number_type(floor0), number_type(floor1), typeof(theta_chord), typeof(L_chord),
+                         eltype(spline), typeof(dL_s)))
+  return CSRElementInfo{T}(L, g, s_start, ref_floor0, ref_floor1, floor0, floor1, theta_chord, L_chord, spline, dL_s)
 end
 
 """
     CSRGeometry
 
 Centroid geometry for a beamline: `start` is the centroid floor position at the start of the lattice
-(Bmad `eleinfo(0)%floor1`), and `ele[i]` the information for element `i`.
+(Bmad `eleinfo(0)%floor1`), and `ele[i]` the information for element `i`. Number type `T` as `FloorPosition`.
 """
-struct CSRGeometry
-  start::FloorPosition
-  ele::Vector{CSRElementInfo}
+struct CSRGeometry{T<:Real}
+  start::FloorPosition{T}
+  ele::Vector{CSRElementInfo{T}}
   bmad_compat::Bool
 end
 
 """
     CSRKickPoint
 
-Kick-point information that is the same for all source lags (part of Bmad's `csr_struct`).
+Kick-point information that is the same for all source lags (part of Bmad's `csr_struct`). Number type `T` as
+`FloorPosition` (e.g. `Dual`s for derivatives w.r.t. `s_kick`, `gamma` or the geometry).
 """
-struct CSRKickPoint
-  ix_ele_kick::Int        # Element containing the kick point
-  s_kick::Float64         # Kick point, reference s from the element entrance
-  s_chord_kick::Float64   # Kick point along the centroid chord
-  floor_k::FloorPosition  # Floor position of the kick point
-  gamma::Float64
-  gamma2::Float64
-  beta::Float64
-  y_source::Float64       # Height of the source particle (image charges; 0 for free space)
-  kick_factor::Float64    # Scales the kick (1/2 at element ends)
+struct CSRKickPoint{T<:Real}
+  ix_ele_kick::Int           # Element containing the kick point
+  s_kick::T                  # Kick point, reference s from the element entrance
+  s_chord_kick::T            # Kick point along the centroid chord
+  floor_k::FloorPosition{T}  # Floor position of the kick point
+  gamma::T
+  gamma2::T
+  beta::T
+  y_source::T                # Height of the source particle (image charges; 0 for free space)
+  kick_factor::T             # Scales the kick (1/2 at element ends)
+end
+
+function CSRKickPoint(ix_ele_kick::Integer, s_kick, s_chord_kick, floor_k::FloorPosition, gamma, gamma2, beta,
+                      y_source, kick_factor)
+  T = float(promote_type(typeof(s_kick), typeof(s_chord_kick), number_type(floor_k), typeof(gamma), typeof(gamma2),
+                         typeof(beta), typeof(y_source), typeof(kick_factor)))
+  return CSRKickPoint{T}(ix_ele_kick, s_kick, s_chord_kick, floor_k, gamma, gamma2, beta, y_source, kick_factor)
 end
 
 """
-    CSRKick1
+    CSRKick1{T}
 
-Kick quantities for one source-to-kick separation (Bmad `csr_kick1_struct`).
+Kick quantities for one source-to-kick separation (Bmad `csr_kick1_struct`), in number type `T`.
 """
-mutable struct CSRKick1
-  I_csr::Float64              # Kick integral
-  I_int_csr::Float64          # Integrated kick integral
-  L_vec::SVector{3,Float64}   # Source-to-kick vector in floor coordinates
-  L::Float64                  # Distance between source and kick points
-  dL::Float64                 # Ls - L
-  dz_particles::Float64       # Kicked minus source particle position at constant time
-  s_chord_source::Float64     # Source point along the source element chord
-  theta_L::Float64            # Angle of L_vec
-  theta_sl::Float64           # Angle between source velocity and L_vec
-  theta_lk::Float64           # Angle between L_vec and kicked particle velocity
+mutable struct CSRKick1{T<:Real}
+  I_csr::T                    # Kick integral
+  I_int_csr::T                # Integrated kick integral
+  L_vec::SVector{3,T}         # Source-to-kick vector in floor coordinates
+  L::T                        # Distance between source and kick points
+  dL::T                       # Ls - L
+  dz_particles::T             # Kicked minus source particle position at constant time
+  s_chord_source::T           # Source point along the source element chord
+  theta_L::T                  # Angle of L_vec
+  theta_sl::T                 # Angle between source velocity and L_vec
+  theta_lk::T                 # Angle between L_vec and kicked particle velocity
   ix_ele_source::Int          # Source element (0 = upstream of the lattice)
-  floor_s::FloorPosition      # Floor position of the source point
+  floor_s::FloorPosition{T}   # Floor position of the source point
 end
 
 """
+    CSRKick1{T}()
     CSRKick1()
+    CSRKick1(geom, kp)
 
-Zeroed work struct; set `ix_ele_source` (search start) and `dz_particles` (lag) before `s_source_calc!`.
+Zeroed work struct in number type `T` (default `Float64`; `CSRKick1(geom, kp)`: promoted from the geometry and the
+kick point); set `ix_ele_source` (search start) and `dz_particles` (lag) before `s_source_calc!`.
 """
-CSRKick1() = CSRKick1(0.0, 0.0, SVector(0.0, 0.0, 0.0), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, FloorPosition())
+function CSRKick1{T}() where {T}
+  z = zero(T)
+  return CSRKick1{T}(z, z, SVector(z, z, z), z, z, z, z, z, z, z, 0, FloorPosition(SVector(z, z, z), z))
+end
+
+CSRKick1() = CSRKick1{Float64}()
+
+CSRKick1(geom, kp) = CSRKick1{promote_type(number_type(geom), number_type(kp))}()
+
+"""
+    number_type(x)
+
+Number type `T` of a `FloorPosition{T}`, `CSRElementInfo{T}`, `CSRGeometry{T}`, `CSRKickPoint{T}` or `CSRKick1{T}`.
+"""
+number_type(::FloorPosition{T}) where {T} = T
+number_type(::CSRElementInfo{T}) where {T} = T
+number_type(::CSRGeometry{T}) where {T} = T
+number_type(::CSRKickPoint{T}) where {T} = T
+number_type(::CSRKick1{T}) where {T} = T
 
 """
     CSRBins

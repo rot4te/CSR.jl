@@ -24,9 +24,10 @@ Reference floor position after an element of length `L` and reference curvature 
 """
 function advance_floor(f::FloorPosition, L, g)
   angle = g * L
-  if angle == 0
-    dx = 0.0
-    dz = float(L)
+  if primal(angle) == 0
+    # Expansion about angle 0 (values exact; derivatives w.r.t. g and L correct to second order)
+    dx = -L * angle / 2
+    dz = L * (1 - angle^2 / 6)
   else
     dx = -2 * sin(angle / 2)^2 / g   # (cos(angle) - 1) / g
     dz = sin(angle) / g
@@ -54,7 +55,7 @@ reference curvature `g[i]` (zero for straight elements). Horizontal plane only.
 """
 function planar_survey(L::AbstractVector, g::AbstractVector; start::FloorPosition = FloorPosition())
   length(L) == length(g) || error("planar_survey: L and g must have the same length")
-  floors = Vector{FloorPosition}(undef, length(L))
+  floors = Vector{FloorPosition{float(promote_type(eltype(L), eltype(g), number_type(start)))}}(undef, length(L))
   f = start
   for i in eachindex(L)
     f = advance_floor(f, L[i], g[i])
