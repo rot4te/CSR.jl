@@ -73,7 +73,7 @@ kick computed with this point (half steps, image sign and weight).
 """
 function CSRKickPoint(geom::CSRGeometry, ix_ele_kick, s_kick, gamma; y_source = 0.0, kick_factor = 1.0)
   e = geom.ele[ix_ele_kick]
-  s_chord_kick = s_ref_to_s_chord(s_kick, e)
+  s_chord_kick = s_ref_to_s_chord(s_kick, e; geom.bmad_compat)
   x = spline_val(e.spline, s_chord_kick)
   c, s = cos(e.theta_chord), sin(e.theta_chord)
   r = SVector(x * c + s_chord_kick * s, 0.0, -x * s + s_chord_kick * c) + e.floor0.r

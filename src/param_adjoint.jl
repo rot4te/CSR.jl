@@ -451,7 +451,8 @@ function csr_kick_param_adjoint(kbar::AbstractVector, bins::CSRBins, geom::CSRGe
   st = csr_bins_kick(bins0, CPU(), geom0, ik, s_kick, gamma, species, params; kick_factor)
   coef = st.coef
   e = geom0.ele[ik]
-  dcoef = ForwardDiff.gradient(x -> csr_kick_coef(species, x[1], csr_n_step(x[2], params)[2] * (x[3] / x[2])),
+  dcoef = ForwardDiff.gradient(x -> csr_kick_coef(species, x[1], csr_n_step(x[2], params)[2] * (x[3] / x[2]);
+                                                  params.bmad_compat),
                                SVector(gamma, e.L, e.L_chord))
   c = sum(kb .* st.kick) / coef
   grad[n_g+2] += c * dcoef[1]

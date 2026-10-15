@@ -43,7 +43,9 @@ GTPSA TPS).
   goes here.** (Local `fwd-primal-search` no longer exists; its head is `0a4cfbc`.)
 - **`phase7-review-fixes`** (from `phase7-step5` `e5a0ede`, 2026-10-15): fixes from the `phase7-tps` review
   (findings 3, 5, 6, 7; Section 9) `4a6140f`; D32 flake fixed (γ scaled in `test_rrule`, s_kick restored; Section 4)
-  `2748fb9`. **Latest state.**
+  `2748fb9`.
+- **`v2-v3-physics`** (from `phase7-review-fixes` `da6650d`, 2026-10-15): V2 and V3 fixed in default mode (D39, D40),
+  continuous retardation condition, one source per lag (D41). **Latest state.**
 
 | Commit | Branch | Content |
 |---|---|---|
@@ -96,9 +98,10 @@ keep testing on Julia 1.13.1.
      (independence of the Jacobian/Hessian references, tolerances, gaps such as TPS order > 2); docs example vs API.
    - Output: findings ranked by severity, file:line, failure scenario, confidence. Claude verifies each finding before
      reporting; **no fixes until the user decides.**
-2. **Next.** **V2 (ion kick prefactor) and V3 (`s_ref_to_s_chord`)** — physics decisions, before step 5: for each, show the Bmad
-   code and derivation, give options with a recommendation, change nothing until the user chooses.
-3. **Phase 7 step 5** (`track_csr!` with a TPS test bunch; D38). Tests: order 1 = ForwardDiff Jacobian, order 2 =
+2. **Done 2026-10-15** (branch `v2-v3-physics`; D39–D41, Section 9). V2 (ion kick prefactor) and V3
+   (`s_ref_to_s_chord`). Fixing V3 moved the kick point of `ad_rrule_test.jl` onto a lag with two sources (the seam);
+   the user chose to make `ddz` continuous (D41).
+3. **Next: Phase 7 step 5** (`track_csr!` with a TPS test bunch; D38). Tests: order 1 = ForwardDiff Jacobian, order 2 =
    ForwardDiff Hessian of the same Float64 tracking; Float64 test particles == bunch kicks.
 4. **Upstream reports / Pages:** refresh `planning/upstream_reports.md` (V7/V8 line numbers vs the current Bmad
    checkout, Bmad PR #2085 status); check action versions in `.github/workflows/Documentation.yml` against current
@@ -208,17 +211,23 @@ extensions silently do not load.
 | D36 | 10-14 | `track_csr!` with a TPS (test) bunch is in Phase 7, after the core. |
 | D37 | 10-15 | Stage 2 TPS variables, option (b): parameters/knobs shared by all particles (geometry L, g, centroid; γ; s_kick; bunch charge; upstream element knobs), every particle's z, q TPS in them, deposit and tables in TPS; plus Stage 1 test particles carrying the 6 phase-space variables as well (frozen in phase space, collective in parameters). |
 | D38 | 10-15 | Phase 7 order: step 5 (`track_csr!` with a TPS test bunch) before Stage 2; V2 and V3 decided before step 5. |
+| D39 | 10-15 | V2: default kick coefficient `ds r_e abs(q) / (rel_mass e β² γ)` (`Δpz = ΔE/(β²E)`; user chose to include 1/β²); compat keeps Bmad's `ds r_c / (rel_mass e abs(q) γ)`. |
+| D40 | 10-15 | V3: default kick point in a bend where the centroid spline crosses the reference normal plane at `s_kick` (Newton in Float64, `root_tangent` for Dual/TPS); straight elements and compat as Bmad. |
+| D41 | 10-15 | Seam (user: "only one root physically, so the simulation should only have one"): default `ddz_calc_csr` continuous at every element boundary and at the lattice ends: angle (not secant slope) of the L line for sources in the kick element, `−2 L_plane` for sources ahead in it, `L/(γ²(1+β))` for `L(1 − β)`; the first-bin split lag `zz` from `ddz_calc_csr`. Compat keeps Bmad. Chosen over a tie-break in the walk and over replaying the forward search in the pullback. |
 
 ---
 
 ## 4. Open questions and pending upstream reports
 
 **Open (user decisions or unresolved):**
-- V2: kick prefactor for non-electrons (`rel_mass` placement). Electrons/positrons only in tests until resolved.
-- V3: `s_ref_to_s_chord` projection (ported literally).
-- Seam/V4: at y = 3 mm, lag −3 mm (retarded image source at the kick point) the image kernel is −1.3e-4 vs exact
-  −1.11e-3 (~1e-7 of the peak). Lag 0 at small y: 0.94 of exact (Bmad's approximate retardation where the kernel
-  crosses zero). Both negligible so far; not investigated further.
+- V2, V3: decided 2026-10-15 (D39, D40). The seam is removed in default mode (D41).
+- Seam/V4 (measured before D41, not rerun): at y = 3 mm, lag −3 mm (retarded image source at the kick point) the
+  image kernel was −1.3e-4 vs exact −1.11e-3 (~1e-7 of the peak). Lag 0 at small y: 0.94 of exact (attributed then to
+  Bmad's approximate retardation, now exact in default mode). Rerun `image_kernel_exact.jl` to update.
+- rrule vs ForwardDiff for `s_kick` with images (default mode): 4e-11–5e-10 relative at a few kick positions
+  (s = 0.19, 0.23 in the `ad_rrule_test.jl` lattice; `diagnostics/v3_rrule_scan.jl`), the same before and after
+  D40/D41; γ ≤ 2.3e-13 everywhere. Not investigated (the test's s = 0.17 gives 9e-16).
+- V4 round-off branches (`SRC_END`/`SRC_START`, D11) remain; with D41 they are reached only at round-off level.
 - At h = 1 cm the hat-integrated shielded result depends on n_bin below ~240 bins (likely charge-density resolution
   on a small residual; not verified).
 - Test issues found 2026-10-14 (Julia 1.13.1), both closed the same evening:
@@ -296,7 +305,7 @@ Top level: types and host-side functions (launch kernels, allocate, check). `ker
 | `utils/backend.jl` | `csr_float_type`, `device_scalar`, `table_backend`, `to_backend`, `AtomicAdd`, `PlainAdd`, `supports_atomic_add`, `primal`. |
 | `utils/spline.jl` | `spline_val/d1/d2`, `chord_spline`, `dspline_len` (Bmad, V1), `GL4_NODES/WEIGHTS`, `path_excess` (exact, V9). |
 | `utils/floor.jl` | `x_axis`, `z_axis`, `advance_floor`, `advance_floor_patch`, `planar_survey`, `centroid_floor`. |
-| `utils/chord_coordinates.jl` | `s_ref_to_s_chord` (V3 literal), `source_s`. |
+| `utils/chord_coordinates.jl` | `s_ref_to_s_chord` (D40; Bmad's formula in compat), `chord_normal_offset`, `source_s`. |
 | `utils/root_finding.jl` | `zbrent` (`super_zbrent`), `root_tangent` (Newton steps from the primal root, D35), `root_order`, `root_slope`, `RootTag`. |
 | `utils/image_layers.jl` | `image_layer_weight` (D24), `image_u_min`, `image_hat_tol` (D20). |
 | `utils/kick_setup.jl` | `csr_kick_coef` (V2), `csr_ref_energy`, `csr_n_step`. |
@@ -369,8 +378,9 @@ Every function has a docstring (the docs build enforces it with `checkdocs = :al
 | ID | Where | Finding | Status in CSR.jl |
 |---|---|---|---|
 | V1 | `dspline_len` line 1796 | s⁴ term `9*c(3)**2` should be `/5`. Bmad's dL 1.71× quadrature for an asymmetric spline (end slopes 0.010, −0.012); exact when c₃ = 0. Write-up: `dspline_coeff.md`. | Superseded in default mode by `path_excess`; compat keeps Bmad. |
-| V2 | Kick coefficient | `rel_mass` factor for non-electrons: derivation gives `q_w r_e Q K ds/(e γ rel_mass)`, Bmad `|q| r_e/(e γ rel_mass²)`. | Unresolved; Bmad formula; electrons only in tests. |
-| V3 | `s_ref_to_s_chord` 1817–1842 | Projects `dr` onto the direction of motion (x ≈ 0 always); on-axis bend gives `ρ·atan(s/ρ)` ≠ `L_chord` at s = L (0.09967 vs 0.09996 for L/ρ = 0.1). | Ported literally. Open. |
+| V2 | Kick coefficient 769 (also 1141, 1609: LSC) | Derivation `ds r_e abs(Q) / (rel_mass e β² γ)`; Bmad `ds r_e abs(Q) / (rel_mass² e γ)`: extra `1/rel_mass` since commit `50b90dee33` (2020-03-24) replaced `r_e` by `classical_radius()` (= `r_e Q²/rel_mass`) and kept the explicit `rel_mass` (before it: `r_e/(rel_mass abs(Q))`, right mass, wrong charge for abs(Q) ≠ 1); no 1/β². Other `classical_radius` users (Touschek, envelope) have no extra `rel_mass`. | Fixed in default (D39); compat Bmad. Not yet in `upstream_reports.md`. |
+| V3 | `s_ref_to_s_chord` 1817–1842 | Treats `s_ref` as a straight distance along the entrance tangent and returns ρ × the angle seen from the bend centre: `ρ·atan(s/ρ)` on an on-axis bend instead of the chord coordinate `ρ[sin(s/ρ − θ/2) + sin(θ/2)]` (0.09967 vs 0.09996 at s = L, L/ρ = 0.1). Kick point upstream by `≈ 7L³/(24ρ²)` at the exit. | Fixed in default (D40); compat Bmad. Not yet in `upstream_reports.md`. |
+| Seam | `ddz_calc_csr` 1023–1086 | Same-element branch passes the secant slope as the angle of the L line (cross-element branches the angle), uses `2ds` for sources ahead (downstream: `2 L_plane`), and `L/(2γ²)` for `L(1 − β)` (infinite drifts: exact). `ddz` jumps at the kick element's ends (8.6e-9 m at s_kick = 0.17 in the `ad_rrule_test.jl` lattice, 1.1e-7 at 0.03): lags with two sources (old code: 163–197 of 201 lags in the overlap depend on the start element, `diagnostics/seam_uniqueness.jl`) or none (V4 branches). | Continuous in default (D41); compat Bmad. |
 | V4 | `s_source_calc` 951–959 | Round-off branches assign `ddz_calc_csr(...)` (a residual) to `s_source`. Matters for the image kick's `g_bend`. | Ported literally (D11). |
 | V5 | `I_csr` first bin 1414–1426 | Holds `I_csr` constant over the rest of the bin: 2/3 of the integral in steady state, 3–4× too small in the entrance transient. Write-up: `upstream-bin.md`. | Quadrature (D15); compat flag. |
 | V6 | `track1_bunch_csr` 330–331 | Energy interpolation weights reversed. | Fixed upstream (PR #2199); both modes follow it (D21). |
@@ -379,10 +389,10 @@ Every function has a docstring (the docs build enforces it with `checkdocs = :al
 | V9 | `dspline_len` (all callers) | Small-angle path excess `½∫(x′ − dθ)²` drops the dθ⁴ terms: on a circle too large by Ls⁵/(1920ρ⁴) (1.8e-5, 1.9e-4, 1.9e-3 m at Ls = 3.2, 5.2, 8.2 m; ρ = 10 m). Acts as a lag shift; the image kernel near lag 0 at large y was ~14% low. | Exact `path_excess` in default mode; compat keeps Bmad. Drafted in `upstream_reports.md` (item 5). |
 
 Other Bmad notes:
-- At lag 0 the image kick on a drift is 0.125 vs analytic 0 (3e-5 of the peak): Bmad's approximate retardation
-  `z ≈ L/(2γ²) + dL` (error `L/(8γ⁴)`), not V8.
-- Seam: the same-element ahead formula uses `2|ds|` (chord) where the cross-element one uses `2 L_plane`; they differ
-  by O(ds·θ²). A root in that gap is caught by the V4 round-off branch.
+- At lag 0 the image kick on a drift is nonzero vs analytic 0 (y = 1 cm: 0.031 at γ = 200, 0.50 at γ = 50; at 1 mm
+  lag 25 and 377): Bmad's approximate retardation `z ≈ L/(2γ²) + dL` (error `L/(8γ⁴)`), not V8. Default mode 0 to
+  round-off since D41 (`diagnostics/drift_lag0_image.jl`).
+- Seam: see the row above (D41).
 - Constants: CODATA 2022 `r_e = 2.8179403205e-15 m` vs Bmad `2.8179403227e-15 m` (8e-10 relative).
 - Bmad diagnostic file quirks: with images, kick and I_csr are divided by the last layer's `kick_factor` and
   `S_Source` is the last layer's; S-position has 6 decimals.
@@ -676,6 +686,32 @@ Hat costs ~5× the source solves of point sampling.
   rerun; docs build clean (existing warnings only). Then `2748fb9` fixed the flake (Section 4): `ad_rrule_test.jl`
   206/206 under 10 seeds (1 thread) and 3 seeds (4 threads); full suite not rerun after `2748fb9` (test file only).
 
+### V2, V3 and the seam, D39–D41 (10-15, branch `v2-v3-physics`)
+- **V2 (D39).** `csr_kick_coef(species, γ, ds; bmad_compat)`, flag passed from `csr_bins_kick`, the reference and
+  the pullback. Electrons change by 1/β² only (2.5e-5 at γ = 200). Tests: proton/electron = 1/rel_mass, compat =
+  default·β²/rel_mass, positron == electron.
+- **V3 (D40).** `s_ref_to_s_chord(s, e; bmad_compat)`, `chord_normal_offset`; 0 and `L_chord` exact at the ends.
+  On an on-axis bend (ρ = 5, L = 0.5) the result equals the arc point's chord projection to the cubic spline's accuracy
+  (≤ 1e-7 m; the spline deviates from the arc by ~ρφ⁴/384 = 1.3e-6 m), Bmad's formula is off by up to 1.4e-3 m. Kick
+  point in the reference normal plane to 1e-15 with an off-axis centroid; first/second derivatives in s and the
+  derivative in g vs central differences. The pullback seeds every kick-element number the new formula uses
+  (`KICK_OFFSETS`).
+- **Seam (D41).** After V3, `ad_rrule_test.jl` "images" failed (rrule vs ForwardDiff up to 5e-5). Old code at other kick
+  positions: same (2.4e-5 at s = 0.13; `v3_rrule_scan.jl`). Traced (`v3_image_entry_adjoint.jl`, `v3_node_adjoint.jl`,
+  `v3_warm_start.jl`) to hat interval m = 0: one hat node (u = 1.553e-4, layer 1) had sources in element 1 (end) and
+  element 2 (start), image kernel 43 vs 3209 (the bend's curvature begins there); the forward table's warm start found
+  one, the pullback's the other. Cause: same-element `ddz` passed the secant slope as the L-line angle (`path_excess`
+  is stationary at the true angle, so the jump is ~(α³/3)² Δs/2 ≈ 8e-9 m). Fixed as D41. After: `ddz` jumps ≤ 1e-16 at
+  the kick element's boundaries, infinite-drift sources at the lattice ends ≤ 1e-9 from the end for the end lag,
+  start-independent sources (new test in `wake_test.jl`; with the old default code 163–197 of 201 lags near the
+  boundary depended on the start element, `seam_uniqueness.jl`). rrule vs ForwardDiff over 34 kick positions: γ
+  ≤ 2.3e-13; s_kick ≤ 5e-10 (unchanged, Section 4). Drift image kick at lag 0: 0 to round-off (compat 0.031 at
+  γ = 200). `wake_test.jl` V7 test: `zz` now from `ddz_calc_csr`.
+- Suite 1565/1565 on 1 and 4 threads; docs build clean (existing warnings). `bench_excess.jl`, 1 thread, interleaved
+  with `da6650d`: free space 7.26–7.30 vs 7.22–7.25 ms, 16 layers 74.6–74.9 vs 73.4–73.9 ms (+0.5%, +1.5%).
+- Not rerun: the Bmad cross-check default-mode columns (Section 9, Phase 3) and `image_kernel_exact.jl`; compat is
+  unchanged by construction (compat tests pass). V2 and V3 are not yet in `upstream_reports.md`.
+
 ### Forward mode with primal source search, D31 (10-14 evening, branch `fwd-primal-search`)
 - `PrimalSearch(primal(geom), primal(kp))` built once per table call when the table type is a `Dual`
   (`primal_search`); `s_source_calc(k, geom, kp, search)` walks in `Float64` (`s_source_walk`) and evaluates once
@@ -769,7 +805,7 @@ Metal tests in the suite (conditional on Metal.jl).
 | Per-slice `track!` overhead | Measure in phase 8; route (b) upstream if dominant |
 | Dependence on BeamTracking internals | Gate tests; compat pinned at 0.8.7 |
 | Steady-state coefficient not independently verified | Check a primary source (Section 8) |
-| `|q|` placement for ions (V2) | Electrons only in tests |
+| `|q|` placement for ions (V2) | Fixed by derivation (D39); coefficient ratios tested, no ion tracking test |
 | Float32 on GPUs in strong shielding | Documented ~3e-4; mixed precision if needed |
 
 ---
@@ -799,6 +835,6 @@ Metal tests in the suite (conditional on Metal.jl).
 | `verify_analytic.jl` | Section 8 checks (Base Julia). |
 | `dspline_coeff.md`, `upstream-bin.md` | Write-ups for V1 and V5. |
 | `upstream_reports.md` | Drafted upstream reports (Section 4). |
-| `diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`, `bench_pullback.jl`, `bench_forward.jl`, `d32_flake.jl [compat|free] [Γ]`, `d32_steps.jl`, `root_newton_mutation.jl`; data `layer_terms_*.txt` (the `_400` files predate V9). |
+| `diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`, `bench_pullback.jl`, `bench_forward.jl`, `d32_flake.jl [compat|free] [Γ]`, `d32_steps.jl`, `root_newton_mutation.jl`, `v3_rrule_images.jl`, `v3_rrule_scan.jl`, `v3_hat_node_search.jl`, `v3_image_entry_adjoint.jl`, `v3_node_adjoint.jl`, `v3_warm_start.jl [s_kick] [layer]`, `seam_uniqueness.jl`, `drift_lag0_image.jl`; data `layer_terms_*.txt` (the `_400` files predate V9). |
 | `../crosscheck/` | Bmad/Tao cross-check (README there). |
 | `../docs/` | Documenter docs (`julia --project=docs docs/make.jl`; `docs/README.md`); pages Home, Usage, Physics model, Physics decisions, Validation, API, Internals. Deployed by `.github/workflows/Documentation.yml` from `main`. Keep "Physics decisions" in sync with Section 3 when physics changes. |

@@ -125,7 +125,7 @@ function csr_kick_reference!(pz::AbstractVector, z::AbstractVector, q::AbstractV
     end
   end
 
-  coef = csr_kick_coef(species, gamma, actual_track_step)
+  coef = csr_kick_coef(species, gamma, actual_track_step; params.bmad_compat)
   kick = zeros(n_bin)
   csr_convolve_reference!(kick, I_int, bins.edge_dcharge_density_dz, coef)
 

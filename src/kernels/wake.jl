@@ -43,11 +43,19 @@ function I_csr_calc(k::CSRKick1, i_bin, dz_slice, geom::CSRGeometry, kp::CSRKick
     else
       # Source point in another element: first integrate over the element containing the kick point,
       # then add the rest.
-      L = s_chord_kick
-      dtheta_L = spl[2] + spl[3] * L + spl[4] * L^2
-      dL = path_excess(0.0, L, spl, dtheta_L; bmad_compat = geom.bmad_compat)   # = Ls - L
-      Ls = L + dL
-      zz = L / (2gamma2) + dL
+      if geom.bmad_compat
+        L = s_chord_kick
+        dtheta_L = spl[2] + spl[3] * L + spl[4] * L^2
+        dL = path_excess(0.0, L, spl, dtheta_L; bmad_compat = true)   # = Ls - L
+        Ls = L + dL
+        zz = L / (2gamma2) + dL
+      else
+        # zz: the lag of a source at the element entrance (ddz_calc_csr, so that the quadrature starts where the
+        # source search crosses into the previous element); Ls: arc length from the entrance to the kick point.
+        _, zz = ddz_calc_csr(with_fields(k; ix_ele_source = ix_ele_kick, dz_particles = zero(k.dz_particles)), 0.0,
+                             geom, kp)
+        Ls = path_excess(0.0, s_chord_kick, spl) + s_chord_kick
+      end
       I_int_csr = -kp.kick_factor * ((g_bend * Ls / 2)^2 - log(2gamma2 * zz / Ls) / gamma2)
       if geom.bmad_compat
         # Bmad approximates the rest of the integral with I_csr held at its value at z. In steady state

@@ -62,14 +62,14 @@ of radius ρ in steady state, `I_csr → −2·3^{−1/3} ρ^{−2/3} z^{−1/3}
 
 ```math
 k_i = c \sum_{m=1}^{i} I_\text{int}[m]\; g_{i+1-m}, \qquad g_j = \frac{Q_j - Q_{j-1}}{dz^2},
-\qquad c = \frac{ds\; r_e}{e\,\gamma}\ \text{(electrons)},
+\qquad c = \frac{ds\; r_e\, |q|}{(m/m_e)\, e\, \beta^2 \gamma},
 ```
 
 where `Q_j` is the bin charge, `I_int[m]` the integral of `I_csr` over bin `m` (the first bin from Bmad's closed form
 with its logarithmic near-field term, plus quadrature beyond the kick element; the other bins by quadrature or
 trapezoid, see [Physics decisions](@ref)), and `ds` the step length scaled by the chord-to-arc ratio of the element.
-For other species the coefficient is Bmad's `ds r_c / (m/m_e · e |q| γ)` ([`csr_kick_coef`](@ref)); its form for
-ions is unresolved (V2).
+`q` is the charge in units of `e` ([`csr_kick_coef`](@ref)): `Δpz = ΔE/(β²E)` with `ΔE = |q| e E_z ds`. With
+`bmad_compat = true` it is Bmad's `ds r_c / (m/m_e · e |q| γ)`, `r_c = r_e q²/(m/m_e)` (V2).
 
 ## Shielding by image charges
 

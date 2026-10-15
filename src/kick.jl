@@ -174,7 +174,7 @@ function csr_bins_kick(bins::CSRBins, backend, geom::CSRGeometry, ix_ele_kick::I
   I_csr, I_int, s_source = to_backend.(Ref(backend),
     csr_wake_table(geom, kp, dz_t, n_bin, tb; all_bin_quadrature = params.all_bin_quadrature && !params.bmad_compat))
 
-  coef = device_scalar(backend, csr_kick_coef(species, gamma, actual_track_step))
+  coef = device_scalar(backend, csr_kick_coef(species, gamma, actual_track_step; params.bmad_compat))
   edge = bins.edge_dcharge_density_dz
   kick = KernelAbstractions.zeros(backend, promote_type(typeof(coef), eltype(I_int), eltype(edge)), n_bin)
   csr_convolve!(kick, I_int, edge, coef)

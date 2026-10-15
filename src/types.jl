@@ -220,6 +220,16 @@ Parameters for the 1D CSR calculation. Names follow Bmad's `space_charge_com` co
        the kernel against the bin hat function and averages the layer sum (`image_sum_order`).
     5. Path-length excess of the centroid over the source–kick line (retardation): Bmad's small-angle form
        `½∫(x′ - dθ)²` (`dspline_len`); CSR.jl the exact form (`path_excess`). They differ by `~Ls²/(80ρ²)` relative.
+    6. Kick coefficient (`csr_kick_coef`): Bmad's carries an extra `1/rel_mass` (`rel_mass = m/m_e`) and omits the
+       `1/β²` of `Δpz = ΔE/(β²E)` (`planning/PLAN.md`, V2).
+    7. Kick point in a bend (`s_ref_to_s_chord`, set by the geometry's `bmad_compat`): Bmad's formula places it
+       upstream by `≈ 7L³/(24ρ²)` at the exit of an on-axis bend; CSR.jl takes the crossing of the centroid spline with
+       the reference normal plane (V3).
+    8. Retardation condition (`ddz_calc_csr`): Bmad's source in the kick element uses the secant slope of the spline
+       as the angle of the source–kick line and `2Δs_chord` for sources ahead, and `L/(2γ²)` for `L(1 - β)`. These
+       make `ddz` jump at the kick element's ends and the lattice ends, giving two roots or none for some lags (the
+       source then depends on where the search starts). CSR.jl uses the angle, `2 L_plane` and `L/(γ²(1 + β))`:
+       `ddz` is continuous and each lag has one source (`planning/PLAN.md`, seam).
 """
 Base.@kwdef struct CSRParams
   n_bin::Int = 40

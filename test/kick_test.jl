@@ -4,8 +4,18 @@
   z, q, alive = gaussian_line_bunch(sigma, Q, 20001)
 
   @testset "csr_kick_coef" begin
-    # Electrons: ds * r_e / (e γ)
-    @test csr_kick_coef(electron, 100.0, 0.01) ≈ 0.01 * R_ELECTRON / (E_CHARGE * 100)
+    # Electrons: ds * r_e / (e β² γ); Bmad (compat) ds * r_e / (e γ)
+    gamma = 100.0
+    beta2 = 1 - 1 / gamma^2
+    @test csr_kick_coef(electron, gamma, 0.01) ≈ 0.01 * R_ELECTRON / (E_CHARGE * beta2 * gamma)
+    @test csr_kick_coef(electron, gamma, 0.01; bmad_compat = true) ≈ 0.01 * R_ELECTRON / (E_CHARGE * gamma)
+    @test csr_kick_coef(Species("positron"), gamma, 0.01) == csr_kick_coef(electron, gamma, 0.01)
+    # Same field, same γ: Δpz ∝ 1/m. Bmad's has an extra 1/rel_mass (V2).
+    proton = Species("proton")
+    rel_mass = massof(proton) / massof(electron)
+    @test csr_kick_coef(proton, gamma, 0.01) ≈ csr_kick_coef(electron, gamma, 0.01) / rel_mass rtol = 1e-14
+    @test csr_kick_coef(proton, gamma, 0.01; bmad_compat = true) ≈
+          csr_kick_coef(proton, gamma, 0.01) * beta2 / rel_mass rtol = 1e-14
     @test_throws ErrorException csr_kick_coef(Species("neutron"), 100.0, 0.01)
   end
 

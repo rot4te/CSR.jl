@@ -1,5 +1,5 @@
 using CSR: FloorPosition, planar_survey, chord_spline, spline_val, spline_d1, dspline_len, CSRGeometry,
-           s_ref_to_s_chord, modulo2
+           s_ref_to_s_chord, modulo2, CSRKickPoint, advance_floor, x_axis, z_axis
 
 @testset "Geometry" begin
   @testset "planar_survey" begin
@@ -83,6 +83,51 @@ using CSR: FloorPosition, planar_survey, chord_spline, spline_val, spline_d1, ds
     @test geom.ele[1].dL_s == 0
     @test s_ref_to_s_chord(0.0, e) == 0
     @test s_ref_to_s_chord(0.3, geom.ele[1]) ≈ 0.3
+  end
+
+  @testset "s_ref_to_s_chord in a bend (V3)" begin
+    rho = 5.0; L = 0.5; phi = L / rho
+    geom = CSRGeometry([1.0, L], [0.0, 1 / rho], zeros(3, 6))
+    gc = CSRGeometry([1.0, L], [0.0, 1 / rho], zeros(3, 6); bmad_compat = true)
+    e = geom.ele[2]
+    # On axis: the arc point at s projected on the chord, to the accuracy of the cubic chord spline
+    # (~ρφ⁴/384 = 1.3e-6 m here); Bmad's ρ atan(s/ρ) is off by up to 1.4e-3 m
+    chord(s) = rho * (sin(s / rho - phi / 2) + sin(phi / 2))
+    for s in (0.01, 0.1, 0.25, 0.4, 0.49)
+      @test s_ref_to_s_chord(s, e) ≈ chord(s) atol = 1e-7
+      @test s_ref_to_s_chord(s, e; bmad_compat = true) ≈ rho * atan(s / rho) rtol = 1e-14
+      @test CSRKickPoint(geom, 2, s, 100.0).floor_k.r ≈ advance_floor(e.ref_floor0, s, 1 / rho).r atol = 3e-6
+      @test CSRKickPoint(gc, 2, s, 100.0).s_chord_kick ≈ rho * atan(s / rho) rtol = 1e-14
+    end
+    @test s_ref_to_s_chord(L, e) == e.L_chord
+    @test s_ref_to_s_chord(0.0, e) == 0
+    # Derivatives along s (first and second order, nested Duals) vs central differences
+    f(s) = s_ref_to_s_chord(s, e)
+    df(s) = ForwardDiff.derivative(f, s)
+    h = 1e-5
+    for s in (0.0, 0.3)
+      @test df(s) ≈ (f(s + h) - f(s - h)) / 2h rtol = 1e-9
+      @test ForwardDiff.derivative(df, s) ≈ (df(s + h) - df(s - h)) / 2h rtol = 1e-6
+    end
+    @test df(0.3) ≈ cos(0.3 / rho - phi / 2) atol = 1e-6
+
+    # Off-axis centroid: the kick point is in the reference normal plane, at the centroid offset (≈ x)
+    centroid = zeros(3, 6)
+    centroid[2, 1] = 2e-3; centroid[2, 2] = 1e-3
+    centroid[3, 1] = -1e-3; centroid[3, 2] = -2e-3
+    geom = CSRGeometry([1.0, L], [0.0, 1 / rho], centroid)
+    e = geom.ele[2]
+    for s in (0.1, 0.25, 0.4)
+      ref = advance_floor(e.ref_floor0, s, 1 / rho)
+      dr = CSRKickPoint(geom, 2, s, 100.0).floor_k.r - ref.r
+      @test abs(dr' * z_axis(ref.theta)) < 1e-15
+      @test -1e-3 < dr' * x_axis(ref.theta) < 2e-3
+    end
+    @test s_ref_to_s_chord(L, e) == e.L_chord
+    # Derivative w.r.t. g: ForwardDiff vs central differences
+    sc(g) = s_ref_to_s_chord(0.3, CSRGeometry([1.0, L], [0.0, g], centroid).ele[2])
+    h = 1e-6
+    @test ForwardDiff.derivative(sc, 1 / rho) ≈ (sc(1 / rho + h) - sc(1 / rho - h)) / 2h rtol = 1e-6
   end
 
   @testset "CSRGeometry, off-axis centroid" begin

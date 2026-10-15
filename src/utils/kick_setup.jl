@@ -1,19 +1,25 @@
 # Per-step constants: kick coefficient, reference-energy ramp, number of steps.
 
 """
-    csr_kick_coef(species, gamma, ds)
+    csr_kick_coef(species, gamma, ds; bmad_compat = false)
 
-Prefactor of the CSR kick for a step of length `ds`: `ds * r_c / (rel_mass * e * |q| * γ)` with
-`r_c = r_e q² / rel_mass` and `rel_mass = m / m_e`, as in Bmad. Multiplies (bin charge [C]) × (kernel).
+Prefactor of the CSR kick for a step of length `ds`. Multiplies (bin charge [C], unsigned) × (kernel).
 
-For non-electrons the placement of `|q|` and `rel_mass` is unresolved (`planning/PLAN.md`, V2).
+Default: `Δpz = ΔE / (β² E)` with `ΔE = |q| e E_z ds` and `E_z = (1/4πε₀)` × (kernel ⋆ charge), which gives
+`ds * r_e * |q| / (rel_mass * e * β² * γ)` (`q` in units of `e`, `rel_mass = m / m_e`).
+`bmad_compat = true`: Bmad's `ds * r_c / (rel_mass * e * |q| * γ)` with `r_c = r_e q² / rel_mass`, i.e. `β²/rel_mass`
+times the default (`planning/PLAN.md`, V2).
 """
-function csr_kick_coef(species::Species, gamma, ds)
+function csr_kick_coef(species::Species, gamma, ds; bmad_compat::Bool = false)
   rel_mass = massof(species) / M_ELECTRON
   q = chargeof(species)
   q == 0 && error("csr_kick_coef: species has zero charge")
-  r_c = R_ELECTRON * q^2 / rel_mass
-  return ds * r_c / (rel_mass * E_CHARGE * abs(q) * gamma)
+  if bmad_compat
+    r_c = R_ELECTRON * q^2 / rel_mass
+    return ds * r_c / (rel_mass * E_CHARGE * abs(q) * gamma)
+  end
+  beta2 = 1 - 1 / gamma^2
+  return ds * R_ELECTRON * abs(q) / (rel_mass * E_CHARGE * beta2 * gamma)
 end
 
 """

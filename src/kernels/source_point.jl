@@ -25,18 +25,30 @@ elements strictly between the source and kick elements (`add_mid`; used by `csr_
 
   if k.ix_ele_source == kp.ix_ele_kick
     ds = s1 - s0
-    # dtheta_L = angle of the L line in the centroid chord frame
     sp = es.spline
-    dtheta_L = sp[2] + sp[3] * (2s0 + ds) + sp[4] * (3s0^2 + 3s0 * ds + ds^2)
-    dL = path_excess(s0, s1, sp, dtheta_L; bmad_compat = bc)   # = Ls - L
-    # Ls is negative if the source point is ahead of the kick point (ds < 0), but L is always positive.
-    primal(ds) < 0 && (dL += 2ds)
-    theta_sl = spline_d1(sp, s0) - dtheta_L
-    theta_lk = dtheta_L - spline_d1(sp, s1)
-    theta_s = theta_sl + theta_L
-    # For a source ahead of the kick point L_vec points backwards, and theta_sl + theta_L is the source direction
-    # + π (Bmad, planning/PLAN.md V8). Only the image-charge kick uses it.
-    primal(ds) < 0 && !bc && (theta_s = modulo2(theta_s + pi, pi))
+    if bc
+      # Bmad: dtheta_L = slope of the L line in the centroid chord frame (the secant of the spline)
+      dtheta_L = sp[2] + sp[3] * (2s0 + ds) + sp[4] * (3s0^2 + 3s0 * ds + ds^2)
+      dL = path_excess(s0, s1, sp, dtheta_L; bmad_compat = bc)   # = Ls - L
+      # Ls is negative if the source point is ahead of the kick point (ds < 0), but L is always positive.
+      primal(ds) < 0 && (dL += 2ds)
+      theta_sl = spline_d1(sp, s0) - dtheta_L
+      theta_lk = dtheta_L - spline_d1(sp, s1)
+      # For a source ahead of the kick point L_vec points backwards, and this is the source direction + π
+      # (planning/PLAN.md, V8). Only the image-charge kick uses it.
+      theta_s = theta_sl + theta_L
+    else
+      # The angle of the L line in the chord frame, as in the other branches, so that ddz is continuous across
+      # element boundaries (one root; Bmad's secant slope gives a jump ~ (α³/3)² ds at the boundary).
+      dtheta_L = modulo2(theta_L - es.theta_chord, pi / 2)
+      dL = path_excess(s0, s1, sp, dtheta_L)
+      # Source ahead: Ls = -(excess + L_plane), so dL = Ls - L = -(excess + 2 L_plane) (as for downstream sources;
+      # Bmad's 2ds is the chord-coordinate difference).
+      primal(ds) < 0 && (dL -= 2sqrt(L_vec[1]^2 + L_vec[3]^2))
+      theta_sl = spline_d1(sp, s0) - dtheta_L
+      theta_lk = dtheta_L - spline_d1(sp, s1)
+      theta_s = spline_d1(sp, s0) + es.theta_chord
+    end
   elseif k.ix_ele_source > kp.ix_ele_kick
     # Source downstream of the kick element (image charges, source ahead of the kick point; not in Bmad).
     # Ls = -(path length from the kick point to the source), so dL = Ls - L = -(excess + 2L) in the plane.
@@ -63,7 +75,10 @@ elements strictly between the source and kick elements (`add_mid`; used by `csr_
   # The dL calculation above neglects y_source, so correct for it.
   primal(kp.y_source) != 0 && (dL -= L - sqrt(L_vec[1]^2 + L_vec[3]^2))
   k = with_fields(k; L_vec, L, theta_L, theta_sl, theta_lk, dL, s_chord_source, floor_s = FloorPosition(rs, theta_s))
-  return k, L / (2kp.gamma2) + dL - k.dz_particles
+  # Retardation Ls - βL = dL + L(1 - β). Bmad: L(1 - β) ≈ L/(2γ²) (error L/(8γ⁴)); the exact form matches the
+  # infinite drifts outside the lattice, so ddz is continuous at the lattice ends.
+  ret = bc ? L / (2kp.gamma2) : L / (kp.gamma2 * (1 + kp.beta))
+  return k, ret + dL - k.dz_particles
 end
 
 """
