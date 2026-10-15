@@ -70,14 +70,21 @@ keep testing on Julia 1.13.1.
 1. Generic source root by Newton steps from the primal root (nested Duals, TPS). **Done** (`a5f28e6`).
 2. TPS basics in `CSRGTPSAExt` (`primal` = scalar part, `root_order` = truncation order). **Done.**
 3. Stage 1: frozen-wake kick on TPS test particles (`csr_apply_test_kicks!`, `csr_kick!(...; test_particles)`). **Done.**
-4. Stage 2: full collective TPS (TPS deposit, TPS tables). **Ask the user first what the TPS variables represent**
+4. Stage 2: full collective TPS (TPS deposit, TPS tables). **Ask the user first what the TPS variables represent** (pending decision 1 below)
    (parameters/knobs shared by all particles is the only meaningful collective case found so far; 6 phase-space
    variables on every particle has no clear meaning). Needs `<:Real` relaxed to `<:Number` in the types (TPS is a
    `Number`), a TPS `modulo2`, and a TPS deposit (serial path).
 5. `track_csr!` with a TPS test bunch tracked alongside the bunch (BeamTracking per slice). Not started.
 
-**Decisions pending for the user:**
-1. **Branch `phase7-tps`** (not pushed): review and push when satisfied.
+**Decisions pending for the user (paused here at the user's request, 2026-10-14; ask these first next session):**
+1. **Stage 2 TPS variables.** A collective kick depends on all particles, so the variables must mean the same for
+   every particle. Options: (a) parameters/knobs shared by all particles (geometry L, g, centroid; γ; s_kick; bunch
+   charge; upstream element knobs the coordinates depend on), every particle's z, q TPS in them, deposit and tables in
+   TPS; matches SciBmad's `include_params` (recommended); (b) as (a), plus Stage 1 test particles also carrying the 6
+   phase-space variables (frozen in phase space, collective in parameters); (c) skip Stage 2 for now.
+2. **Order of the remaining Phase 7 work:** step 5 (`track_csr!` with a TPS test bunch, Stage 1 end to end) first
+   (recommended: usable sooner), or Stage 2 first.
+3. **Branch `phase7-tps`** (not pushed): review and push when satisfied.
 2. Still open from before: V2 (ion kick prefactor), V3 (`s_ref_to_s_chord`), filing the upstream reports
    (`planning/upstream_reports.md`), GitHub Pages setup (see "For the user" below).
 
