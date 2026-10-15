@@ -199,7 +199,7 @@ extensions silently do not load.
 | D29 | 10-14 | `CSRKick1` immutable (user: prefer immutable types); the source-point functions return updated copies. |
 | D30 | 10-14 | Cheaper geometry pullback: source search on primal `Float64` + per-evaluation local `Dual`s (user chose this over per-lag seeding, Step 1 only, and hand-written reverse adjoints; also over "the BeamTracking.jl method"). |
 | D31 | 10-14 | Forward mode: `Dual` tables search sources on a primal copy of geometry and kick point (`PrimalSearch`), then evaluate once in `Dual`s (user chose this as the next item). |
-| D32 | 10-14 | Flaky FD test: s_kick dropped from the `test_rrule` FD check with images in compat (not an RNG seed); the exact rrule == ForwardDiff check keeps it. |
+| D32 | 10-14 | Flaky FD test: s_kick dropped from the `test_rrule` FD check with images in compat (not an RNG seed); the exact rrule == ForwardDiff check keeps it. **Superseded 10-15:** the failing cotangent was γ, not s_kick (Section 4); γ enters the test wrapper as γ/Γ, Γ = 1e5, and s_kick is back in the FD check. |
 | D33 | 10-14 | Phase 7 staged: Stage 1 frozen wake (bunch in Float64 makes the wake; separate TPS test particles get the kick and deposit nothing), then Stage 2 full collective TPS. Stage 1 API: TPS test particles (not the whole bunch in TPS). |
 | D34 | 10-14 | TPS shape function: consistent with SciBmad/BeamTracking: branch decisions on the scalar part (`vifelse`, GTPSA comparisons), Bmad's triangle deposit and linear interpolation kept, no smooth-shape option; orders ≥ 2 are the expansion within the reference point's bin cell. |
 | D35 | 10-14 | Source root for any number type: Newton steps from the primal root in the full number type (one order per step), replacing the first-order-only implicit tangent. |
@@ -233,7 +233,15 @@ extensions silently do not load.
   (branch `phase7-review-fixes`, full suite, 1 thread): 1 failure in that testset, 1483/1484; the next full 1-thread
   run and 3 runs of `ad_rrule_test.jl` alone passed. Failing run's RNG: `Xoshiro(0x620b862c3f3a50f7,
   0x31a050bb29ec984c, 0xd0ff6bd94546534b, 0xd24373f881d7c19c, 0xcbc1bf67a4460596)`. Which comparison failed was not
-  captured. Not investigated.
+  captured. **Reopened and fixed 2026-10-15** (scripts `scratchpad` only, not kept): on 1 thread the FD Jacobian is
+  deterministic and the only randomness is ȳ (`rand(-9:0.01:9)` per output); `test_approx` falls back to elementwise
+  `isapprox(rtol = 1e-2, atol = 1e-10)`. Over 20000 ȳ: "images, bmad_compat" fails 22.8%, all in the **γ** cotangent
+  (FD column error 4.2e-3: `max_range = 1e-6` is an absolute step, 5e-9 of γ = 200, lost in the source-root noise);
+  pz, q, geometry, s_kick 0 failures; free space 0%. FD error of the γ column vs `max_range` 1e-6/1e-3/1e-1: 4.2e-3/
+  1.1e-4/1.0e-5 (compat), 7e-6/5e-9/8e-10 (free); s_kick 3e-7 (compat) at all steps. So D32 most likely removed the
+  wrong input (inference: 3/3 passes after D32 has probability ~0.46 at a 23% failure rate). Fix: γ enters the
+  wrapper as γ/Γ, Γ = 1e5 (pullback × Γ), s_kick restored: failure rate 1.5e-4 (3/20000, near-exact cancellations
+  of ȳ⋅∂kick/∂γ); `ad_rrule_test.jl` 10/10 seeds on 1 thread, 3/3 on 4 threads (206 tests).
 - **Deferred from the 2026-10-15 `phase7-tps` review** (user: address in Phase 8 / Stage 2; numbers are the
   review's finding numbers):
   - (2, Phase 8) `csr_apply_test_kicks!` (`src/kick.jl`) copies `bins`/`kick` only when the test particles are on the
