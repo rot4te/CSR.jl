@@ -29,3 +29,7 @@ Currently implemented and tested (CPU; the particle-side kernels also run on GPU
 
 Build locally with `julia --project=docs docs/make.jl` (see `docs/README.md`); the pages cover usage, the physics
 model, every decision that changes the physics relative to Bmad, and the full API.
+
+## Still to Come
+
+- Three dimensional CSR kicks
