@@ -171,7 +171,21 @@ result, as the search decides on primal values only.
 @inline function s_source_calc(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint, search::PrimalSearch)
   k0 = CSRKick1(; ix_ele_source = k.ix_ele_source, dz_particles = primal(k.dz_particles))
   _, _, o = s_source_walk(k0, search.geom, search.kp)
-  return s_source_eval(o, k, geom, kp)
+  return s_source_eval(o, k, geom, kp, nothing, search)
+end
+
+"""
+    primal_slope(search, k, s)
+
+`∂ddz/∂s` at chord position `s` of the source element `k.ix_ele_source`, in the primal geometry of a `PrimalSearch`
+(`ForwardDiff` with one partial); `nothing` without one (`root_tangent` then uses `root_slope`). The middle-element
+offset `dmid` is constant in `s` and left out.
+"""
+primal_slope(::Nothing, k, s) = nothing
+function primal_slope(search::PrimalSearch, k::CSRKick1, s)
+  f(x) = last(ddz_calc_csr(CSRKick1{typeof(x)}(; ix_ele_source = k.ix_ele_source, dz_particles = primal(k.dz_particles)),
+                           x, search.geom, search.kp))
+  return ForwardDiff.derivative(f, primal(s))
 end
 
 """
@@ -260,20 +274,22 @@ Bmad's round-off branches: `k` from `ddz_calc_csr` at chord position `s`, with `
 end
 
 """
-    root_source(k, s_root, s_last, geom, kp, dmid) -> (k, s_source)
+    root_source(k, s_root, s_last, geom, kp, dmid, search = nothing) -> (k, s_source)
 
 Source at the root `s_root` of `ddz_calc_csr` in element `k.ix_ele_source` (found from primal values), with the
-root's derivatives with respect to the parameters attached by implicit differentiation (`root_tangent`), so that
-zbrent's iterations are not differentiated. Bmad leaves `k` describing zbrent's last evaluation `s_last`, not the
+root's derivatives with respect to the parameters attached by Newton steps from the root (`root_tangent`), so that
+zbrent's iterations are not differentiated. With a `PrimalSearch`, the slope `∂ddz/∂s` is computed in its primal
+geometry (`primal_slope`). Bmad leaves `k` describing zbrent's last evaluation `s_last`, not the
 returned root. These differ by up to the tolerance, or completely when the root is an endpoint with ddz exactly 0
 (zbrent then returns without evaluating there). CSR.jl evaluates at the root unless compat (planning/PLAN.md, V7).
 With derivatives, `k` is evaluated again with the root's derivatives attached.
 """
-@inline function root_source(k::CSRKick1, s_root, s_last, geom::CSRGeometry, kp::CSRKickPoint, dmid)
+@inline function root_source(k::CSRKick1, s_root, s_last, geom::CSRGeometry, kp::CSRKickPoint, dmid, search = nothing)
   kk = k
   dr = mid_root(dmid)
   k, ddz_root = ddz_calc_csr(k, s_root, geom, kp, dr)
-  s_source = root_tangent(s -> last(ddz_calc_csr(csr_kick1_like(kk, s), s, geom, kp, dr)), s_root, ddz_root)
+  s_source = root_tangent(s -> last(ddz_calc_csr(csr_kick1_like(kk, s), s, geom, kp, dr)), s_root, ddz_root,
+                          primal_slope(search, kk, s_root))
   if geom.bmad_compat || !(s_source isa typeof(s_root))
     k, _ = ddz_calc_csr(k, (geom.bmad_compat ? s_last : s_root) + (s_source - s_root), geom, kp, mid_eval(dmid))
   end
@@ -362,15 +378,16 @@ function s_source_walk(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
 end
 
 """
-    s_source_eval(o, k, geom, kp, dmid = nothing) -> (k, s_chord_source)
+    s_source_eval(o, k, geom, kp, dmid = nothing, search = nothing) -> (k, s_chord_source)
 
 The source that `s_source_walk` placed (`o`), evaluated without searching for lag `k.dz_particles` in the number
 types of `k`, `geom` and `kp` (e.g. local `Dual`s in `csr_kick_param_adjoint`, with the search done in `Float64`).
-`dmid` as in `ddz_calc_csr`, or a pair (see `mid_root`).
+`dmid` as in `ddz_calc_csr`, or a pair (see `mid_root`); `search` as in `root_source`.
 """
-function s_source_eval(o::SourceOutcome, k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint, dmid = nothing)
+function s_source_eval(o::SourceOutcome, k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint, dmid = nothing,
+                       search = nothing)
   k = with_fields(k; ix_ele_source = o.ix)
-  o.code == SRC_ROOT && return root_source(k, o.s_root, o.s_last, geom, kp, dmid)
+  o.code == SRC_ROOT && return root_source(k, o.s_root, o.s_last, geom, kp, dmid, search)
   de = mid_eval(dmid)
   o.code == SRC_UPSTREAM && return upstream_drift_source(k, geom, kp, de)
   o.code == SRC_DOWNSTREAM && return downstream_drift_source(k, geom, kp, de)

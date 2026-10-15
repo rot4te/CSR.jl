@@ -95,7 +95,8 @@ In `Float32`, strongly shielded kicks (a small residual of large image terms) ar
 [`csr_kick_pz`](@ref) is the non-mutating form of `csr_kick!`. ForwardDiff `Dual`s pass through it in the particles
 (`pz`, `z`, `q`), in the geometry (build `CSRGeometry` from `Dual` element lengths, curvatures or centroid), in
 `s_kick` and in γ. The kick tables then carry derivatives: each retarded source point gets its derivative by implicit
-differentiation of its root, `ds/dp = −(∂ddz/∂p)/(∂ddz/∂s)`, not by differentiating the root finder. The search
+differentiation of its root, `ds/dp = −(∂ddz/∂p)/(∂ddz/∂s)`, not by differentiating the root finder (for nested
+`Dual`s, e.g. `ForwardDiff.hessian`, one more Newton step from the root per order). The search
 runs on a `Float64` copy of the geometry, and each source is then evaluated once in `Dual`s. One pass with 12
 partials costs about 4–5 kicks (ρ = 10 m arc of 0.1 m elements, 1 thread; `planning/diagnostics/bench_forward.jl`). Held
 constant: the bin grid (from the extreme live particles) and the discrete choices (number of steps, the element each

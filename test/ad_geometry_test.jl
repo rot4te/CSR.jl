@@ -136,4 +136,42 @@
     JL = ForwardDiff.jacobian(Lv -> f(Lv, g3, c, sk, 200.0), L3)
     @test fd_best(t -> f(L3 .+ t .* unit(2, 3), g3, c, sk, 200.0), 0.0, JL[:, 2]; scale = 1e-2) < tol
   end
+
+  # Second order: nested Duals through the source root (root_tangent takes two Newton steps), vs central differences
+  # of the ForwardDiff gradient, in (g1, g2, s_kick, gamma)
+  x0 = [0.0, 1.5, 0.17, 200.0]
+  sc = [1e-3, 1e-3, 1e-3, 1.0]
+  function hessian_vs_fd(F, x0, sc)
+    H = ForwardDiff.hessian(F, x0)
+    G(x) = ForwardDiff.gradient(F, x)
+    err = map(1:length(x0)) do j
+      minimum((1e-3, 1e-4, 1e-5)) do h
+        e = h * sc[j] .* unit(j, length(x0))
+        maxrel((G(x0 .+ e) .- G(x0 .- e)) ./ (2h * sc[j]), H[:, j])
+      end
+    end
+    return H, err
+  end
+  @testset "Hessian: $name" for (name, n_img, bc, tol) in (("free space, trapezoid", 0, false, 1e-6),
+                                                          ("images, bmad_compat", 2, true, 1e-4))
+    p = CSRParams(n_bin = 40, ds_step = 0.1, n_shield_images = n_img, beam_chamber_height = n_img > 0 ? 0.01 : 0.0,
+                  bmad_compat = bc, all_bin_quadrature = false)
+    ybar = cos.(1:n)
+    F(x) = sum(ybar .* csr_kick_pz(pz0, z, q, alive, CSRGeometry(L3, [x[1], x[2], 0.0], c3; bmad_compat = bc), 2, x[3],
+                                   x[4], electron, p; kick_factor = 0.5))
+    H, err = hessian_vs_fd(F, x0, sc)
+    @test maxrel(H, H') < 1e-10
+    @test maximum(err) < tol
+  end
+  @testset "Hessian: hat-integrated image table" begin
+    w = cos.(1:81)
+    function F(x)
+      G = CSRGeometry(L3, [x[1], x[2], 0.0], c3)
+      kp = CSRKickPoint(G, 2, x[3], x[4]; y_source = 0.01, kick_factor = -1.0)
+      return sum(w .* first(CSR.csr_image_table(G, kp, 1.3e-4, 40, CSR.CPU(); bin_integrate = true, rtol = 1e-10)))
+    end
+    H, err = hessian_vs_fd(F, x0, sc)
+    @test maxrel(H, H') < 1e-9
+    @test maximum(err) < 1e-5
+  end
 end

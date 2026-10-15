@@ -87,11 +87,11 @@ geometry's number type, `s_kick`, `gamma`, `kick_factor` and `pz_scale`), leavin
 
 Differentiable with ForwardDiff `Dual`s in any of these: the particles (`pz`, `z`, `q`), the geometry (built by
 `CSRGeometry` from `Dual` lengths, curvatures or centroid), `s_kick`, `gamma`, `kick_factor`, `pz_scale`. The kick
-tables then carry derivatives; each retarded source point gets its derivatives by implicit differentiation of its
-root (`root_tangent`). Held constant: the bin grid (it depends on the extreme live particles) and the discrete
-choices (number of steps `csr_n_step`, the element a source lies in, the adaptive quadrature's subdivision).
-With ChainRulesCore loaded an `rrule` gives the pullback with respect to `pz`, `z` and `q` by explicit adjoint
-kernels; there, derivatives with respect to `geom`, `s_kick`, `gamma` and the keywords are not provided.
+tables then carry derivatives; each retarded source point gets its derivatives by Newton steps from its primal
+root (`root_tangent`: implicit differentiation at first order; nested `Dual`s, e.g. Hessians, also work). Held
+constant: the bin grid (it depends on the extreme live particles) and the discrete choices (number of steps
+`csr_n_step`, the element a source lies in, the adaptive quadrature's subdivision). With ChainRulesCore loaded an
+`rrule` gives the pullback with respect to `pz`, `z`, `q`, `geom`, `s_kick` and `gamma` (not the keywords).
 """
 function csr_kick_pz(pz::AbstractVector, z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool},
                      geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma, species::Species,
