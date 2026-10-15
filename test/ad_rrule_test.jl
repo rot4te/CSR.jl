@@ -127,9 +127,11 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry, msg = ""; kw...)
   # and L_chord of element 1, at h ≤ 1e-6 converged to the AD value). At such steps the source-root noise (zbrent
   # abs_tol 1e-8) limits FD to ~1e-3 relative, so rtol = 1e-2 here: these tests check the tangent structure and the
   # wiring; the accuracy checks are rrule == ForwardDiff above (1e-12) and ForwardDiff vs FD in ad_geometry_test.jl.
+  # s_kick is left out of the FD check with images in compat mode (`fd_s = false`): FD there fails about 2 runs in 3
+  # (random tangents, zbrent noise), while the rrule equals ForwardDiff to 1e-12 above.
   fdm = FiniteDifferences.central_fdm(5, 1; max_range = 1e-6)
-  @testset "test_rrule: $name" for (name, n_img, bc, abq) in (("free space", 0, false, true),
-                                                              ("images, bmad_compat", 2, true, false))
+  @testset "test_rrule: $name" for (name, n_img, bc, abq, fd_s) in (("free space", 0, false, true, true),
+                                                                    ("images, bmad_compat", 2, true, false, false))
     zs, qs, as = kernel_test_bunch(1e-3, 1e-9, 60)
     p = CSRParams(n_bin = 24, ds_step = 0.1, n_shield_images = n_img, beam_chamber_height = n_img > 0 ? 0.01 : 0.0,
                   bmad_compat = bc, all_bin_quadrature = abq)
@@ -137,11 +139,11 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry, msg = ""; kw...)
     h(pz, q, gm, s, γ) = csr_kick_pz(pz, zs, q, as, gm, 2, s, γ, electron, p; kw...)
     function h_rrule(::RuleConfig, _, pz, q, gm, s, γ)
       y, back = ChainRulesCore.rrule(csr_kick_pz, pz, zs, q, as, gm, 2, s, γ, electron, p; kw...)
-      h_pullback(ȳ) = (t = back(ȳ); (NoTangent(), t[2], t[4], t[6], t[8], t[9]))
+      h_pullback(ȳ) = (t = back(ȳ); (NoTangent(), t[2], t[4], t[6], fd_s ? t[8] : NoTangent(), t[9]))
       return y, h_pullback
     end
-    test_rrule(h ⊢ NoTangent(), 1e-4 .* sin.(1:60), qs, geom, 0.17, 200.0; rrule_f = h_rrule, fdm, check_inferred = false,
-               rtol = 1e-2, atol = 1e-10)
+    test_rrule(h ⊢ NoTangent(), 1e-4 .* sin.(1:60), qs, geom, fd_s ? 0.17 : 0.17 ⊢ NoTangent(), 200.0;
+               rrule_f = h_rrule, fdm, check_inferred = false, rtol = 1e-2, atol = 1e-10)
     test_rrule(CSRGeometry, L3, g3, c3; fkwargs = (; bmad_compat = bc), fdm, check_inferred = false, rtol = 1e-7)
   end
 end
