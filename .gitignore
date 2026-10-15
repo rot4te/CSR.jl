@@ -34,4 +34,7 @@ JuliaLocalPreferences.toml
 *.code-workspace
 .vscode
 
+# ignore my AI spec
+.claude
+
 .DS_Store
