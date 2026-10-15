@@ -135,6 +135,7 @@ pushing.
 - Code changes: report (1) what was wrong, (2) what changed, (3) tested/verified?, (4) what the user must do next.
 - Git: never commit to or push existing branches; create a new branch and commit there; never push.
 - Show a detailed plan and get approval before launching any subagent.
+- Save every diagnostic script written for this project in `planning/diagnostics/` (user, 2026-10-15).
 - Physics-model and upstream choices are the user's: ask with options and a recommendation.
 - Style: 2-space indent, `@kwdef`, docstrings with `## Properties` (BeamTracking style), sparse comments.
 - `planning/` is tracked in git (since `468fc83`).
@@ -234,7 +235,7 @@ extensions silently do not load.
   (branch `phase7-review-fixes`, full suite, 1 thread): 1 failure in that testset, 1483/1484; the next full 1-thread
   run and 3 runs of `ad_rrule_test.jl` alone passed. Failing run's RNG: `Xoshiro(0x620b862c3f3a50f7,
   0x31a050bb29ec984c, 0xd0ff6bd94546534b, 0xd24373f881d7c19c, 0xcbc1bf67a4460596)`. Which comparison failed was not
-  captured. **Reopened and fixed 2026-10-15** (scripts `scratchpad` only, not kept): on 1 thread the FD Jacobian is
+  captured. **Reopened and fixed 2026-10-15** (`diagnostics/d32_flake.jl`, `d32_steps.jl`): on 1 thread the FD Jacobian is
   deterministic and the only randomness is ȳ (`rand(-9:0.01:9)` per output); `test_approx` falls back to elementwise
   `isapprox(rtol = 1e-2, atol = 1e-10)`. Over 20000 ȳ: "images, bmad_compat" fails 22.8%, all in the **γ** cotangent
   (FD column error 4.2e-3: `max_range = 1e-6` is an absolute step, 5e-9 of γ = 200, lost in the source-root noise);
@@ -668,8 +669,8 @@ Hat costs ~5× the source solves of point sampling.
   to the test particles' z and all third derivatives (order 3 = truncation order) compared with nested ForwardDiff;
   dead test particle checked with `isequal` (GTPSA `==` compares scalar parts only).
 - Added (7): `ad_geometry_test.jl` "residual stationary to second order": nested-Dual d²/dt² of `ddz` at the root along
-  a direction moving g, s_kick, γ, relative to the same at the primal root: ≤ 1e-14 (bound 1e-10). Mutation check:
-  with one Newton step (`root_order(Dual) = 1`) the ratio is 1.2–7, so the test detects a missing step.
+  a direction moving g, s_kick, γ, relative to the same at the primal root: ≤ 1e-14 (bound 1e-10). Mutation check
+  (`diagnostics/root_newton_mutation.jl`): with one Newton step (`root_order(Dual) = 1`) the ratio is 1.2–7, so the test detects a missing step.
 - Deferred: findings 2, 4, 8 (Section 4).
 - Checks (`4a6140f`): full suite 1484/1484 on 4 threads; on 1 thread 1483/1484 (the D32 flake), then 1484/1484 on
   rerun; docs build clean (existing warnings only). Then `2748fb9` fixed the flake (Section 4): `ad_rrule_test.jl`
@@ -798,6 +799,6 @@ Metal tests in the suite (conditional on Metal.jl).
 | `verify_analytic.jl` | Section 8 checks (Base Julia). |
 | `dspline_coeff.md`, `upstream-bin.md` | Write-ups for V1 and V5. |
 | `upstream_reports.md` | Drafted upstream reports (Section 4). |
-| `diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`, `bench_pullback.jl`, `bench_forward.jl`; data `layer_terms_*.txt` (the `_400` files predate V9). |
+| `diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`, `bench_pullback.jl`, `bench_forward.jl`, `d32_flake.jl [compat|free] [Γ]`, `d32_steps.jl`, `root_newton_mutation.jl`; data `layer_terms_*.txt` (the `_400` files predate V9). |
 | `../crosscheck/` | Bmad/Tao cross-check (README there). |
 | `../docs/` | Documenter docs (`julia --project=docs docs/make.jl`; `docs/README.md`); pages Home, Usage, Physics model, Physics decisions, Validation, API, Internals. Deployed by `.github/workflows/Documentation.yml` from `main`. Keep "Physics decisions" in sync with Section 3 when physics changes. |
