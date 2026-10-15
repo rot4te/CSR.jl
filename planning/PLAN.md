@@ -35,8 +35,9 @@ GTPSA TPS).
 - **`phase6-geom_speed-deltas`** (from `reorg` `08da04e`, pushed by the user): Phase 6 step 3 (forward mode and rrules
   w.r.t. geometry, `s_kick`, γ), ForwardDiff hard dependency, immutable `CSRKick1`. 1355/1355 on 1 and 4 threads.
 - **`geom-pullback`** (from `phase6-geom_speed-deltas` `90e0b77`): cheaper geometry pullback (D30).
-- **`fwd-primal-search`** (from `geom-pullback` `82de7c6`, not pushed): forward mode with the source search on primal
-  geometry (D31), flaky FD test fix (D32), 3e-9 investigation (Section 4). **Latest state.**
+- **`fwd-primal-search`** (from `geom-pullback` `82de7c6`, pushed by the user): forward mode with the source search on
+  primal geometry (D31), flaky FD test fix (D32), 3e-9 investigation (Section 4).
+- **`phase7-tps`** (from `fwd-primal-search` `0a4cfbc`, not pushed): Phase 7 steps 1–3 (D33–D36). **Latest state.**
   (Local branches `stage-c`, `reorg` no longer exist; their commits are in this history.)
 
 | Commit | Branch | Content |
@@ -57,19 +58,27 @@ README, Documenter docs.
 
 **Phase 6 step 3 done** (3a forward mode, D28/D29, 3b rrules) on branch `phase6-geom_speed-deltas`; **cheaper
 geometry pullback done** (D30, branch `geom-pullback`): 5–14 kicks instead of 32–367; **forward mode with primal
-search done** (D31, branch `fwd-primal-search`): 12 partials ≈ 4–5 kicks instead of 7–13; see Section 9. **Next (user
-to choose):** Phase 8 GPU table work (Adapt-based `CSRGeometry` with the element vector as a type parameter; errors in
-the source search as return codes; iterative adaptive Simpson) or Phase 7 (TPS).
+search done** (D31, branch `fwd-primal-search`): 12 partials ≈ 4–5 kicks instead of 7–13; see Section 9. **Phase 7 in
+progress** (branch `phase7-tps`, steps below). Later: Phase 8 GPU table work (Adapt-based `CSRGeometry` with the element
+vector as a type parameter; errors in the source search as return codes; iterative adaptive Simpson).
 
 **Session 2026-10-14 (evening), user decisions:** forward mode with primal search (done, D31); drop s_kick from the
 flaky FD check (done, D32); investigate the 3e-9 issue (done: not reproducible, no blocking dependence, Section 4);
 keep testing on Julia 1.13.1.
 
+**Phase 7 (started 2026-10-14, branch `phase7-tps`), plan agreed with the user (D33–D36):**
+1. Generic source root by Newton steps from the primal root (nested Duals, TPS). **Done** (`a5f28e6`).
+2. TPS basics in `CSRGTPSAExt` (`primal` = scalar part, `root_order` = truncation order). **Done.**
+3. Stage 1: frozen-wake kick on TPS test particles (`csr_apply_test_kicks!`, `csr_kick!(...; test_particles)`). **Done.**
+4. Stage 2: full collective TPS (TPS deposit, TPS tables). **Ask the user first what the TPS variables represent**
+   (parameters/knobs shared by all particles is the only meaningful collective case found so far; 6 phase-space
+   variables on every particle has no clear meaning). Needs `<:Real` relaxed to `<:Number` in the types (TPS is a
+   `Number`), a TPS `modulo2`, and a TPS deposit (serial path).
+5. `track_csr!` with a TPS test bunch tracked alongside the bunch (BeamTracking per slice). Not started.
+
 **Decisions pending for the user:**
-1. **Next work item.** Options: (a) Phase 8 GPU tables, (b) Phase 7 TPS (the `PrimalSearch` route of D31 is where a
-   TPS root would attach), (c) other.
-2. **Branches `geom-pullback` and `fwd-primal-search`** (not pushed): review and push/merge when satisfied.
-3. Still open from before: V2 (ion kick prefactor), V3 (`s_ref_to_s_chord`), filing the upstream reports
+1. **Branch `phase7-tps`** (not pushed): review and push when satisfied.
+2. Still open from before: V2 (ion kick prefactor), V3 (`s_ref_to_s_chord`), filing the upstream reports
    (`planning/upstream_reports.md`), GitHub Pages setup (see "For the user" below).
 
 Original notes for step 3 (from the reorg handoff, 2026-10-14): Goal: derivatives of a kick w.r.t. the geometry and the reference speed/energy (γ), and `s_kick`.
@@ -168,6 +177,10 @@ extensions silently do not load.
 | D30 | 10-14 | Cheaper geometry pullback: source search on primal `Float64` + per-evaluation local `Dual`s (user chose this over per-lag seeding, Step 1 only, and hand-written reverse adjoints; also over "the BeamTracking.jl method"). |
 | D31 | 10-14 | Forward mode: `Dual` tables search sources on a primal copy of geometry and kick point (`PrimalSearch`), then evaluate once in `Dual`s (user chose this as the next item). |
 | D32 | 10-14 | Flaky FD test: s_kick dropped from the `test_rrule` FD check with images in compat (not an RNG seed); the exact rrule == ForwardDiff check keeps it. |
+| D33 | 10-14 | Phase 7 staged: Stage 1 frozen wake (bunch in Float64 makes the wake; separate TPS test particles get the kick and deposit nothing), then Stage 2 full collective TPS. Stage 1 API: TPS test particles (not the whole bunch in TPS). |
+| D34 | 10-14 | TPS shape function: consistent with SciBmad/BeamTracking: branch decisions on the scalar part (`vifelse`, GTPSA comparisons), Bmad's triangle deposit and linear interpolation kept, no smooth-shape option; orders ≥ 2 are the expansion within the reference point's bin cell. |
+| D35 | 10-14 | Source root for any number type: Newton steps from the primal root in the full number type (one order per step), replacing the first-order-only implicit tangent. |
+| D36 | 10-14 | `track_csr!` with a TPS (test) bunch is in Phase 7, after the core. |
 
 ---
 
@@ -216,7 +229,7 @@ Top level: types and host-side functions (launch kernels, allocate, check). `ker
 | `geometry.jl` | `CSRGeometry(L, g, centroid; ref_start, bmad_compat)`, `CSRGeometry(L, g, ref_exit, centroid)`, `CSRKickPoint(geom, ix, s_kick, γ; y_source, kick_factor)`, `primal` of `FloorPosition`/`CSRElementInfo`/`CSRGeometry`/`CSRKickPoint`. |
 | `binning.jl` | `csr_bin_particles` (grid in the particles' float type; Int32 counter; serial path for non-atomic types). |
 | `tables.jl` | `csr_wake_table`, `csr_image_table` (CPU only). |
-| `kick.jl` | `csr_convolve!`, `csr_image_convolve!`, `csr_apply_kicks!`, `csr_kick!`, `csr_kick_pz`, `csr_binned_kick` (tables on `table_backend`, `to_backend`, layer weights), `csr_step_result`. |
+| `kick.jl` | `csr_convolve!`, `csr_image_convolve!`, `csr_apply_kicks!`, `apply_kicks_outside!`, `csr_apply_test_kicks!` (frozen-wake test particles, D33), `csr_kick!` (keyword `test_particles`), `csr_kick_pz`, `csr_binned_kick` (tables on `table_backend`, `to_backend`, layer weights), `csr_step_result`. |
 | `adjoint.jl` | `csr_kick_adjoint`. |
 | `param_adjoint.jl` | Geometry/`s_kick`/γ pullback (D30): `geometry_to_vector`/`geometry_from_vector`, `element_numbers`, `geometry_active_indices`, `LocalDual` slots, `ParamAdjointWork`, `node_adjoint!`, `nodes_adjoint!`, `middle_adjoint!`, `middle_excess` (local-geometry method), `hat_nodes`, `first_bin_adjoint!`, `csr_kick_param_adjoint`. |
 | `reference.jl` | Serial reference (`csr_*_reference`), ground truth for the kernels. |
@@ -233,7 +246,7 @@ Top level: types and host-side functions (launch kernels, allocate, check). `ker
 | `utils/spline.jl` | `spline_val/d1/d2`, `chord_spline`, `dspline_len` (Bmad, V1), `GL4_NODES/WEIGHTS`, `path_excess` (exact, V9). |
 | `utils/floor.jl` | `x_axis`, `z_axis`, `advance_floor`, `advance_floor_patch`, `planar_survey`, `centroid_floor`. |
 | `utils/chord_coordinates.jl` | `s_ref_to_s_chord` (V3 literal), `source_s`. |
-| `utils/root_finding.jl` | `zbrent` (`super_zbrent`). |
+| `utils/root_finding.jl` | `zbrent` (`super_zbrent`), `root_tangent` (Newton steps from the primal root, D35), `root_order`, `root_slope`, `RootTag`. |
 | `utils/image_layers.jl` | `image_layer_weight` (D24), `image_u_min`, `image_hat_tol` (D20). |
 | `utils/kick_setup.jl` | `csr_kick_coef` (V2), `csr_ref_energy`, `csr_n_step`. |
 
@@ -245,7 +258,8 @@ Every function has a docstring (the docs build enforces it with `checkdocs = :al
 |---|---|
 | `CSRBeamTrackingBeamlinesExt` | `slicing.jl`: `slice_element` following Bmad `makeup_super_slave1` (fringe at ends, SciBmadStandard → Symplectic order, RungeKutta n_steps scaled, multipoles scaled, apertures at ends, alignment per slice, patch on first slice, RF voltage ∝ length, four-potential/`EMFieldParams` shifted, SaganCavity → `slice_sagan`; maps whole); `csr_sliceable`. `sagan.jl`: `SaganSlice` windows of the cavity's kernel sequence, `track_slice!`. `track.jl`: `track_csr!(bunch, ::Beamline / ::Branch)` → `track_csr_line!` (survey, centroid, `CSRGeometry`, step loop with half kicks at ends, `L_slice = i·ds − s0`, `csr_ref_energies`, `pz_scale` in SaganCavity; keywords `params`, `csr_on`, `centroid_start`, `sliced_centroid`, `diagnostics`). Uses BeamTracking internals listed in the files' imports. |
 | `CSRChainRulesCoreExt` | `rrule` for `csr_kick_pz`. |
-| `CSRAbstractFFTsExt`, `CSRGTPSAExt` | Empty stubs. |
+| `CSRGTPSAExt` | `primal(::TPS)` = scalar part, `root_order(::TPS)` = truncation order (field `mo`). |
+| `CSRAbstractFFTsExt` | Empty stub. |
 
 ### Tests (`test/`)
 
@@ -261,6 +275,7 @@ Every function has a docstring (the docs build enforces it with `checkdocs = :al
 | `shielding_test.jl` | Params; drift image kick = uniform-motion field (behind/ahead, downstream, past the end) and compat; V8; infinite drifts; hat table vs analytic; kernels == reference with images; blocking; steady-state bend free-space limit and shielding; averaged layer sum (weights, convergence). |
 | `ad_test.jl` | rrule vs ForwardDiff vs finite differences (6 cases). |
 | `ad_geometry_test.jl`, `ad_rrule_test.jl` | Forward mode w.r.t. geometry/`s_kick`/γ vs FD; rrules vs ForwardDiff (incl. `csr_kick_param_adjoint` vs ForwardDiff through `csr_bins_kick`, 8 cases) and ChainRulesTestUtils. |
+| `tps_test.jl` | Phase 7: TPS `primal`/`root_order`; frozen-wake test particles (3000, threaded) vs ForwardDiff Jacobian/Hessian; Float64 test particles == bunch kicks; outside-range error. |
 | `slicing_test.jl` | Phase 2 gate: sliced == unsliced (CSR off) for all element kinds; controls. |
 | `track_csr_test.jl` | Floor conventions, CSR off == track!, steady state via track_csr!, per-element selection, weights, patches/misalignment, errors, csr_ref_energy. |
 | `lcavity_test.jl` | SaganCavity slices vs whole cavity; reference momentum steps; Branch; `pz_scale`. |
@@ -574,6 +589,23 @@ Hat costs ~5× the source solves of point sampling.
   4 threads, 80 elements: 36 ms (free), 119 ms (4 layers), before the middle-sum linearization (13× then). Remaining
   cost: ~60% the local-Dual evaluations, ~13% the first-bin fallback (10-element profile).
 
+### Phase 7 steps 1–3 (10-14 evening, branch `phase7-tps`)
+- **Step 1 (D35, `a5f28e6`).** `root_tangent(f, s0, f0, dfds)`: `root_order(f0)` Newton steps `s ← s − (f(s) − r0)/f′`
+  from the primal root, `r0 = primal(f0)` (primal root unchanged), constant primal slope (`root_slope` by a `RootTag`
+  Dual wrapping the parameters' Duals, or `primal_slope` on a `PrimalSearch`'s geometry). Dual tables bitwise
+  identical to before (16-case snapshot). Nested-Dual Hessians (previously an error) in (g1, g2, s_kick, γ), vs central
+  differences of ForwardDiff gradients (best of h = 1e-3…1e-5): free space ≤ 8e-8; compat images ≤ 7e-6; default images
+  at kick level 5e-4–1e-3 (adaptive-quadrature FD noise, as at first order); hat image table alone with rtol 1e-10
+  ≤ 1.3e-6. Symmetric to ≤ 3e-11.
+- **Steps 2–3 (D33, D34).** SciBmad convention checked: BeamTracking decides branches on the scalar part (`vifelse`,
+  GTPSA compares scalar parts); no interpolated tables or smoothing anywhere. `CSRGTPSAExt`: `primal`, `root_order`.
+  Kick kernel picks the cell from `primal(z)`. `csr_apply_test_kicks!` (test particles on their own backend; error if
+  a live one is outside the bin range). TPS order 1/2 == ForwardDiff Jacobian/Hessian of the same Float64 function
+  (rtol 1e-14/1e-13; 0 difference in a prototype). KernelAbstractions 0.9.45 CPU: ndrange ≤ 1024 is one workgroup,
+  larger ones split into 1024-item groups, so the 3000-particle test runs TPS arithmetic on several threads.
+- Suite 1446/1446 on 1 and 4 threads; docs build clean (TPS section in `usage.md` as a non-executed block: the docs
+  environment does not load GTPSA; the example was run by hand).
+
 ### Forward mode with primal source search, D31 (10-14 evening, branch `fwd-primal-search`)
 - `PrimalSearch(primal(geom), primal(kp))` built once per table call when the table type is a `Dual`
   (`primal_search`); `s_source_calc(k, geom, kp, search)` walks in `Float64` (`s_source_walk`) and evaluates once
@@ -647,7 +679,7 @@ Hat costs ~5× the source solves of point sampling.
 | 4 | KernelAbstractions kernels | done (GPU: particle side + CPU tables, Stage C) |
 | 5 | Shielding (image charges) | done (+ D20, D24, V9) |
 | 6 | AD: steps 0–2 particles (done); step 3 geometry/γ via implicit differentiation of the source root | done (3a forward, 3b rrules, D30 cheaper pullback) |
-| 7 | TPS (serial deposit, optional smooth shape function); tests: first order = Jacobian, second = ForwardDiff Hessian | not started |
+| 7 | TPS: generic root (done), frozen-wake test particles (done), full collective TPS, `track_csr!` with TPS (D33–D36); tests: first order = Jacobian, second = ForwardDiff Hessian | in progress |
 | 8 | FFT convolution (`CSRAbstractFFTsExt`) for large n_bin; benchmarks; GPU wake table (isbits geometry via Adapt; work struct immutable since D29; errors/recursion in the source search); issue for a BeamTracking collective-step hook (route b) | not started |
 
 Follow-ups not requested: per-element `ds_step` (Bmad `csr_ds_step`); caching slices per element (rebuilt every step);

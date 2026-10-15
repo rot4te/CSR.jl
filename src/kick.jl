@@ -37,17 +37,47 @@ One work item per particle, on the backend of `pz`.
 """
 function csr_apply_kicks!(pz::AbstractVector, z::AbstractVector, alive::AbstractVector{Bool}, bins::CSRBins, kick::AbstractVector;
                           pz_scale = 1)
-  backend = get_backend(pz)
-  n_outside = KernelAbstractions.zeros(backend, Int32, 1)   # Int32: no 64-bit atomics on some GPUs
-  csr_apply_kicks_kernel!(backend)(pz, n_outside, z, alive, bins.z_center, kick, bins.dz, pz_scale; ndrange = length(pz))
-  KernelAbstractions.synchronize(backend)
-  Array(n_outside)[1] == 0 || error("csr_apply_kicks!: particle outside the bin range (internal error)")
+  apply_kicks_outside!(pz, z, alive, bins.z_center, kick, bins.dz, pz_scale) == 0 ||
+    error("csr_apply_kicks!: particle outside the bin range (internal error)")
   return pz
 end
 
 """
+    apply_kicks_outside!(pz, z, alive, z_center, kick, dz, pz_scale) -> n_outside
+
+Launch `csr_apply_kicks_kernel!` on the backend of `pz`; returns the number of live particles outside the table.
+"""
+function apply_kicks_outside!(pz, z, alive, z_center, kick, dz, pz_scale)
+  backend = get_backend(pz)
+  n_outside = KernelAbstractions.zeros(backend, Int32, 1)   # Int32: no 64-bit atomics on some GPUs
+  csr_apply_kicks_kernel!(backend)(pz, n_outside, z, alive, z_center, kick, dz, pz_scale; ndrange = length(pz))
+  KernelAbstractions.synchronize(backend)
+  return Int(Array(n_outside)[1])
+end
+
+"""
+    csr_apply_test_kicks!(pz_t, z_t, alive_t, bins, kick; pz_scale = 1)
+
+Frozen-wake kick on test particles: `csr_apply_kicks!` with the bins and kick of a bunch the test particles are not
+part of (they deposit no charge). For TPS (or `Dual`) test particles this gives the kick's expansion in their
+coordinates about the primal `z`, with the bunch's wake held fixed. The test particles' arrays may live on another
+backend than the bunch (e.g. TPS on the CPU); `bins` and `kick` are copied there. Live test particles must lie within
+the bunch's bin range (the kick is only known there).
+"""
+function csr_apply_test_kicks!(pz_t::AbstractVector, z_t::AbstractVector, alive_t::AbstractVector{Bool}, bins::CSRBins,
+                               kick::AbstractVector; pz_scale = 1)
+  cpu(A) = A isa Array ? A : Array(A)
+  on_cpu = get_backend(pz_t) isa CPU
+  zc, k = on_cpu ? (cpu(bins.z_center), cpu(kick)) : (bins.z_center, kick)
+  n = apply_kicks_outside!(pz_t, z_t, alive_t, zc, k, primal(bins.dz), pz_scale)
+  n == 0 || error("csr_apply_test_kicks!: $n test particle(s) outside the bunch's bin range " *
+                  "[$(primal(first(zc)) - primal(bins.dz) / 2), $(primal(last(zc)) + primal(bins.dz) / 2)]")
+  return pz_t
+end
+
+"""
     csr_kick!(pz, z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor = 1.0,
-              pz_scale = 1.0) -> CSRStepResult
+              pz_scale = 1.0, test_particles = nothing) -> CSRStepResult
 
 Apply one 1D CSR kick at reference position `s_kick` [m] from the entrance of element `ix_ele_kick`.
 
@@ -58,6 +88,9 @@ Apply one 1D CSR kick at reference position `s_kick` [m] from the entrance of el
 - `pz_scale`: multiplies the Δpz applied to the particles (not the returned diagnostics). Used where the particles'
   reference momentum differs from the one the kick is computed for (inside a SaganCavity, whose reference momentum
   steps at each cell while γ ramps linearly).
+- `test_particles`: `(pz_t, z_t, alive_t)` or `nothing`. Test particles get the same kick (`pz_t` modified) without
+  contributing to it, e.g. a GTPSA TPS particle for the transfer map with the bunch's wake frozen
+  (`csr_apply_test_kicks!`).
 
 The kick covers one step, `ds = L / n_step` (see `csr_n_step`) scaled by `L_chord / L`, as in Bmad.
 
@@ -72,9 +105,10 @@ image tables are always computed on the CPU in `Float64` and copied to a GPU bac
 """
 function csr_kick!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool},
                    geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma, species::Species,
-                   params::CSRParams; kick_factor = 1.0, pz_scale = 1.0)
+                   params::CSRParams; kick_factor = 1.0, pz_scale = 1.0, test_particles = nothing)
   st = csr_binned_kick(z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor)
   csr_apply_kicks!(pz, z, alive, st.bins, st.kick; pz_scale = device_scalar(get_backend(pz), pz_scale))
+  test_particles === nothing || csr_apply_test_kicks!(test_particles..., st.bins, st.kick; pz_scale)
   return csr_step_result(st)
 end
 

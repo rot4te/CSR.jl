@@ -135,3 +135,21 @@ dg = ForwardDiff.derivative(t -> csr_kick_pz(zeros(length(zs)), zs, qs, as,
 dγ = ForwardDiff.derivative(γ -> csr_kick_pz(zeros(length(zs)), zs, qs, as, geom, 80, 0.05, γ, e, p), 1e4)
 maximum(abs, dg), maximum(abs, dγ)
 ```
+
+## Truncated power series (GTPSA)
+
+With GTPSA loaded, test particles with TPS coordinates can ride along a kick: they receive the bunch's kick
+interpolated at their `z` but deposit no charge, so the result is the transfer map of the kick with the bunch's wake
+held fixed ("frozen wake"). As in BeamTracking, branch decisions use the TPS scalar part: the expansion is that of the
+bin cell the reference point lies in. Bmad's linear interpolation between bin centres makes the kick linear in `z`
+within a cell, so orders above 1 in `z` come only from the test particles' own coordinates. Live test particles must
+lie within the bunch's bin range.
+
+```julia
+using GTPSA
+x = @vars(Descriptor(6, 2))
+pz_t, z_t = [x[6]], [0.2e-3 + x[5]]
+csr_kick!(pz, z, q, alive, geom, 80, 0.05, 1e4, e, CSRParams(n_bin = 200, ds_step = 0.1);
+          test_particles = (pz_t, z_t, [true]))
+GTPSA.jacobian(pz_t)   # ∂Δpz/∂z of the frozen kick in column 5
+```
