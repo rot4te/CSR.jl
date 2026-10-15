@@ -86,7 +86,7 @@ csr_slice_P0c(_) = nothing
 
 """
     CSR.track_csr!(bunch, bl::Beamline; params, csr_on = ele -> true, centroid_start = nothing,
-                   sliced_centroid = true, diagnostics = nothing) -> bunch
+                   sliced_centroid = true, diagnostics = nothing, test_bunch = nothing) -> bunch
     CSR.track_csr!(bunch, br::Branch; ...) -> bunch
 
 Track `bunch` through `bl` (or the Beamlines of `br` in order) with 1D CSR kicks between slices of each element
@@ -103,6 +103,10 @@ Track `bunch` through `bl` (or the Beamlines of `br` in order) with 1D CSR kicks
   method takes one step per element or slice), so the centroid then depends on `params.ds_step` and `csr_on`.
   `false`: track it through whole elements (before 2026-10-06).
 - `diagnostics(ix_ele, i_step, s_kick, result::CSRStepResult)` is called after each kick.
+- `test_bunch`: a `Bunch` (e.g. GTPSA TPS or ForwardDiff `Dual` coordinates) tracked through the same slices that
+  gets the bunch's CSR kicks without contributing to them or to the centroid (frozen wake, `csr_kick!`
+  `test_particles`): its final coordinates are the transfer map with the bunch's wake held fixed. Same species and
+  reference momentum as `bunch`; its live particles must stay within the bunch's bin range at every kick (error).
 
 Macroparticle charge: `weight × |charge of species|` [C] (`weight = nothing` means 1).
 
@@ -111,27 +115,55 @@ the CSR kick ramps linearly from `E_ref - dE_ref` to `E_ref` (`csr_ref_energy`, 
 momentum there steps at each RF cell (BeamTracking), so the applied Δpz is rescaled from the linearly ramped
 reference momentum to the stepped one.
 """
-function CSR.track_csr!(bunch::Bunch, bl::Beamline; kwargs...)
+function CSR.track_csr!(bunch::Bunch, bl::Beamline; test_bunch = nothing, kwargs...)
   isempty(bl.line) && return bunch
-  bt_ext().check_bl_bunch!(bunch, bl)
-  return track_csr_line!(bunch, bl.line, bl.context; kwargs...)
+  check_bunches!(bunch, test_bunch, bl)
+  return track_csr_line!(bunch, bl.line, bl.context; test_bunch, kwargs...)
 end
 
-function CSR.track_csr!(bunch::Bunch, br::Branch; kwargs...)
+function CSR.track_csr!(bunch::Bunch, br::Branch; test_bunch = nothing, kwargs...)
   bls = filter(bl -> !isempty(bl.line), br.beamlines)
   isempty(bls) && return bunch
-  bt_ext().check_bl_bunch!(bunch, first(bls))
-  return track_csr_line!(bunch, reduce(vcat, [bl.line for bl in bls]), br.context; kwargs...)
+  check_bunches!(bunch, test_bunch, first(bls))
+  return track_csr_line!(bunch, reduce(vcat, [bl.line for bl in bls]), br.context; test_bunch, kwargs...)
 end
 
 """
-    track_csr_line!(bunch, line, context; params, csr_on, centroid_start, sliced_centroid, diagnostics)
+    check_bunches!(bunch, test_bunch, bl)
+
+BeamTracking's bunch check (species and reference momentum, set from `bl` where missing) for the bunch and the test
+bunch; the test bunch must then have the bunch's species and reference momentum.
+"""
+function check_bunches!(bunch, test_bunch, bl)
+  bt_ext().check_bl_bunch!(bunch, bl)
+  isnothing(test_bunch) && return
+  test_bunch isa Bunch || error("track_csr!: test_bunch must be a Bunch or nothing")
+  bt_ext().check_bl_bunch!(test_bunch, bl)
+  test_bunch.species == bunch.species || error("track_csr!: test_bunch species differs from the bunch's")
+  test_bunch.p_over_q_ref == bunch.p_over_q_ref ||
+    error("track_csr!: test_bunch p_over_q_ref ($(test_bunch.p_over_q_ref)) differs from the bunch's ($(bunch.p_over_q_ref))")
+  return
+end
+
+"""
+    test_kick_particles(test_bunch)
+
+`(pz, z, alive)` of the test bunch for `csr_kick!`'s `test_particles`, or `nothing`.
+"""
+test_kick_particles(::Nothing) = nothing
+function test_kick_particles(tb::Bunch)
+  v = tb.coords.v
+  return (view(v, :, BeamTracking.PZI), view(v, :, BeamTracking.ZI), tb.coords.state .== BeamTracking.STATE_ALIVE)
+end
+
+"""
+    track_csr_line!(bunch, line, context; params, csr_on, centroid_start, sliced_centroid, diagnostics, test_bunch)
 
 Body of `track_csr!` for a vector of elements: reference survey (with patches), centroid orbit, `CSRGeometry`,
 then the step loop over elements and slices with half kicks at the element ends (Bmad `track1_bunch_csr`).
 """
 function track_csr_line!(bunch::Bunch, line, context; params::CSRParams, csr_on = ele -> true,
-                         centroid_start = nothing, sliced_centroid = true, diagnostics = nothing)
+                         centroid_start = nothing, sliced_centroid = true, diagnostics = nothing, test_bunch = nothing)
   n = length(line)
   species = bunch.species
   q_abs = abs(chargeof(species; C = true))
@@ -177,12 +209,14 @@ function track_csr_line!(bunch::Bunch, line, context; params::CSRParams, csr_on 
   for (i, ele) in enumerate(line)
     if !(csr_on(ele) && CSR.csr_sliceable(ele; context))
       track!(bunch, ele; context)
+      isnothing(test_bunch) || track!(test_bunch, ele; context)
       continue
     end
     p_over_q_ref = ele.p_over_q_ref
     p_over_q_ref isa Number || error("track_csr!: time-dependent reference energy is not supported (element $i)")
     E_start, E_end = csr_ref_energies(ele, species, p_over_q_ref, context)
-    track_csr_element!(bunch, ele, i, L[i], E_start, E_end, p_over_q_ref, z, pz, q, geom, params, context, diagnostics)
+    track_csr_element!(bunch, ele, i, L[i], E_start, E_end, p_over_q_ref, z, pz, q, geom, params, context, diagnostics,
+                       test_bunch)
   end
   return bunch
 end
@@ -214,11 +248,14 @@ function track_centroid_sliced!(cb, ele, L, p_over_q_ref, params, context)
 end
 
 """
-    track_csr_element!(bunch, ele, i, L, E_start, E_end, p_over_q_ref, z, pz, q, geom, params, context, diagnostics)
+    track_csr_element!(bunch, ele, i, L, E_start, E_end, p_over_q_ref, z, pz, q, geom, params, context, diagnostics,
+                       test_bunch = nothing)
 
 CSR steps through element i. Function barrier: Beamlines parameters (p_over_q_ref, dE_ref) are not inferred.
+The test bunch is tracked through the same slices and gets the bunch's kicks (`csr_kick!` `test_particles`).
 """
-function track_csr_element!(bunch, ele, i, L, E_start, E_end, p_over_q_ref, z, pz, q, geom, params, context, diagnostics)
+function track_csr_element!(bunch, ele, i, L, E_start, E_end, p_over_q_ref, z, pz, q, geom, params, context, diagnostics,
+                            test_bunch = nothing)
   species = bunch.species
   mass = massof(species)
   n_step, ds = csr_n_step(L, params)
@@ -228,6 +265,7 @@ function track_csr_element!(bunch, ele, i, L, E_start, E_end, p_over_q_ref, z, p
     if i_step != 0
       s = csr_slice(ele, i_step, n_step, ds, context)
       track_slice!(bunch, s, p_over_q_ref)
+      isnothing(test_bunch) || track_slice!(test_bunch, s, p_over_q_ref)
       ramp && (P0c = oftype(P0c, csr_slice_P0c(s)))
     end
     s_kick = i_step * ds
@@ -236,7 +274,8 @@ function track_csr_element!(bunch, ele, i, L, E_start, E_end, p_over_q_ref, z, p
     pz_scale = ramp ? sqrt(E_kick^2 - mass^2) / P0c : one(P0c)
     alive = bunch.coords.state .== BeamTracking.STATE_ALIVE
     kick_factor = (i_step == 0 || i_step == n_step) ? 0.5 : 1.0
-    result = csr_kick!(pz, z, q, alive, geom, i, s_kick, gamma, species, params; kick_factor, pz_scale)
+    result = csr_kick!(pz, z, q, alive, geom, i, s_kick, gamma, species, params; kick_factor, pz_scale,
+                       test_particles = test_kick_particles(test_bunch))
     isnothing(diagnostics) || diagnostics(i, i_step, s_kick, result)
   end
   return bunch

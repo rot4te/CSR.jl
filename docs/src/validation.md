@@ -15,6 +15,7 @@
 | `ad_test.jl` | `rrule` vs ForwardDiff `J'ȳ` (~1e-15) vs finite differences. |
 | `slicing_test.jl` | Sliced tracking with CSR off reproduces unsliced tracking for every element kind. |
 | `track_csr_test.jl`, `lcavity_test.jl` | `track_csr!` through Beamlines and Branches; SaganCavity slices vs the whole cavity (round-off). |
+| `tps_test.jl`, `track_tps_test.jl` | TPS test particles in the frozen wake, for one kick and through `track_csr!` (Beamline, Branch with an lcavity): TPS Jacobian and second derivatives vs ForwardDiff of the same Float64 tracking (round-off; 1e-10 bound for the multithreaded deposit order); Float64 test particles follow bunch particles (≤ 1e-15). |
 
 ## Cross-check against Bmad/Tao
 

@@ -45,7 +45,9 @@ GTPSA TPS).
   (findings 3, 5, 6, 7; Section 9) `4a6140f`; D32 flake fixed (γ scaled in `test_rrule`, s_kick restored; Section 4)
   `2748fb9`.
 - **`v2-v3-physics`** (from `phase7-review-fixes` `da6650d`, 2026-10-15): V2 and V3 fixed in default mode (D39, D40),
-  continuous retardation condition, one source per lag (D41). **Latest state.**
+  continuous retardation condition, one source per lag (D41).
+- **`phase7-step5`** fast-forwarded to `v2-v3-physics` `12ec910`, then Phase 7 step 5 (`track_csr!` `test_bunch`;
+  user: continue on this existing branch, 2026-10-15). **Latest state.**
 
 | Commit | Branch | Content |
 |---|---|---|
@@ -79,7 +81,8 @@ keep testing on Julia 1.13.1.
 3. Stage 1: frozen-wake kick on TPS test particles (`csr_apply_test_kicks!`, `csr_kick!(...; test_particles)`). **Done.**
 4. Stage 2: full collective TPS (TPS deposit, TPS tables). Variables decided: D37 (knobs + 6D on test particles). Needs `<:Real` relaxed to `<:Number` in the types (TPS is a
    `Number`), a TPS `modulo2`, and a TPS deposit (serial path). Also review findings 4 and 8 (Section 4).
-5. `track_csr!` with a TPS test bunch tracked alongside the bunch (BeamTracking per slice). Not started.
+5. `track_csr!` with a TPS test bunch tracked alongside the bunch (BeamTracking per slice). **Done 2026-10-15**
+   (keyword `test_bunch`; Section 9).
 
 **Session 2026-10-15 — handoff (the user restarted the session to load a custom subagent). Agreed plan, in order:**
 1. **Done 2026-10-15** (diff was 9 files, +234/−39; findings and fixes in Section 9, deferred items in Section 4).
@@ -101,9 +104,10 @@ keep testing on Julia 1.13.1.
 2. **Done 2026-10-15** (branch `v2-v3-physics`; D39–D41, Section 9). V2 (ion kick prefactor) and V3
    (`s_ref_to_s_chord`). Fixing V3 moved the kick point of `ad_rrule_test.jl` onto a lag with two sources (the seam);
    the user chose to make `ddz` continuous (D41).
-3. **Next: Phase 7 step 5** (`track_csr!` with a TPS test bunch; D38). Tests: order 1 = ForwardDiff Jacobian, order 2 =
-   ForwardDiff Hessian of the same Float64 tracking; Float64 test particles == bunch kicks.
-4. **Upstream reports / Pages:** refresh `planning/upstream_reports.md` (V7/V8 line numbers vs the current Bmad
+3. **Done 2026-10-15: Phase 7 step 5** (`track_csr!` with a TPS test bunch; D38; Section 9). Tests: order 1 =
+   ForwardDiff Jacobian, order 2 = nested-ForwardDiff second derivatives of the same Float64 tracking; Float64 test
+   particles follow bunch particles (to 1e-15, not bitwise: BeamTracking SIMD, Section 7b).
+4. **Next: upstream reports / Pages:** refresh `planning/upstream_reports.md` (V7/V8 line numbers vs the current Bmad
    checkout, Bmad PR #2085 status); check action versions in `.github/workflows/Documentation.yml` against current
    docs. The user files the reports and enables GitHub Pages.
 5. Later (not today): Stage 2 with variables per D37.
@@ -159,7 +163,8 @@ A scratch environment (wiped between sessions) that `Pkg.develop`s CSR.jl, BeamT
 and adds Test, StaticArrays, AbstractFFTs, ChainRulesCore, GTPSA, AtomicAndPhysicalConstants, KernelAbstractions,
 Atomix, ForwardDiff (+ DelimitedFiles for diagnostics). Run `Pkg.resolve()` after changing CSR's weakdeps, or new
 extensions silently do not load.
-- Full suite, from `test/`: `julia --project=<env> -t 4 -e 'include("runtests.jl")'` (~1.8 min; also run `-t 1`).
+- Full suite, from `test/`: `julia --project=<env> -t 4 -e 'include("runtests.jl")'` (~4.3 min on 2026-10-15, mostly
+  compilation; also run `-t 1`). `track_csr_test.jl` alone needs `maxrel` from `kernels_test.jl`.
 - One file: `julia --project=<env> -e 'using CSR, Test, StaticArrays, AbstractFFTs, BeamTracking, Beamlines,
   ChainRulesCore, GTPSA; include("utils.jl"); include("<file>_test.jl")'`.
 - BeamTracking prints a harmless "Straight multipoles … curved reference system" warning.
@@ -316,7 +321,7 @@ Every function has a docstring (the docs build enforces it with `checkdocs = :al
 
 | Extension | Contents |
 |---|---|
-| `CSRBeamTrackingBeamlinesExt` | `slicing.jl`: `slice_element` following Bmad `makeup_super_slave1` (fringe at ends, SciBmadStandard → Symplectic order, RungeKutta n_steps scaled, multipoles scaled, apertures at ends, alignment per slice, patch on first slice, RF voltage ∝ length, four-potential/`EMFieldParams` shifted, SaganCavity → `slice_sagan`; maps whole); `csr_sliceable`. `sagan.jl`: `SaganSlice` windows of the cavity's kernel sequence, `track_slice!`. `track.jl`: `track_csr!(bunch, ::Beamline / ::Branch)` → `track_csr_line!` (survey, centroid, `CSRGeometry`, step loop with half kicks at ends, `L_slice = i·ds − s0`, `csr_ref_energies`, `pz_scale` in SaganCavity; keywords `params`, `csr_on`, `centroid_start`, `sliced_centroid`, `diagnostics`). Uses BeamTracking internals listed in the files' imports. |
+| `CSRBeamTrackingBeamlinesExt` | `slicing.jl`: `slice_element` following Bmad `makeup_super_slave1` (fringe at ends, SciBmadStandard → Symplectic order, RungeKutta n_steps scaled, multipoles scaled, apertures at ends, alignment per slice, patch on first slice, RF voltage ∝ length, four-potential/`EMFieldParams` shifted, SaganCavity → `slice_sagan`; maps whole); `csr_sliceable`. `sagan.jl`: `SaganSlice` windows of the cavity's kernel sequence, `track_slice!`. `track.jl`: `track_csr!(bunch, ::Beamline / ::Branch)` → `track_csr_line!` (survey, centroid, `CSRGeometry`, step loop with half kicks at ends, `L_slice = i·ds − s0`, `csr_ref_energies`, `pz_scale` in SaganCavity; keywords `params`, `csr_on`, `centroid_start`, `sliced_centroid`, `diagnostics`, `test_bunch` (Phase 7 step 5: `check_bunches!`, `test_kick_particles`)). Uses BeamTracking internals listed in the files' imports. |
 | `CSRChainRulesCoreExt` | `rrule` for `csr_kick_pz`. |
 | `CSRGTPSAExt` | `primal(::TPS)` = scalar part, `root_order(::TPS)` = truncation order (field `mo`). |
 | `CSRAbstractFFTsExt` | Empty stub. |
@@ -339,6 +344,7 @@ Every function has a docstring (the docs build enforces it with `checkdocs = :al
 | `slicing_test.jl` | Phase 2 gate: sliced == unsliced (CSR off) for all element kinds; controls. |
 | `track_csr_test.jl` | Floor conventions, CSR off == track!, steady state via track_csr!, per-element selection, weights, patches/misalignment, errors, csr_ref_energy. |
 | `lcavity_test.jl` | SaganCavity slices vs whole cavity; reference momentum steps; Branch; `pz_scale`. |
+| `track_tps_test.jl` | Phase 7 step 5: `track_csr!` `test_bunch`. TPS order 2 vs ForwardDiff Jacobian and nested-Dual second derivatives (Beamline with a whole-tracked element; Branch with an lcavity); CSR changes the map; Float64 test particles follow bunch particles (both lattices); bunch unchanged by a test bunch; errors. Callable structs `TPSTestTrack`/`TPSTestJacobian` share Dual tags between the lattices (compile time). Needs `track_csr_test.jl`, `lcavity_test.jl` helpers. |
 
 ---
 
@@ -409,6 +415,11 @@ Other Bmad notes:
 - Combined-function SBend with Bn1: bend–kick integrator with straight multipoles (warns), default `n_steps = 1`.
 - Slicing changes BeamTracking's integration: default Symplectic takes `n_steps = 1` per element and each slice keeps 1
   step, so sliced and unsliced tracking differ (regression bend px 1.7e-6). Motivated D14.
+- A particle's result depends on the bunch it is tracked in, in the last bit (2.8e-17 in px through a bend slice with
+  pz ≠ 0; 191 of 400 particles differ from tracking alone, `diagnostics/track_tps_probe.jl`). BeamTracking uses
+  explicit SIMD on the CPU by default (`src/kernel.jl:257`); with N = 397 only particle 397 matched single-particle
+  tracking, consistent with SIMD lanes vs the scalar remainder (inference: which math function differs not checked).
+  Not a bug; tests comparing test particles with bunch particles use a tolerance.
 
 ---
 
@@ -686,6 +697,38 @@ Hat costs ~5× the source solves of point sampling.
   rerun; docs build clean (existing warnings only). Then `2748fb9` fixed the flake (Section 4): `ad_rrule_test.jl`
   206/206 under 10 seeds (1 thread) and 3 seeds (4 threads); full suite not rerun after `2748fb9` (test file only).
 
+### Phase 7 step 5: `track_csr!` with a test bunch (10-15, branch `phase7-step5`)
+- **API.** `track_csr!(bunch, bl_or_branch; ..., test_bunch = nothing)`: a `Bunch` of any number type tracked through
+  the same elements/slices (BeamTracking `track!` / `track_slice!`, incl. SaganCavity slices) and kicked through
+  `csr_kick!(...; test_particles)` with the bunch's bins, kick and `pz_scale`; no deposit, no effect on the centroid.
+  `check_bunches!`: BeamTracking's bunch check on both, then same species and `p_over_q_ref` (error). Test particles
+  outside the bin range at a kick: the existing `csr_apply_test_kicks!` error.
+- **Probes** (`track_tps_probe.jl`, `track_tps_lcavity_probe.jl`; 1 test particle, TPS order 2 vs ForwardDiff of the
+  Float64 tracking): Beamline (drift, bends, quad) Jacobian ≤ 9e-16 abs (columns ≤ 9e-16 rel), Hessians ≤ 2e-15 abs
+  (max |H| 2.3); Branch with bends + lcavity (dE_ref = 1e8, 4 cells): columns ≤ 1.8e-15 rel, Hessians ≤ 2.4e-12 abs
+  (max |H| 630). Scalar parts vs Float64: 6e-17, 2e-17. TPS through `RefState{TPS}` in `track_slice!(::SaganSlice)`
+  works without changes.
+- **Float64 test particles vs bunch particles:** 3.5e-17, not bitwise. Traced to BeamTracking (Section 7b, SIMD): the
+  first difference is px after a bend slice, before any CSR effect on px; re-tracking the snapshot slice reproduces
+  it, the CSR kick kernel is identical for both.
+- **Compile time dominates** (`track_tps_timing.jl`, `track_tps_compile.jl`): warm runs 7 ms for every number type;
+  first calls 7–11 s (Float64, TPS, Dual), 55 s for nested Duals; BeamTracking `track!` alone 37 s per new
+  nested-Dual type; each Hessian closure is a new tag (54 s again). Tests therefore use callable structs (one tag
+  type for both lattices) and one nested pass (Jacobian of the Jacobian) per lattice: file 98 s → 50 s with both
+  lattices' second derivatives. Finite differences are no reference at second order: with h = 1e-6 they cross bin
+  centres (the kick is piecewise linear in z), entries off by up to 5e5 (tried, failed).
+- **Mutation checks** (`track_tps_mutation.jl`): test kicks skipped → 4 failures (CSR-changes-map, both
+  follow-the-bunch, out-of-range error); `pz_scale` ignored for test particles → 1 failure (lcavity follow-the-bunch).
+- Docs: `track_csr!` docstrings, `usage.md` (keyword table, GTPSA section example, not executed; run by hand in
+  `track_tps_docs_example.jl`), `validation.md` row. Docs build clean (existing warnings only).
+- **Threads** (`track_tps_thread_spread.jl`, 4 threads, 8 runs): the TPS and ForwardDiff runs track separate bunches,
+  and the atomic deposit order changes the frozen wake: lcavity Branch (4001 particles) Jacobian columns 1.9e-12,
+  second derivatives 6.3e-15 of max |H|; Beamline (400 particles, one KA workgroup) 0. First full 4-thread run failed
+  3 Jacobian checks at rtol 1e-12, then one Hessian check; bounds now Jacobian rtol 1e-10, Hessian atol
+  1e-12·max|H| (rtol 1e-12).
+- Suite 1602/1602 on 4 threads (4m12s) and 1 thread (4m23s); new file 5/5 runs on 4 threads (50–58 s each). Base
+  `12ec910` on 1 thread: 1565/1565, 3m40s (so +43 s).
+
 ### V2, V3 and the seam, D39–D41 (10-15, branch `v2-v3-physics`)
 - **V2 (D39).** `csr_kick_coef(species, γ, ds; bmad_compat)`, flag passed from `csr_bins_kick`, the reference and
   the pullback. Electrons change by 1/β² only (2.5e-5 at γ = 200). Tests: proton/electron = 1/rel_mass, compat =
@@ -785,7 +828,7 @@ Hat costs ~5× the source solves of point sampling.
 | 4 | KernelAbstractions kernels | done (GPU: particle side + CPU tables, Stage C) |
 | 5 | Shielding (image charges) | done (+ D20, D24, V9) |
 | 6 | AD: steps 0–2 particles (done); step 3 geometry/γ via implicit differentiation of the source root | done (3a forward, 3b rrules, D30 cheaper pullback) |
-| 7 | TPS: generic root (done), frozen-wake test particles (done), full collective TPS, `track_csr!` with TPS (D33–D36); tests: first order = Jacobian, second = ForwardDiff Hessian | in progress |
+| 7 | TPS: generic root (done), frozen-wake test particles (done), `track_csr!` with a TPS test bunch (done), full collective TPS (Stage 2, D37) (D33–D38); tests: first order = Jacobian, second = ForwardDiff Hessian | in progress |
 | 8 | FFT convolution (`CSRAbstractFFTsExt`) for large n_bin; benchmarks; GPU wake table (isbits geometry via Adapt; work struct immutable since D29; errors/recursion in the source search); issue for a BeamTracking collective-step hook (route b); test-particle backend handling (review finding 2, Section 4) | not started |
 
 Follow-ups not requested: per-element `ds_step` (Bmad `csr_ds_step`); caching slices per element (rebuilt every step);
@@ -835,6 +878,6 @@ Metal tests in the suite (conditional on Metal.jl).
 | `verify_analytic.jl` | Section 8 checks (Base Julia). |
 | `dspline_coeff.md`, `upstream-bin.md` | Write-ups for V1 and V5. |
 | `upstream_reports.md` | Drafted upstream reports (Section 4). |
-| `diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`, `bench_pullback.jl`, `bench_forward.jl`, `d32_flake.jl [compat|free] [Γ]`, `d32_steps.jl`, `root_newton_mutation.jl`, `v3_rrule_images.jl`, `v3_rrule_scan.jl`, `v3_hat_node_search.jl`, `v3_image_entry_adjoint.jl`, `v3_node_adjoint.jl`, `v3_warm_start.jl [s_kick] [layer]`, `seam_uniqueness.jl`, `drift_lag0_image.jl`; data `layer_terms_*.txt` (the `_400` files predate V9). |
+| `diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`, `bench_pullback.jl`, `bench_forward.jl`, `d32_flake.jl [compat\|free] [Γ]`, `d32_steps.jl`, `root_newton_mutation.jl`, `track_tps_probe.jl`, `track_tps_lcavity_probe.jl`, `track_tps_timing.jl`, `track_tps_compile.jl`, `track_tps_mutation.jl [none\|scale]`, `track_tps_docs_example.jl`, `track_tps_thread_spread.jl [n_runs]`, `v3_rrule_images.jl`, `v3_rrule_scan.jl`, `v3_hat_node_search.jl`, `v3_image_entry_adjoint.jl`, `v3_node_adjoint.jl`, `v3_warm_start.jl [s_kick] [layer]`, `seam_uniqueness.jl`, `drift_lag0_image.jl`; data `layer_terms_*.txt` (the `_400` files predate V9). |
 | `../crosscheck/` | Bmad/Tao cross-check (README there). |
 | `../docs/` | Documenter docs (`julia --project=docs docs/make.jl`; `docs/README.md`); pages Home, Usage, Physics model, Physics decisions, Validation, API, Internals. Deployed by `.github/workflows/Documentation.yml` from `main`. Keep "Physics decisions" in sync with Section 3 when physics changes. |

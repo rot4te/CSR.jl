@@ -37,6 +37,7 @@ Keywords of `track_csr!`:
 | `centroid_start` | 6-vector where the centroid orbit starts. Default: the charge-weighted mean of the live particles. |
 | `sliced_centroid` | `true` (default): the centroid is tracked in the bunch's slices, so it follows a bunch particle's orbit. |
 | `diagnostics(ix_ele, i_step, s_kick, result)` | Called after each kick with a [`CSRStepResult`](@ref). |
+| `test_bunch` | A `Bunch` (e.g. TPS coordinates) tracked alongside that gets the bunch's kicks without contributing to them; see [Truncated power series (GTPSA)](@ref). |
 
 SaganCavity elements with `dE_ref` (lcavities) are sliced exactly (slices reproduce the whole cavity to round-off);
 the reference energy for the CSR kick ramps linearly through the cavity, as in Bmad. Put the cavity in a `Branch`
@@ -152,4 +153,15 @@ pz_t, z_t = [x[6]], [0.2e-3 + x[5]]
 csr_kick!(pz, z, q, alive, geom, 80, 0.05, 1e4, e, CSRParams(n_bin = 200, ds_step = 0.1);
           test_particles = (pz_t, z_t, [true]))
 GTPSA.jacobian(pz_t)   # ∂Δpz/∂z of the frozen kick in column 5
+```
+
+`track_csr!(bunch, bl; params, test_bunch)` does the same along a whole line: the test bunch is tracked by
+BeamTracking through the same slices as the bunch and gets every CSR kick, so a one-particle TPS test bunch gives the
+transfer map with the bunch's wake frozen. It needs the bunch's species and reference momentum, and its live particles
+must stay within the bunch's bin range.
+
+```julia
+tb = Bunch(reshape([0.0, 0.0, 0.0, 0.0, 0.2e-3, 0.0] .+ x, 1, 6); species = e, p_over_q_ref = bunch.p_over_q_ref)
+track_csr!(bunch, bl; params, test_bunch = tb)
+GTPSA.jacobian(tb.coords.v[1, :])   # 6×6 linear map including the frozen-wake CSR kicks
 ```

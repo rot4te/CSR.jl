@@ -39,7 +39,7 @@ function csr_sliceable end
 
 """
     track_csr!(bunch, bl; params::CSRParams, csr_on = ele -> true, centroid_start = nothing,
-               sliced_centroid = true, diagnostics = nothing) -> bunch
+               sliced_centroid = true, diagnostics = nothing, test_bunch = nothing) -> bunch
 
 Track a BeamTracking `Bunch` through a Beamlines `Beamline` with 1D CSR (Bmad `csr_method = one_dim`).
 Requires BeamTracking and Beamlines; see the method docstring for details.
