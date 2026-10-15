@@ -46,7 +46,7 @@ GTPSA TPS).
   `2748fb9`.
 - **`v2-v3-physics`** (from `phase7-review-fixes` `da6650d`, 2026-10-15): V2 and V3 fixed in default mode (D39, D40),
   continuous retardation condition, one source per lag (D41).
-- **`phase7-step5`** fast-forwarded to `v2-v3-physics` `12ec910`, then Phase 7 step 5 (`track_csr!` `test_bunch`;
+- **`phase7-step5`** (at `v2-v3-physics` `12ec910` when the session started, moved there outside the session), then Phase 7 step 5 (`track_csr!` `test_bunch`;
   user: continue on this existing branch, 2026-10-15). **Latest state.**
 
 | Commit | Branch | Content |
