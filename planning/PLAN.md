@@ -37,8 +37,10 @@ GTPSA TPS).
 - **`geom-pullback`** (from `phase6-geom_speed-deltas` `90e0b77`): cheaper geometry pullback (D30).
 - **`fwd-primal-search`** (from `geom-pullback` `82de7c6`, pushed by the user): forward mode with the source search on
   primal geometry (D31), flaky FD test fix (D32), 3e-9 investigation (Section 4).
-- **`phase7-tps`** (from `fwd-primal-search` `0a4cfbc`, not pushed): Phase 7 steps 1–3 (D33–D36). **Latest state.**
-  (Local branches `stage-c`, `reorg` no longer exist; their commits are in this history.)
+- **`phase7-tps`** (from `fwd-primal-search` `0a4cfbc`; `origin/phase7-tps` exists, so pushed by the user): Phase 7
+  steps 1–3 (D33–D36).
+- **`phase7-step5`** (from `phase7-tps` `aff3059`, 2026-10-15): this handoff (D37, D38). **Latest state; today's work
+  goes here.** (Local `fwd-primal-search` no longer exists; its head is `0a4cfbc`.)
 
 | Commit | Branch | Content |
 |---|---|---|
@@ -70,23 +72,34 @@ keep testing on Julia 1.13.1.
 1. Generic source root by Newton steps from the primal root (nested Duals, TPS). **Done** (`a5f28e6`).
 2. TPS basics in `CSRGTPSAExt` (`primal` = scalar part, `root_order` = truncation order). **Done.**
 3. Stage 1: frozen-wake kick on TPS test particles (`csr_apply_test_kicks!`, `csr_kick!(...; test_particles)`). **Done.**
-4. Stage 2: full collective TPS (TPS deposit, TPS tables). **Ask the user first what the TPS variables represent** (pending decision 1 below)
-   (parameters/knobs shared by all particles is the only meaningful collective case found so far; 6 phase-space
-   variables on every particle has no clear meaning). Needs `<:Real` relaxed to `<:Number` in the types (TPS is a
+4. Stage 2: full collective TPS (TPS deposit, TPS tables). Variables decided: D37 (knobs + 6D on test particles). Needs `<:Real` relaxed to `<:Number` in the types (TPS is a
    `Number`), a TPS `modulo2`, and a TPS deposit (serial path).
 5. `track_csr!` with a TPS test bunch tracked alongside the bunch (BeamTracking per slice). Not started.
 
-**Decisions pending for the user (paused here at the user's request, 2026-10-14; ask these first next session):**
-1. **Stage 2 TPS variables.** A collective kick depends on all particles, so the variables must mean the same for
-   every particle. Options: (a) parameters/knobs shared by all particles (geometry L, g, centroid; γ; s_kick; bunch
-   charge; upstream element knobs the coordinates depend on), every particle's z, q TPS in them, deposit and tables in
-   TPS; matches SciBmad's `include_params` (recommended); (b) as (a), plus Stage 1 test particles also carrying the 6
-   phase-space variables (frozen in phase space, collective in parameters); (c) skip Stage 2 for now.
-2. **Order of the remaining Phase 7 work:** step 5 (`track_csr!` with a TPS test bunch, Stage 1 end to end) first
-   (recommended: usable sooner), or Stage 2 first.
-3. **Branch `phase7-tps`** (not pushed): review and push when satisfied.
-2. Still open from before: V2 (ion kick prefactor), V3 (`s_ref_to_s_chord`), filing the upstream reports
-   (`planning/upstream_reports.md`), GitHub Pages setup (see "For the user" below).
+**Session 2026-10-15 — handoff (the user restarted the session to load a custom subagent). Agreed plan, in order:**
+1. **Code review of `phase7-tps`** by the project subagent `sonnet-reviewer` (`.claude/agents/sonnet-reviewer.md`,
+   `model: sonnet`, tools Read + Bash, read-only; untracked file, the user decides whether to commit or ignore it), at
+   effort `high`, foreground. The user approved this subagent plan; launch it directly. If the type is still not found
+   after the restart, tell the user (do not fall back silently). Prompt essentials:
+   - Diff `git diff 0a4cfbc..phase7-tps -- src ext test docs` (3 commits, 10 files, +287/−53; PLAN.md excluded): files
+     `src/utils/root_finding.jl`, `src/kernels/source_point.jl`, `src/kernels/kick.jl`, `src/kick.jl`,
+     `ext/CSRGTPSAExt/CSRGTPSAExt.jl`, `test/tps_test.jl`, `test/ad_geometry_test.jl`, `docs/src/usage.md`.
+   - Context: D33–D35 and the Section 6 Dual/TPS pitfalls (branch on `primal`; Dual `==`/`<` compare partials at
+     ties; `modulo2` Dual method; TPS is a `Number`; KA CPU splits ndrange > 1024 across threads).
+   - Check: order-n Newton steps with a constant primal slope in `root_tangent` (order gained per step, step count,
+     `root_order` dispatch for Float64/Dual/nested Dual/TPS); branches on non-primal values; thread safety of TPS in
+     the test-kick kernel; dead/out-of-range test particles; backend mismatch; whether the tests can fail
+     (independence of the Jacobian/Hessian references, tolerances, gaps such as TPS order > 2); docs example vs API.
+   - Output: findings ranked by severity, file:line, failure scenario, confidence. Claude verifies each finding before
+     reporting; **no fixes until the user decides.**
+2. **V2 (ion kick prefactor) and V3 (`s_ref_to_s_chord`)** — physics decisions, before step 5: for each, show the Bmad
+   code and derivation, give options with a recommendation, change nothing until the user chooses.
+3. **Phase 7 step 5** (`track_csr!` with a TPS test bunch; D38). Tests: order 1 = ForwardDiff Jacobian, order 2 =
+   ForwardDiff Hessian of the same Float64 tracking; Float64 test particles == bunch kicks.
+4. **Upstream reports / Pages:** refresh `planning/upstream_reports.md` (V7/V8 line numbers vs the current Bmad
+   checkout, Bmad PR #2085 status); check action versions in `.github/workflows/Documentation.yml` against current
+   docs. The user files the reports and enables GitHub Pages.
+5. Later (not today): Stage 2 with variables per D37.
 
 Original notes for step 3 (from the reorg handoff, 2026-10-14): Goal: derivatives of a kick w.r.t. the geometry and the reference speed/energy (γ), and `s_kick`.
 Starting points (suggestions, not decided):
@@ -188,6 +201,8 @@ extensions silently do not load.
 | D34 | 10-14 | TPS shape function: consistent with SciBmad/BeamTracking: branch decisions on the scalar part (`vifelse`, GTPSA comparisons), Bmad's triangle deposit and linear interpolation kept, no smooth-shape option; orders ≥ 2 are the expansion within the reference point's bin cell. |
 | D35 | 10-14 | Source root for any number type: Newton steps from the primal root in the full number type (one order per step), replacing the first-order-only implicit tangent. |
 | D36 | 10-14 | `track_csr!` with a TPS (test) bunch is in Phase 7, after the core. |
+| D37 | 10-15 | Stage 2 TPS variables, option (b): parameters/knobs shared by all particles (geometry L, g, centroid; γ; s_kick; bunch charge; upstream element knobs), every particle's z, q TPS in them, deposit and tables in TPS; plus Stage 1 test particles carrying the 6 phase-space variables as well (frozen in phase space, collective in parameters). |
+| D38 | 10-15 | Phase 7 order: step 5 (`track_csr!` with a TPS test bunch) before Stage 2; V2 and V3 decided before step 5. |
 
 ---
 
