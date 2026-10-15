@@ -2,21 +2,23 @@
 
 Drafted 2026-10-09 for the user to review and file. Nothing here has been sent anywhere.
 Line numbers: Bmad master `00b4557af` (2026-10-08; `csr_and_space_charge_mod.f90` unchanged through `7c9df4059`,
-REL 20261014-0, checked 2026-10-14); BeamTracking.jl `fe92aac` (2026-10-02). Item 5 added 2026-10-14.
+REL 20261014-0, checked 2026-10-14); BeamTracking.jl `fe92aac` (2026-10-02). Item 5 added 2026-10-14. Items 6–8
+added 2026-10-15, line numbers checked at `7c9df4059`.
 
 Already fixed upstream, no report needed: **V6** (swapped energy-interpolation weights), bmad-ecosystem PR #2199,
 merged 2026-10-06. Note: open PR #2085 (wiggler subdivision) rewrites `s_source_calc`/`ddz_calc_csr`; V7 and V8 sites
-may move if it merges.
+(and item 8's) may move if it merges. PR status not rechecked since 2026-10-09.
 
-Not proposed for reporting: V2 (ion kick prefactor; unresolved on our side), V3 (`s_ref_to_s_chord`; intent unclear),
-V4 (round-off branches; harmless for symmetric bends). Could be added as questions.
+Not proposed for reporting: V4 (round-off branches that return a `ddz` residual as the source position; harmless
+for symmetric bends). Item 8 describes when they are reached; V4 could be added there as a question.
 
 ---
 
-## Bmad: one issue, five items
+## Bmad: one issue, eight items
 
-**Title:** 1D CSR (`csr_and_space_charge_mod.f90`): five possible errors (dspline_len coefficient, first-bin integral,
-source geometry after zbrent, source direction for sources ahead, small-angle path-length excess)
+**Title:** 1D CSR (`csr_and_space_charge_mod.f90`): eight possible errors (dspline_len coefficient, first-bin integral,
+source geometry after zbrent, source direction for sources ahead, small-angle path-length excess, kick prefactor for
+ions, kick position in bends, discontinuous retardation condition)
 
 Found while porting `csr_method = one_dim` to Julia (CSR.jl). Each item was checked numerically against quadrature
 or an analytic limit; scripts available on request. Line numbers are for master `00b4557af`.
@@ -70,6 +72,49 @@ Small heights and free space are affected far less: the image kernel at y = 3 mm
 free-space `I_csr` for a 1 mm bunch (lags to 6 mm) on a ρ = 10 m arc changes by ≤ 4e-4 relative. With the exact form (4-point Gauss–Legendre
 for the `x′` term) the kernel agrees with the exact field to ≤ 3e-5 at y = 3 cm–1.9 m, at ~1% extra run time in our
 port. The exact form also makes item 1 moot.
+
+**6. Kick prefactor, line 769 (same pattern at 1141 and 1609): `rel_mass` counted twice for non-electrons.**
+`coef = actual_track_step * classical_radius(species) / (rel_mass * e_charge * abs(charge_of(species)) * gamma)`,
+with `classical_radius = classical_radius_factor * charge_of**2 / mass_of` = `r_e Q² m_e/m` and `rel_mass = m/m_e`.
+This gives `ds r_e |Q| / (rel_mass² e γ)`. The energy change of a particle of charge `Qe` in the CSR field of a line
+charge (bin charges in C, unsigned) is `ΔE = |Q| e E_z ds` with `E_z = (1/4πε₀) × (kernel ⋆ λ′)` and
+`1/4πε₀ = r_e m_e c²/e²`, so `Δpz = ΔE/(β²E) = ds r_e |Q| / (rel_mass e β² γ) × (kernel ⋆ λ′)`. Bmad's kick is
+smaller by `rel_mass` (1/1836 for protons); electrons and positrons are unaffected. The extra factor dates from
+commit `50b90dee33` (2020-03-24, "removing r_e in favor of classical_radius() function"), which replaced `r_e` by
+`classical_radius(species)` and kept the explicit `rel_mass` (before it the line read `r_e / (rel_mass e |Q| γ)`:
+right mass, `1/|Q|` instead of `|Q|`). Other `classical_radius` users (Touschek, envelope) have no extra `rel_mass`.
+Lines 1141 and 1609 (LSC) have the same pattern; we have not derived those. Minor: the `1/β²` of `Δpz = ΔE/(β²E)` is
+dropped (≈ 1/γ² for electrons, larger for slow ions).
+
+**7. `s_ref_to_s_chord`, lines 1817–1842 (called at 339): kick point upstream of the bunch in a bend.**
+The bend branch, `|ρ| atan2(s_ref cos dθ, |ρ + x + s_ref sin dθ|)`, treats `s_ref` as a straight distance along the
+entrance tangent and returns ρ times the angle seen from the bend centre. For a centroid on the reference orbit it
+returns `ρ atan(s/ρ)`; the chord coordinate of the reference point at `s` is `ρ[sin(s/ρ − θ/2) + sin(θ/2)]` (θ = L/ρ).
+At `s = L` it should be `L_chord = 2ρ sin(θ/2)` (0.09996 vs 0.09967 for L/ρ = 0.1, ρ = 1 m). The kick point then lies
+upstream by up to `≈ 7L³/(24ρ²)` (29 µm for L = 0.1 m, ρ = 10 m; 2.9 mm for a 1 m bend). This moves where the field is
+evaluated, so it matters mainly in entrance/exit transients (not measured). We use the chord coordinate where the
+centroid spline crosses the reference normal plane at `s_ref` (a few Newton steps); for an on-axis bend it agrees with
+the formula above to the accuracy of the cubic chord spline.
+
+**8. `ddz_calc_csr`, lines 1053–1057 and 1083; `I_csr` 1419–1422: retardation condition discontinuous at element
+boundaries.**
+For a source in the kick element, line 1054 passes the secant slope `(x(s1) − x(s0))/ds` of the chord spline as
+`dtheta_L` ("angle of L line"); the cross-element branch uses `theta_L − theta_chord`, an angle. Line 1057 uses `2 ds`
+(a chord-coordinate difference) where the source–kick distance belongs. Line 1083 uses `L/(2γ²)` for `L(1 − β)`
+(error `L/(8γ⁴)`), while the upstream infinite drift solves `Ls − βL = dz` exactly. So `ddz` jumps at the kick
+element's entrance and at the lattice start (there by `L/(8γ⁴)`, from the formulas; not measured). Measured with Bmad's formulas (our port, compat mode) on a test lattice
+(drift 0.2 m, bend 0.3 m with g = 1.5, drift 0.2 m; off-axis centroid; γ = 200; image layer y = 1 cm): jump at the bend
+entrance −1.1e-7, −3.0e-8, −8.6e-9, −5.9e-13 m for kicks 0.03, 0.13, 0.17, 0.29 m into the bend. A negative jump leaves
+lags with no root (the round-off branches at lines 951–959 then return a `ddz` value as `s_source`); a positive jump
+gives lags with two roots, one on each side of the boundary, and the source found depends on where the element walk
+starts. We hit the second case when we used the exact path excess with the secant slope: at one lag the image kernel
+was 43 or 3209 depending on the start element (the source is just outside or just inside the bend). We did not look
+for a positive jump with Bmad's own formulas. `zz` in `I_csr` (line 1422, the lag of a source at the kick element's
+entrance) is built the same way, so the first-bin split does not match the root search exactly. Fix in our port:
+the angle `theta_L − theta_chord` in the kick element as elsewhere, `−2 L_plane` for sources ahead, `L/(γ²(1 + β))`,
+and `zz` from `ddz_calc_csr` at the entrance. `ddz` is then continuous to round-off (≤ 1e-16 m) at element boundaries
+and at the lattice ends, each lag has one source, and the drift image kick at zero lag becomes 0 (y = 1 cm, γ = 200:
+0.031 with `L/(2γ²)`). Cost ~1%.
 
 ---
 

@@ -268,7 +268,7 @@ extensions silently do not load.
 - Float32 on GPUs limits strongly shielded kicks to ~3e-4 relative (cancellation); a mixed-precision table/convolve
   path would be needed for better.
 
-**Upstream reports — drafted in `planning/upstream_reports.md`, not filed (the user files):** Bmad V1, V5, V7, V8;
+**Upstream reports — drafted in `planning/upstream_reports.md`, not filed (the user files):** Bmad V1, V5, V7, V8, V2, V3, seam (items 6–8, 2026-10-15);
 BeamTracking Section 7b items and the `R_to_gamma`/`R_to_v` ion bug. A GitHub search (via WebFetch, summarized:
 moderately reliable) found no existing issue. Open Bmad PR #2085 rewrites `s_source_calc`; V7/V8 line numbers may
 move. V9 (small-angle path excess) drafted as Bmad item 5 (2026-10-14).
@@ -378,9 +378,9 @@ Every function has a docstring (the docs build enforces it with `checkdocs = :al
 | ID | Where | Finding | Status in CSR.jl |
 |---|---|---|---|
 | V1 | `dspline_len` line 1796 | s⁴ term `9*c(3)**2` should be `/5`. Bmad's dL 1.71× quadrature for an asymmetric spline (end slopes 0.010, −0.012); exact when c₃ = 0. Write-up: `dspline_coeff.md`. | Superseded in default mode by `path_excess`; compat keeps Bmad. |
-| V2 | Kick coefficient 769 (also 1141, 1609: LSC) | Derivation `ds r_e abs(Q) / (rel_mass e β² γ)`; Bmad `ds r_e abs(Q) / (rel_mass² e γ)`: extra `1/rel_mass` since commit `50b90dee33` (2020-03-24) replaced `r_e` by `classical_radius()` (= `r_e Q²/rel_mass`) and kept the explicit `rel_mass` (before it: `r_e/(rel_mass abs(Q))`, right mass, wrong charge for abs(Q) ≠ 1); no 1/β². Other `classical_radius` users (Touschek, envelope) have no extra `rel_mass`. | Fixed in default (D39); compat Bmad. Not yet in `upstream_reports.md`. |
-| V3 | `s_ref_to_s_chord` 1817–1842 | Treats `s_ref` as a straight distance along the entrance tangent and returns ρ × the angle seen from the bend centre: `ρ·atan(s/ρ)` on an on-axis bend instead of the chord coordinate `ρ[sin(s/ρ − θ/2) + sin(θ/2)]` (0.09967 vs 0.09996 at s = L, L/ρ = 0.1). Kick point upstream by `≈ 7L³/(24ρ²)` at the exit. | Fixed in default (D40); compat Bmad. Not yet in `upstream_reports.md`. |
-| Seam | `ddz_calc_csr` 1023–1086 | Same-element branch passes the secant slope as the angle of the L line (cross-element branches the angle), uses `2ds` for sources ahead (downstream: `2 L_plane`), and `L/(2γ²)` for `L(1 − β)` (infinite drifts: exact). `ddz` jumps at the kick element's ends (8.6e-9 m at s_kick = 0.17 in the `ad_rrule_test.jl` lattice, 1.1e-7 at 0.03): lags with two sources (old code: 163–197 of 201 lags in the overlap depend on the start element, `diagnostics/seam_uniqueness.jl`) or none (V4 branches). | Continuous in default (D41); compat Bmad. |
+| V2 | Kick coefficient 769 (also 1141, 1609: LSC) | Derivation `ds r_e abs(Q) / (rel_mass e β² γ)`; Bmad `ds r_e abs(Q) / (rel_mass² e γ)`: extra `1/rel_mass` since commit `50b90dee33` (2020-03-24) replaced `r_e` by `classical_radius()` (= `r_e Q²/rel_mass`) and kept the explicit `rel_mass` (before it: `r_e/(rel_mass abs(Q))`, right mass, wrong charge for abs(Q) ≠ 1); no 1/β². Other `classical_radius` users (Touschek, envelope) have no extra `rel_mass`. | Fixed in default (D39); compat Bmad. Drafted as Bmad item 6 in `upstream_reports.md`. |
+| V3 | `s_ref_to_s_chord` 1817–1842 | Treats `s_ref` as a straight distance along the entrance tangent and returns ρ × the angle seen from the bend centre: `ρ·atan(s/ρ)` on an on-axis bend instead of the chord coordinate `ρ[sin(s/ρ − θ/2) + sin(θ/2)]` (0.09967 vs 0.09996 at s = L, L/ρ = 0.1). Kick point upstream by `≈ 7L³/(24ρ²)` at the exit. | Fixed in default (D40); compat Bmad. Drafted as item 7. |
+| Seam | `ddz_calc_csr` 1023–1086 | Same-element branch passes the secant slope as the angle of the L line (cross-element branches the angle), uses `2ds` for sources ahead (downstream: `2 L_plane`), and `L/(2γ²)` for `L(1 − β)` (infinite drifts: exact). `ddz` jumps at the kick element's ends (8.6e-9 m at s_kick = 0.17 in the `ad_rrule_test.jl` lattice, 1.1e-7 at 0.03): lags with two sources (old code: 163–197 of 201 lags in the overlap depend on the start element, `diagnostics/seam_uniqueness.jl`) or none (V4 branches). | Continuous in default (D41); compat Bmad. Drafted as item 8. |
 | V4 | `s_source_calc` 951–959 | Round-off branches assign `ddz_calc_csr(...)` (a residual) to `s_source`. Matters for the image kick's `g_bend`. | Ported literally (D11). |
 | V5 | `I_csr` first bin 1414–1426 | Holds `I_csr` constant over the rest of the bin: 2/3 of the integral in steady state, 3–4× too small in the entrance transient. Write-up: `upstream-bin.md`. | Quadrature (D15); compat flag. |
 | V6 | `track1_bunch_csr` 330–331 | Energy interpolation weights reversed. | Fixed upstream (PR #2199); both modes follow it (D21). |
@@ -710,7 +710,7 @@ Hat costs ~5× the source solves of point sampling.
 - Suite 1565/1565 on 1 and 4 threads; docs build clean (existing warnings). `bench_excess.jl`, 1 thread, interleaved
   with `da6650d`: free space 7.26–7.30 vs 7.22–7.25 ms, 16 layers 74.6–74.9 vs 73.4–73.9 ms (+0.5%, +1.5%).
 - Not rerun: the Bmad cross-check default-mode columns (Section 9, Phase 3) and `image_kernel_exact.jl`; compat is
-  unchanged by construction (compat tests pass). V2 and V3 are not yet in `upstream_reports.md`.
+  unchanged by construction (compat tests pass). V2, V3, seam drafted as Bmad items 6–8 in `upstream_reports.md` (10-15).
 
 ### Forward mode with primal source search, D31 (10-14 evening, branch `fwd-primal-search`)
 - `PrimalSearch(primal(geom), primal(kp))` built once per table call when the table type is a `Dual`
