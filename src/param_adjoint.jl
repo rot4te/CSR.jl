@@ -358,7 +358,8 @@ end
     first_bin_adjoint!(grad, w, geom0, ix_ele_kick, s_kick, gamma, params, dz, kick_factor)
 
 Add `w` times the gradient of the first bin's integral `I_int[1]` (`I_csr_calc` with `i_bin = 1`; its quadrature
-nodes move with the parameters) by ForwardDiff with the numbers of `geometry_active_indices` for lag `dz` seeded.
+nodes move with the parameters) by ForwardDiff with the numbers of `geometry_active_indices` for lag `dz` seeded
+(sources searched in `geom0`, `PrimalSearch`).
 """
 function first_bin_adjoint!(grad, w, geom0, ix_ele_kick, s_kick, gamma, params, dz, kick_factor)
   w == 0 && return grad
@@ -367,13 +368,14 @@ function first_bin_adjoint!(grad, w, geom0, ix_ele_kick, s_kick, gamma, params, 
   idx = [geometry_active_indices(geom0, ix_ele_kick, s_kick, gamma, params, dz; kick_factor, lag = dz, n_images = 0);
          n_g + 1; n_g + 2]
   p0 = [geometry_to_vector(geom0); s_kick; gamma]
+  search = PrimalSearch(geom0, CSRKickPoint(geom0, ix_ele_kick, s_kick, gamma; kick_factor))
   function I_int1(x)
     p = Vector{eltype(x)}(p0)
     p[idx] = x
     g = geometry_from_vector(view(p, 1:n_g), n, geom0.bmad_compat)
     kp = CSRKickPoint(g, ix_ele_kick, p[n_g+1], p[n_g+2]; kick_factor)
-    k, _ = s_source_calc(CSRKick1(g, kp; dz_particles = dz), g, kp)
-    return I_csr_calc(k, 1, dz, g, kp, 0.0).I_int_csr
+    k, _ = s_source_calc(CSRKick1(g, kp; dz_particles = dz), g, kp, search)
+    return I_csr_calc(k, 1, dz, g, kp, 0.0, search).I_int_csr
   end
   grad[idx] .+= w .* ForwardDiff.gradient(I_int1, p0[idx])
   return grad
@@ -437,7 +439,7 @@ function csr_kick_param_adjoint(kbar::AbstractVector, bins::CSRBins, geom::CSRGe
                   cpu(bins.n_particle), primal.(cpu(bins.edge_dcharge_density_dz)))
   kb = primal.(cpu(kbar))
   n_ele = length(geom.ele)
-  geom0 = geometry_from_vector(primal.(geometry_to_vector(geom)), n_ele, geom.bmad_compat)
+  geom0 = primal(geom)
   s_kick, gamma, kick_factor = primal(s_kick), primal(gamma), primal(kick_factor)
   ik = ix_ele_kick
   n_bin = params.n_bin

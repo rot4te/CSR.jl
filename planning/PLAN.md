@@ -34,7 +34,9 @@ GTPSA TPS).
   Actions workflow). 1035/1035 tests on 1 and 4 threads; docs build clean (`checkdocs = :all`).
 - **`phase6-geom_speed-deltas`** (from `reorg` `08da04e`, pushed by the user): Phase 6 step 3 (forward mode and rrules
   w.r.t. geometry, `s_kick`, γ), ForwardDiff hard dependency, immutable `CSRKick1`. 1355/1355 on 1 and 4 threads.
-- **`geom-pullback`** (from `phase6-geom_speed-deltas` `90e0b77`): cheaper geometry pullback (D30). **Latest state.**
+- **`geom-pullback`** (from `phase6-geom_speed-deltas` `90e0b77`): cheaper geometry pullback (D30).
+- **`fwd-primal-search`** (from `geom-pullback` `82de7c6`, not pushed): forward mode with the source search on primal
+  geometry (D31), flaky FD test fix (D32), 3e-9 investigation (Section 4). **Latest state.**
   (Local branches `stage-c`, `reorg` no longer exist; their commits are in this history.)
 
 | Commit | Branch | Content |
@@ -54,23 +56,20 @@ lcavity mode, Stage B (D20, D21, D23), D24, GPU number types, exact path excess 
 README, Documenter docs.
 
 **Phase 6 step 3 done** (3a forward mode, D28/D29, 3b rrules) on branch `phase6-geom_speed-deltas`; **cheaper
-geometry pullback done** (D30, branch `geom-pullback`): 5–14 kicks instead of 32–367; see Section 9. **Next (user to
-choose):** Phase 8 GPU table work (Adapt-based `CSRGeometry` with the element vector as a type parameter; errors in the
-source search as return codes; iterative adaptive Simpson), Phase 7 (TPS), or forward mode with the search on primal
-geometry (the forward path still runs zbrent in Duals, ~70% of its derivative cost).
+geometry pullback done** (D30, branch `geom-pullback`): 5–14 kicks instead of 32–367; **forward mode with primal
+search done** (D31, branch `fwd-primal-search`): 12 partials ≈ 4–5 kicks instead of 7–13; see Section 9. **Next (user
+to choose):** Phase 8 GPU table work (Adapt-based `CSRGeometry` with the element vector as a type parameter; errors in
+the source search as return codes; iterative adaptive Simpson) or Phase 7 (TPS).
 
-**Decisions pending for the user (as of 2026-10-14, end of the D30 session):**
-1. **Next work item.** Options: (a) Phase 8 GPU tables, (b) Phase 7 TPS, (c) forward mode with the source search on
-   primal geometry (same idea as D30, for `csr_kick_pz` with `Dual` geometry), (d) investigate item 3 below first.
-2. **Flaky FD test** (`test_rrule` "images, bmad_compat", ∂/∂s_kick fails ~2 of 3 runs; pre-existing, Section 4).
-   Options: seed the RNG in `ad_rrule_test.jl` (deterministic, hides the noise), or drop s_kick from that FD check
-   (keep it in the exact rrule == ForwardDiff checks). Recommendation: drop s_kick from the FD check, since the FD
-   reference is the noisy side.
-3. **Blocking-dependent forward-mode derivative** (~3e-9; `ad_rrule_test.jl` alone on 1 thread fails two composed
-   checks; pre-existing, Section 4). Investigate now, or log and loosen the composed bounds to 1e-8?
-4. **Branch `geom-pullback`** (`94edcb7`, not pushed): review and push/merge when satisfied.
-5. **Julia version:** juliaup `release` is now 1.13.1 (PLAN listed 1.12.7). Keep testing on 1.13.1, or pin 1.12?
-6. Still open from before: V2 (ion kick prefactor), V3 (`s_ref_to_s_chord`), filing the upstream reports
+**Session 2026-10-14 (evening), user decisions:** forward mode with primal search (done, D31); drop s_kick from the
+flaky FD check (done, D32); investigate the 3e-9 issue (done: not reproducible, no blocking dependence, Section 4);
+keep testing on Julia 1.13.1.
+
+**Decisions pending for the user:**
+1. **Next work item.** Options: (a) Phase 8 GPU tables, (b) Phase 7 TPS (the `PrimalSearch` route of D31 is where a
+   TPS root would attach), (c) other.
+2. **Branches `geom-pullback` and `fwd-primal-search`** (not pushed): review and push/merge when satisfied.
+3. Still open from before: V2 (ion kick prefactor), V3 (`s_ref_to_s_chord`), filing the upstream reports
    (`planning/upstream_reports.md`), GitHub Pages setup (see "For the user" below).
 
 Original notes for step 3 (from the reorg handoff, 2026-10-14): Goal: derivatives of a kick w.r.t. the geometry and the reference speed/energy (γ), and `s_kick`.
@@ -111,7 +110,7 @@ pushing.
 - Package `~/.julia/dev/CSR.jl`; dev checkouts beside it: `BeamTracking.jl` (v0.8.7, `65e343f`), `Beamlines.jl`
   (v0.11.0, `35fe016`), `AtomicAndPhysicalConstants.jl`, `GTPSA.jl`, `SciBmad.jl`, `SpaceCharge.jl`.
 - Bmad source `~/bmad-ecosystem` (`7c9df4059`, REL 20261014-0 on one machine); conda env `~/miniforge3/envs/bmad`.
-- Julia 1.12.7 via juliaup (juliaup `release` is now 1.13.1; the 2026-10-14 D30 session ran on 1.13.1). `Project.toml`: `julia = "1.10"`.
+- Julia 1.13.1 via juliaup `release` (user, 2026-10-14; earlier phases ran on 1.12.7). `Project.toml`: `julia = "1.10"`.
 
 ### Git
 - Remote `origin` (`github.com/rot4te/CSR.jl`). Branches: `main` (`ae0ae77`), `phase6-open-questions` (`468fc83`, pushed
@@ -167,6 +166,8 @@ extensions silently do not load.
 | D28 | 10-14 | ForwardDiff is a hard dependency (already one of BeamTracking; CSR.jl is rarely used alone). `CSRForwardDiffExt` removed; `primal(::Dual)`, `root_tangent`, `RootTag` in core. Compat `ForwardDiff = "1.3.3"` (BeamTracking's; only 1.4.6 tested). |
 | D29 | 10-14 | `CSRKick1` immutable (user: prefer immutable types); the source-point functions return updated copies. |
 | D30 | 10-14 | Cheaper geometry pullback: source search on primal `Float64` + per-evaluation local `Dual`s (user chose this over per-lag seeding, Step 1 only, and hand-written reverse adjoints; also over "the BeamTracking.jl method"). |
+| D31 | 10-14 | Forward mode: `Dual` tables search sources on a primal copy of geometry and kick point (`PrimalSearch`), then evaluate once in `Dual`s (user chose this as the next item). |
+| D32 | 10-14 | Flaky FD test: s_kick dropped from the `test_rrule` FD check with images in compat (not an RNG seed); the exact rrule == ForwardDiff check keeps it. |
 
 ---
 
@@ -180,13 +181,17 @@ extensions silently do not load.
   crosses zero). Both negligible so far; not investigated further.
 - At h = 1 cm the hat-integrated shielded result depends on n_bin below ~240 bins (likely charge-density resolution
   on a small residual; not verified).
-- Test issues found 2026-10-14 (Julia 1.13.1), present at `90e0b77` too (checked in a worktree), not caused by D30:
-  (1) running `ad_rrule_test.jl` alone on 1 thread, the "vs ForwardDiff: images" composed checks give 2.86e-9 (g) and
-  4.99e-9 (ref_exit) vs bound 1e-9, deterministically; inside the full suite (1 or 4 threads) they pass. Two ForwardDiff paths (through the geometry vector, and
-  directly through g) differ by 2.86e-9 at 1 thread, so some forward-mode derivative depends on the table blocking
-  (warm starts). Not investigated. (2) `test_rrule` "images, bmad_compat": the s_kick cotangent vs FD fails in ~2 of
-  3 runs (random tangents; AD == ForwardDiff to 1e-15, so the FD reference is off; FD steps ≤ 1e-6 vs zbrent noise).
-  Options: seed the RNG, or drop s_kick from that FD check. User to decide.
+- Test issues found 2026-10-14 (Julia 1.13.1), both closed the same evening:
+  (1) "composed checks fail at 2.86e-9 when `ad_rrule_test.jl` runs alone on 1 thread": **not reproducible** at
+  `5461eaa` (alone with `kernels_test.jl` for its helpers, 1 thread: pass; scripts on 1 and 4 threads: composed vs
+  ForwardDiff(g) 7.2e-11 images, 1.5e-11 compat, bound 1e-9). How the earlier "alone" run was set up is unknown.
+  **No blocking dependence:** `Dual` wake and image tables are bitwise identical for `n_block` 1, 3, 4, 16, 81 (values
+  and partials, default and compat). Single-direction derivatives through the two routes (Dual g vs Dual geometry
+  vector along J[:, i]) agree exactly, and seeds scaled by powers of 2 give bitwise identical derivatives (no branch
+  reads partials). Other seed scales spread a derivative by ~2e-11–5e-11 relative, with images only (free space
+  ≤ 3e-14): round-off amplified in the image derivative (likely `1 − N·β′ ≈ 1/(2γ²)`, cubed, and the root slope
+  `∂ddz/∂s = O(1/γ²)`; the attribution is an inference, not measured term by term). The 7e-11 is that round-off.
+  (2) `test_rrule` "images, bmad_compat" s_kick FD flake: fixed by D32 (3/3 runs pass).
 - Float32 on GPUs limits strongly shielded kicks to ~3e-4 relative (cancellation); a mixed-precision table/convolve
   path would be needed for better.
 
@@ -208,7 +213,7 @@ Top level: types and host-side functions (launch kernels, allocate, check). `ker
 |---|---|
 | `CSR.jl` | Module, exports (`CSRParams, FloorPosition, CSRGeometry, CSRElementInfo, CSRBins, CSRKickPoint, CSRStepResult, planar_survey, csr_bin_particles, csr_kick!, csr_kick_pz, csr_kick_coef, csr_n_step, dspline_len, track_csr!`), includes (types first: method signatures annotate them). |
 | `types.jl` | `FloorPosition`, `CSRElementInfo`, `CSRGeometry`, `CSRKickPoint`, `CSRKick1`, `CSRBins`, `CSRStepResult`, `CSRParams` (with validation; docstring lists every compat difference). |
-| `geometry.jl` | `CSRGeometry(L, g, centroid; ref_start, bmad_compat)`, `CSRGeometry(L, g, ref_exit, centroid)`, `CSRKickPoint(geom, ix, s_kick, γ; y_source, kick_factor)`. |
+| `geometry.jl` | `CSRGeometry(L, g, centroid; ref_start, bmad_compat)`, `CSRGeometry(L, g, ref_exit, centroid)`, `CSRKickPoint(geom, ix, s_kick, γ; y_source, kick_factor)`, `primal` of `FloorPosition`/`CSRElementInfo`/`CSRGeometry`/`CSRKickPoint`. |
 | `binning.jl` | `csr_bin_particles` (grid in the particles' float type; Int32 counter; serial path for non-atomic types). |
 | `tables.jl` | `csr_wake_table`, `csr_image_table` (CPU only). |
 | `kick.jl` | `csr_convolve!`, `csr_image_convolve!`, `csr_apply_kicks!`, `csr_kick!`, `csr_kick_pz`, `csr_binned_kick` (tables on `table_backend`, `to_backend`, layer weights), `csr_step_result`. |
@@ -217,7 +222,8 @@ Top level: types and host-side functions (launch kernels, allocate, check). `ker
 | `reference.jl` | Serial reference (`csr_*_reference`), ground truth for the kernels. |
 | `interface.jl` | Stubs + docstrings for `slice_element`, `csr_sliceable`, `track_csr!`. |
 | `kernels/binning.jl` | `triangle_overlap`, `deposit_ix0`, `deposit_particle!`, `csr_deposit_kernel!`, `csr_edge_gradient_kernel!`. |
-| `kernels/source_point.jl` | `ddz_calc_csr` (optional `dmid` offset of the middle-element sums, `middle_excess`), `s_source_calc` = `s_source_walk` (returns a `SourceOutcome`) with branch helpers `upstream_drift_source`, `downstream_drift_source`, `source_at`, `root_source`; `s_source_eval` (re-evaluate an outcome in another number type without searching); V4 literal, V7, V8, downstream search, infinite drifts with walk-back; `csr_kick1_like`. |
+| `kernels/source_point.jl` | `ddz_calc_csr` (optional `dmid` offset of the middle-element sums, `middle_excess`), `s_source_calc` = `s_source_walk` (returns a `SourceOutcome`) with branch helpers `upstream_drift_source`, `downstream_drift_source`, `source_at`, `root_source`; `s_source_eval` (re-evaluate an outcome in another number type without searching); `PrimalSearch`, `primal_search`,
+`s_source_calc(k, geom, kp, search)` (D31; the table kernels and image/wake quadratures take a trailing `search`); V4 literal, V7, V8, downstream search, infinite drifts with walk-back; `csr_kick1_like`. |
 | `kernels/wake.jl` | `I_csr_value`, `I_csr_calc` (Bmad `I_csr`), `I_csr_integral`, `I_csr_quadrature`, `csr_wake_kernel!`, `csr_trapezoid_kernel!`, `csr_bin_quadrature_kernel!`. |
 | `kernels/image_charges.jl` | `image_charge_kick`, `csr_image_kernel!`, hat integration (`image_kernel_at`, `image_simpson`, `image_segment`, `image_interval_moments`, each returning `(k, value)`, `csr_image_hat_kernel!`, `csr_image_hat_combine_kernel!`). |
 | `kernels/convolve.jl`, `kernels/kick.jl` | `csr_convolve_kernel!`, `csr_image_convolve_kernel!`; `csr_apply_kicks_kernel!`. |
@@ -568,6 +574,28 @@ Hat costs ~5× the source solves of point sampling.
   4 threads, 80 elements: 36 ms (free), 119 ms (4 layers), before the middle-sum linearization (13× then). Remaining
   cost: ~60% the local-Dual evaluations, ~13% the first-bin fallback (10-element profile).
 
+### Forward mode with primal source search, D31 (10-14 evening, branch `fwd-primal-search`)
+- `PrimalSearch(primal(geom), primal(kp))` built once per table call when the table type is a `Dual`
+  (`primal_search`); `s_source_calc(k, geom, kp, search)` walks in `Float64` (`s_source_walk`) and evaluates once
+  (`s_source_eval`). Threaded as a trailing `search` argument through `csr_wake_kernel!`, `csr_bin_quadrature_kernel!`,
+  `I_csr_calc`/`I_csr_integral`/`I_csr_quadrature`, `csr_image_kernel!`, `csr_image_hat_kernel!`,
+  `image_interval_moments`/`image_segment`/`image_simpson`/`image_kernel_at` (default `nothing` = old path).
+  `image_hat_tol` on the primal copies. `first_bin_adjoint!` (pullback) uses it too.
+- Check: `Dual` wake/image tables (values and all partials, 16 cases: default/compat, mid-lattice, entrance kick,
+  upstream drift, images past the end, both table modes) bitwise identical to `5461eaa`. New test: primal search ==
+  search in Duals (sources in the lattice, ahead, both infinite drifts).
+- Timing (`diagnostics/bench_forward.jl`, ρ = 10 m arc of 0.1 m elements, kick in the last element, 1 thread), one
+  pass with 12 partials, before → after (× the Float64 kick):
+
+  | Elements | free space, n_bin 200 | 4 layers, n_bin 120 |
+  |---|---|---|
+  | 10 | 2.6 → 1.8 ms (6.8× → 4.6×) | 37.2 → 17.9 ms (7.6× → 3.7×) |
+  | 80 | 105.5 → 37.9 ms (12.8× → 4.6×) | 256.9 → 95.2 ms (11.5× → 4.3×) |
+  | 400 | — → 38.0 ms (4.5×) | — → 95.6 ms (4.2×) |
+
+  1 partial: 1.7–2.5× → 1.6–1.9×. Pullback (same session, interleaved): 10 elements free space 10.4 → 9.1 ms; other
+  cases within noise. Suite 1424/1424 on 1 and 4 threads (Julia 1.13.1); docs build clean.
+
 ### Stage C (10-14, branch `stage-c`)
 - **Step 0.** Compat `Beamlines = "0.10.6, 0.11"`, `BeamTracking = "0.8.7"` (registered 0.8.5–0.8.7 contain
   `RungeKutta`; only 0.8.7 tested). 857/857 against dev BeamTracking 0.8.7, Beamlines 0.11.0.
@@ -669,6 +697,6 @@ Metal tests in the suite (conditional on Metal.jl).
 | `verify_analytic.jl` | Section 8 checks (Base Julia). |
 | `dspline_coeff.md`, `upstream-bin.md` | Write-ups for V1 and V5. |
 | `upstream_reports.md` | Drafted upstream reports (Section 4). |
-| `diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`; data `layer_terms_*.txt` (the `_400` files predate V9). |
+| `diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`, `bench_pullback.jl`, `bench_forward.jl`; data `layer_terms_*.txt` (the `_400` files predate V9). |
 | `../crosscheck/` | Bmad/Tao cross-check (README there). |
 | `../docs/` | Documenter docs (`julia --project=docs docs/make.jl`; `docs/README.md`); pages Home, Usage, Physics model, Physics decisions, Validation, API, Internals. Deployed by `.github/workflows/Documentation.yml` from `main`. Keep "Physics decisions" in sync with Section 3 when physics changes. |

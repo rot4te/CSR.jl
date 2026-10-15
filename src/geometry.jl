@@ -81,3 +81,18 @@ function CSRKickPoint(geom::CSRGeometry, ix_ele_kick, s_kick, gamma; y_source = 
   beta = sqrt(1 - 1 / gamma^2)
   return CSRKickPoint(ix_ele_kick, s_kick, s_chord_kick, FloorPosition(r, theta), gamma, gamma^2, beta, y_source, kick_factor)
 end
+
+"""
+    primal(f::FloorPosition), primal(e::CSRElementInfo), primal(geom::CSRGeometry), primal(kp::CSRKickPoint)
+
+Copy with the primal value of every number (`Float64` from `Dual`s). A `CSRGeometry{Float64}` is returned as is.
+"""
+primal(f::FloorPosition) = FloorPosition(primal.(f.r), primal(f.theta))
+primal(e::CSRElementInfo) =
+  CSRElementInfo(primal(e.L), primal(e.g), primal(e.s_start), primal(e.ref_floor0), primal(e.ref_floor1), primal(e.floor0),
+                 primal(e.floor1), primal(e.theta_chord), primal(e.L_chord), primal.(e.spline), primal(e.dL_s))
+primal(geom::CSRGeometry{Float64}) = geom
+primal(geom::CSRGeometry) = CSRGeometry(primal(geom.start), map(primal, geom.ele), geom.bmad_compat)
+primal(kp::CSRKickPoint) =
+  CSRKickPoint(kp.ix_ele_kick, primal(kp.s_kick), primal(kp.s_chord_kick), primal(kp.floor_k), primal(kp.gamma),
+               primal(kp.gamma2), primal(kp.beta), primal(kp.y_source), primal(kp.kick_factor))

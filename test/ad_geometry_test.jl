@@ -54,6 +54,22 @@
     end
   end
 
+  # Dual tables search their sources in primal values (PrimalSearch) and evaluate them once in Duals: the same work
+  # struct as searching in Duals, for sources in the lattice, ahead of the kick point and on both infinite drifts
+  @testset "Primal search == search in Duals (bmad_compat = $bc)" for bc in (false, true)
+    G = CSRGeometry(L3, ForwardDiff.Dual.(g3, 1.0, 0.5), c3; bmad_compat = bc)
+    for (ix, y) in ((1, 0.0), (2, 0.0), (2, 0.01), (3, 0.01))
+      kp = CSRKickPoint(G, ix, 0.17, ForwardDiff.Dual(200.0, 1.0, 0.0); y_source = y)
+      search = CSR.primal_search(G, kp, CSR.number_type(kp))
+      @test search isa CSR.PrimalSearch
+      for dz in (-0.5, -1e-3, -2e-5, 2e-5, 3e-4, 1e-3, 0.5)
+        k = CSR.CSRKick1(G, kp; dz_particles = dz)
+        @test CSR.s_source_calc(k, G, kp, search) == CSR.s_source_calc(k, G, kp)
+      end
+    end
+    @test CSR.primal_search(CSR.primal(G), CSR.primal(CSRKickPoint(G, 2, 0.17, 200.0)), Float64) === nothing
+  end
+
   @testset "Hat-integrated image table" begin
     dz = csr_bin_particles(z, q, alive, CSRParams(n_bin = 40)).dz
     function tab(gv, cv)

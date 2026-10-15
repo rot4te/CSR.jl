@@ -139,6 +139,42 @@ past the end). Bmad does not do this; `geom.bmad_compat` restores Bmad's behavio
 end
 
 """
+    PrimalSearch(geom, kp)
+
+Primal copies (`primal`) of a geometry and kick point, in which `s_source_calc(k, geom, kp, search)` searches the
+source before evaluating it once in the number types of `geom` and `kp` (e.g. `Dual`s): the search's evaluations
+are not differentiated. Built by `primal_search`.
+"""
+struct PrimalSearch{G<:CSRGeometry,K<:CSRKickPoint}
+  geom::G
+  kp::K
+end
+
+"""
+    primal_search(geom, kp, T) -> PrimalSearch or nothing
+
+`PrimalSearch(primal(geom), primal(kp))` for tables in number type `T <: Dual`, else `nothing` (search and evaluate
+in the same number type).
+"""
+primal_search(geom::CSRGeometry, kp::CSRKickPoint, ::Type{T}) where {T} =
+  T <: Dual ? PrimalSearch(primal(geom), primal(kp)) : nothing
+
+"""
+    s_source_calc(k, geom, kp, search) -> (k, s_chord_source)
+
+`s_source_calc(k, geom, kp)` for `search === nothing`. With a `PrimalSearch`, the source is searched in its primal
+geometry (`s_source_walk`, from element `k.ix_ele_source`) and evaluated in `geom` and `kp` (`s_source_eval`); same
+result, as the search decides on primal values only.
+"""
+@inline s_source_calc(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint, ::Nothing) = s_source_calc(k, geom, kp)
+
+@inline function s_source_calc(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint, search::PrimalSearch)
+  k0 = CSRKick1(; ix_ele_source = k.ix_ele_source, dz_particles = primal(k.dz_particles))
+  _, _, o = s_source_walk(k0, search.geom, search.kp)
+  return s_source_eval(o, k, geom, kp)
+end
+
+"""
     upstream_drift_source(k, geom, kp, dmid) -> (k, ds_source)
 
 Source on the infinite drift upstream of the lattice (closed-form root; `ds_source < 0` from the lattice start).

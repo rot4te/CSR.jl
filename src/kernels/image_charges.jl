@@ -35,17 +35,17 @@ function image_charge_kick(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
 end
 
 """
-    csr_image_kernel!(image, s_source, geom, kp, dz, n_lag)
+    csr_image_kernel!(image, s_source, geom, kp, dz, n_lag, search)
 
 Image kick for lags i = -n_bin:n_bin, stored at index i + n_bin + 1. One work item per block of `n_lag`
-consecutive lags, warm-started within a block as csr_wake_kernel!.
+consecutive lags, warm-started within a block as csr_wake_kernel!. `search` as in `s_source_calc`.
 """
-@kernel function csr_image_kernel!(image, s_source, geom, kp, dz, n_lag)
+@kernel function csr_image_kernel!(image, s_source, geom, kp, dz, n_lag, search)
   b = @index(Global)
   n_bin = (length(image) - 1) ÷ 2
   k = CSRKick1(geom, kp)
   for j in (b - 1) * n_lag + 1:min(b * n_lag, length(image))
-    k, s_chord = s_source_calc(with_fields(k; dz_particles = (j - n_bin - 1) * dz), geom, kp)
+    k, s_chord = s_source_calc(with_fields(k; dz_particles = (j - n_bin - 1) * dz), geom, kp, search)
     @inbounds begin
       image[j] = image_charge_kick(k, geom, kp)
       s_source[j] = source_s(geom, k.ix_ele_source, s_chord)
@@ -54,27 +54,28 @@ consecutive lags, warm-started within a block as csr_wake_kernel!.
 end
 
 """
-    image_kernel_at(k, u, geom, kp) -> (k, K)
+    image_kernel_at(k, u, geom, kp, search = nothing) -> (k, K)
 
-Image kick at lag u (the source search starts from the element in `k`), and the work struct after the search.
+Image kick at lag u (the source search starts from the element in `k`; `search` as in `s_source_calc`), and the
+work struct after the search.
 """
-function image_kernel_at(k::CSRKick1, u, geom::CSRGeometry, kp::CSRKickPoint)
-  k, _ = s_source_calc(with_fields(k; dz_particles = u), geom, kp)
+function image_kernel_at(k::CSRKick1, u, geom::CSRGeometry, kp::CSRKickPoint, search = nothing)
+  k, _ = s_source_calc(with_fields(k; dz_particles = u), geom, kp, search)
   return k, image_charge_kick(k, geom, kp)
 end
 
 """
-    image_simpson(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol, h_min, depth, leaf = nothing) -> (k, S)
+    image_simpson(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol, h_min, depth, leaf = nothing, search = nothing) -> (k, S)
 
 Adaptive Simpson for S = (∫K, ∫K t) over [a, b], t = (u - u0) / dz; fa, fm, fb are K at a, (a + b)/2, b.
 Intervals narrower than `h_min` are not split (the kernel has round-off noise from the source search). Each accepted
 interval `[a, b]` contributes Boole's rule on its 5 nodes; `leaf(a, b)` is called for it unless `leaf === nothing`
-(`csr_kick_param_adjoint`).
+(`csr_kick_param_adjoint`). `search` as in `s_source_calc`.
 """
-function image_simpson(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol, h_min, depth, leaf = nothing)
+function image_simpson(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol, h_min, depth, leaf = nothing, search = nothing)
   m = (a + b) / 2
-  k, fl = image_kernel_at(k, (a + m) / 2, geom, kp)
-  k, fr = image_kernel_at(k, (m + b) / 2, geom, kp)
+  k, fl = image_kernel_at(k, (a + m) / 2, geom, kp, search)
+  k, fr = image_kernel_at(k, (m + b) / 2, geom, kp, search)
   g(u, f) = SVector(f, f * (u - u0) / dz)
   h = b - a
   S1 = h / 6 * (g(a, fa) + 4g(m, fm) + g(b, fb))
@@ -83,32 +84,32 @@ function image_simpson(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol, h_min, depth,
     leaf === nothing || leaf(a, b)
     return k, S2 + (S2 - S1) / 15
   end
-  k, Sl = image_simpson(k, geom, kp, a, m, fa, fl, fm, u0, dz, tol / 2, h_min, depth - 1, leaf)
-  k, Sr = image_simpson(k, geom, kp, m, b, fm, fr, fb, u0, dz, tol / 2, h_min, depth - 1, leaf)
+  k, Sl = image_simpson(k, geom, kp, a, m, fa, fl, fm, u0, dz, tol / 2, h_min, depth - 1, leaf, search)
+  k, Sr = image_simpson(k, geom, kp, m, b, fm, fr, fb, u0, dz, tol / 2, h_min, depth - 1, leaf, search)
   return k, Sl + Sr
 end
 
 """
-    image_segment(k, geom, kp, a, b, u0, dz, tol, h_min, leaf = nothing) -> (k, S)
+    image_segment(k, geom, kp, a, b, u0, dz, tol, h_min, leaf = nothing, search = nothing) -> (k, S)
 
 `S = (∫K, ∫K t)` over `[a, b]`, `t = (u - u0)/dz`, by `image_simpson` from the kernel at `a`, the midpoint and `b`.
 """
-function image_segment(k, geom, kp, a, b, u0, dz, tol, h_min, leaf = nothing)
-  k, fa = image_kernel_at(k, a, geom, kp)
-  k, fm = image_kernel_at(k, (a + b) / 2, geom, kp)
-  k, fb = image_kernel_at(k, b, geom, kp)
-  return image_simpson(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol, h_min, 40, leaf)
+function image_segment(k, geom, kp, a, b, u0, dz, tol, h_min, leaf = nothing, search = nothing)
+  k, fa = image_kernel_at(k, a, geom, kp, search)
+  k, fm = image_kernel_at(k, (a + b) / 2, geom, kp, search)
+  k, fb = image_kernel_at(k, b, geom, kp, search)
+  return image_simpson(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol, h_min, 40, leaf, search)
 end
 
 """
-    image_interval_moments(k, geom, kp, m, dz, tol, u_min, leaf = nothing) -> (k, moments)
+    image_interval_moments(k, geom, kp, m, dz, tol, u_min, leaf = nothing, search = nothing) -> (k, moments)
 
 Hat-function moments of the image kernel over lag interval m, [m dz, (m+1) dz]: (∫K t, ∫K (1 - t)),
 t = u/dz - m. `tol` is the absolute tolerance on the interval. The intervals touching u = 0 are split
 geometrically down to `u_min` first, so that structure finer than the first Simpson nodes is not missed
-(on a drift the kernel peaks at |u| = y/(√2 γ)). `leaf` as in `image_simpson`.
+(on a drift the kernel peaks at |u| = y/(√2 γ)). `leaf` and `search` as in `image_simpson`.
 """
-function image_interval_moments(k, geom, kp, m, dz, tol, u_min, leaf = nothing)
+function image_interval_moments(k, geom, kp, m, dz, tol, u_min, leaf = nothing, search = nothing)
   a = m * dz
   if m == 0 || m == -1
     sgn = m == 0 ? 1 : -1
@@ -116,30 +117,31 @@ function image_interval_moments(k, geom, kp, m, dz, tol, u_min, leaf = nothing)
     x = dz
     while x / 2 > u_min
       lo, hi = minmax(sgn * x / 2, sgn * x)
-      k, S = image_segment(k, geom, kp, lo, hi, a, dz, tol * (x / 2) / dz, u_min, leaf)
+      k, S = image_segment(k, geom, kp, lo, hi, a, dz, tol * (x / 2) / dz, u_min, leaf, search)
       acc += S
       x /= 2
     end
     lo, hi = minmax(0.0, sgn * x)
-    k, S = image_segment(k, geom, kp, lo, hi, a, dz, tol * x / dz, u_min, leaf)
+    k, S = image_segment(k, geom, kp, lo, hi, a, dz, tol * x / dz, u_min, leaf, search)
     acc += S
   else
-    k, acc = image_segment(k, geom, kp, a, a + dz, a, dz, tol, u_min, leaf)
+    k, acc = image_segment(k, geom, kp, a, a + dz, a, dz, tol, u_min, leaf, search)
   end
   return k, SVector(acc[2], acc[1] - acc[2])
 end
 
 """
-    csr_image_hat_kernel!(rise, fall, geom, kp, dz, tol, u_min, n_int)
+    csr_image_hat_kernel!(rise, fall, geom, kp, dz, tol, u_min, n_int, search)
 
 Moments for lag intervals m = -n_bin-1:n_bin (index m + n_bin + 2), blocks of `n_int` consecutive intervals.
+`search` as in `s_source_calc`.
 """
-@kernel function csr_image_hat_kernel!(rise, fall, geom, kp, dz, tol, u_min, n_int)
+@kernel function csr_image_hat_kernel!(rise, fall, geom, kp, dz, tol, u_min, n_int, search)
   b = @index(Global)
   n_bin = (length(rise) - 2) ÷ 2
   k = CSRKick1(geom, kp)
   for j in (b - 1) * n_int + 1:min(b * n_int, length(rise))
-    k, mom = image_interval_moments(k, geom, kp, j - n_bin - 2, dz, tol, u_min)
+    k, mom = image_interval_moments(k, geom, kp, j - n_bin - 2, dz, tol, u_min, nothing, search)
     @inbounds rise[j] = mom[1]
     @inbounds fall[j] = mom[2]
   end

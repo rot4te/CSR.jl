@@ -7,15 +7,15 @@ function I_csr_value(k::CSRKick1, kp::CSRKickPoint)
 end
 
 """
-    I_csr_calc(k, i_bin, dz_slice, geom, kp, I_csr_prev) -> k
+    I_csr_calc(k, i_bin, dz_slice, geom, kp, I_csr_prev, search = nothing) -> k
 
 Bmad `I_csr`: `k` with the CSR kick integral `I_csr` for separation `k.dz_particles` and its integral over the bin,
 `I_int_csr`. For `i_bin = 1` the integral from 0 uses Bmad's closed form over the kick element, which
 handles the near-field log singularity, plus (if the source is upstream of the kick element) the rest of
 the bin by quadrature (`I_csr_integral`; Bmad's approximation with `geom.bmad_compat`). For `i_bin > 1`
-it is a trapezoid with the previous bin's `I_csr_prev`.
+it is a trapezoid with the previous bin's `I_csr_prev`. `search` as in `s_source_calc` (for the quadrature's sources).
 """
-function I_csr_calc(k::CSRKick1, i_bin, dz_slice, geom::CSRGeometry, kp::CSRKickPoint, I_csr_prev)
+function I_csr_calc(k::CSRKick1, i_bin, dz_slice, geom::CSRGeometry, kp::CSRKickPoint, I_csr_prev, search = nothing)
   # No kick when the source particle is ahead of the kicked particle
   z = k.dz_particles
   primal(z) <= 0 && return with_fields(k; I_csr = 0.0, I_int_csr = 0.0)
@@ -54,7 +54,7 @@ function I_csr_calc(k::CSRKick1, i_bin, dz_slice, geom::CSRGeometry, kp::CSRKick
         # (I ∝ u^(-1/3), zz ≪ z) this gives 2/3 of the integral.
         I_int_csr += I_csr * (z - zz)
       else
-        I_int_csr += I_csr_integral(zz, z, geom, kp)
+        I_int_csr += I_csr_integral(zz, z, geom, kp, search)
       end
     end
   else
@@ -64,14 +64,15 @@ function I_csr_calc(k::CSRKick1, i_bin, dz_slice, geom::CSRGeometry, kp::CSRKick
 end
 
 """
-    I_csr_integral(z0, z1, geom, kp; n = 16)
+    I_csr_integral(z0, z1, geom, kp, search = nothing; n = 16)
 
 `∫ I_csr(u) du` from `z0` to `z1` by composite Simpson in `t = u^(1/3)`, which makes the near-field
-`u^(-1/3)` behaviour smooth. Each node needs its own source-point solve, started in the kick element.
+`u^(-1/3)` behaviour smooth. Each node needs its own source-point solve, started in the kick element (`search` as in
+`s_source_calc`).
 """
-function I_csr_integral(z0, z1, geom::CSRGeometry, kp::CSRKickPoint; n = 16)
+function I_csr_integral(z0, z1, geom::CSRGeometry, kp::CSRKickPoint, search = nothing; n = 16)
   function f(t)
-    k, _ = s_source_calc(CSRKick1(geom, kp; dz_particles = t^3), geom, kp)
+    k, _ = s_source_calc(CSRKick1(geom, kp; dz_particles = t^3), geom, kp, search)
     return I_csr_value(k, kp) * 3t^2
   end
   t0 = cbrt(z0)
@@ -85,19 +86,19 @@ function I_csr_integral(z0, z1, geom::CSRGeometry, kp::CSRKickPoint; n = 16)
 end
 
 """
-    I_csr_quadrature(k, z0, z1, geom, kp, n) -> (k, integral)
+    I_csr_quadrature(k, z0, z1, geom, kp, n, search = nothing) -> (k, integral)
 
 As `I_csr_integral`, with each source search starting where the previous one ended (from `k`; nodes in increasing
 order). Searches end in the same element whatever the start element, so the result does not depend on the warm
-start. Returns the work struct after the last node, for the next warm start.
+start. Returns the work struct after the last node, for the next warm start. `search` as in `s_source_calc`.
 """
-function I_csr_quadrature(k::CSRKick1, z0, z1, geom::CSRGeometry, kp::CSRKickPoint, n)
+function I_csr_quadrature(k::CSRKick1, z0, z1, geom::CSRGeometry, kp::CSRKickPoint, n, search = nothing)
   t0 = cbrt(z0)
   h = (cbrt(z1) - t0) / n
   acc = zero(number_type(k))
   for j in 0:n
     t = j == n ? cbrt(z1) : t0 + j * h
-    k, _ = s_source_calc(with_fields(k; dz_particles = t^3), geom, kp)
+    k, _ = s_source_calc(with_fields(k; dz_particles = t^3), geom, kp, search)
     w = (j == 0 || j == n) ? 1 : (isodd(j) ? 4 : 2)
     acc += w * I_csr_value(k, kp) * 3t^2
   end
@@ -105,19 +106,19 @@ function I_csr_quadrature(k::CSRKick1, z0, z1, geom::CSRGeometry, kp::CSRKickPoi
 end
 
 """
-    csr_wake_kernel!(I_csr, I_int, s_source, geom, kp, dz, n_lag)
+    csr_wake_kernel!(I_csr, I_int, s_source, geom, kp, dz, n_lag, search)
 
 One work item per block of `n_lag` consecutive lags i (separation i*dz). Within a block each source search
 starts where the previous lag's ended (as in Bmad); the first lag of a block starts in the kick element.
 Searches end in the same element, and call zbrent on the same bracket, whatever the start element.
-For i > 1, I_int is overwritten by csr_trapezoid_kernel!.
+For i > 1, I_int is overwritten by csr_trapezoid_kernel!. `search` as in `s_source_calc`.
 """
-@kernel function csr_wake_kernel!(I_csr, I_int, s_source, geom, kp, dz, n_lag)
+@kernel function csr_wake_kernel!(I_csr, I_int, s_source, geom, kp, dz, n_lag, search)
   b = @index(Global)
   k = CSRKick1(geom, kp)
   for i in (b - 1) * n_lag + 1:min(b * n_lag, length(I_csr))
-    k, s_chord = s_source_calc(with_fields(k; dz_particles = i * dz), geom, kp)
-    k = I_csr_calc(k, i, dz, geom, kp, 0.0)
+    k, s_chord = s_source_calc(with_fields(k; dz_particles = i * dz), geom, kp, search)
+    k = I_csr_calc(k, i, dz, geom, kp, 0.0, search)
     @inbounds begin
       I_csr[i] = k.I_csr
       I_int[i] = k.I_int_csr
@@ -139,16 +140,16 @@ false` or `bmad_compat`). One work item per bin.
 end
 
 """
-    csr_bin_quadrature_kernel!(I_int, geom, kp, dz, n_lag, n_quad)
+    csr_bin_quadrature_kernel!(I_int, geom, kp, dz, n_lag, n_quad, search)
 
 Bins i ≥ 2 by quadrature: one work item per block of `n_lag` consecutive bins (bin i is block element i - 1);
-the source search is warm-started from node to node and bin to bin within a block.
+the source search is warm-started from node to node and bin to bin within a block. `search` as in `s_source_calc`.
 """
-@kernel function csr_bin_quadrature_kernel!(I_int, geom, kp, dz, n_lag, n_quad)
+@kernel function csr_bin_quadrature_kernel!(I_int, geom, kp, dz, n_lag, n_quad, search)
   b = @index(Global)
   k = CSRKick1(geom, kp)
   for i in (b - 1) * n_lag + 2:min(b * n_lag + 1, length(I_int))
-    k, v = I_csr_quadrature(k, (i - 1) * dz, i * dz, geom, kp, n_quad)
+    k, v = I_csr_quadrature(k, (i - 1) * dz, i * dz, geom, kp, n_quad, search)
     @inbounds I_int[i] = v
   end
 end
