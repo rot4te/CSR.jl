@@ -14,7 +14,8 @@ function lc_bunch(ele)
   v = [ 1e-3 -2e-4  5e-4  3e-4  1e-3  2e-3;
        -2e-3  1e-4 -1e-3 -2e-4 -5e-4 -1e-3;
         0.0   0.0   0.0   0.0   0.0   0.0]
-  return Bunch(v; species = LC_E, p_over_q_ref = BeamTracking.E_to_R(LC_E, ele.E_ref - ele.dE_ref))
+  # Nonzero entrance t_ref: BeamTracking ≥ 0.8.7 adds the cavity's dt_ref to it
+  return Bunch(v; species = LC_E, p_over_q_ref = BeamTracking.E_to_R(LC_E, ele.E_ref - ele.dE_ref), t_ref = 1e-6)
 end
 
 # Track `ele` as n slices with boundaries as in track_csr! (s0 + L_slice == next s0 exactly).
@@ -123,6 +124,12 @@ is_sagan(ele) = ele.tracking_method isa SaganCavity
       b2 = lc_line_bunch()
       track_csr!(b2, br; params = p, csr_on = e -> false)
       @test b2.coords.v == b1.coords.v
+      @test b2.t_ref == b1.t_ref
+      # Only the cavity sliced (CSR on there): t_ref accumulates through the slices as through the whole cavity
+      b3 = lc_line_bunch()
+      track_csr!(b3, br; params = p, csr_on = is_sagan)
+      @test b1.t_ref > 1e-9   # the bends upstream give the cavity a nonzero entrance t_ref
+      @test b3.t_ref ≈ b1.t_ref rtol = 1e-14
 
       # CSR inside the cavity does not depend on how finely the reference energy steps (Δpz rescaled from the
       # linearly ramped reference momentum to the stepped one). Without the rescale: 4% (dE = 1e8).

@@ -289,8 +289,9 @@ track_slice!(bunch, s::LineElement, p_over_q_ref) = track!(bunch, s; _p_over_q_r
     track_slice!(bunch, c::SaganSlice)
 
 Track `bunch` through a SaganCavity slice: entrance alignment/aperture, `sagan_slice_kernel!`, exit
-alignment/aperture, with BeamTracking's `KernelChain`/`launch!`. Updates `bunch.t_ref` (whole-cavity `dt_ref` at the
-last slice, as BeamTracking).
+alignment/aperture, with BeamTracking's `KernelChain`/`launch!`. Adds the slice's reference time to `bunch.t_ref`, so
+that after the last slice it is the entrance `t_ref` plus the whole-cavity `dt_ref` (as BeamTracking ≥ 0.8.7; to
+round-off).
 """
 function track_slice!(bunch, c::SaganSlice, p_over_q_ref = c.p_over_q_ref)
   bte = bt_ext()
@@ -304,8 +305,7 @@ function track_slice!(bunch, c::SaganSlice, p_over_q_ref = c.p_over_q_ref)
 
   t_enter = bunch.t_ref
   bg = R_to_beta_gamma(c.species, c.p_over_q_ref)
-  # BeamTracking sets t_ref = dt_ref of the whole cavity at its exit (drops the entrance t_ref).
-  t_exit = c.last ? sagan_dt_ref(c, c.L) : t_enter - sagan_dt_ref(c, c.s0) + sagan_dt_ref(c, c.s1)
+  t_exit = t_enter - sagan_dt_ref(c, c.s0) + sagan_dt_ref(c, c.last ? c.L : c.s1)
   kc = BeamTracking.KernelChain(Val{10}(), BeamTracking.RefState{eltype(coords.v)}(; t_enter, beta_gamma_enter = bg,
                                 t_exit, beta_gamma_exit = bg, L = L_slice, g = (0, 0), ds_step = L_slice))
 

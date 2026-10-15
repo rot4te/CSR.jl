@@ -49,7 +49,9 @@ GTPSA TPS).
 - **`phase7-step5`** (at `v2-v3-physics` `12ec910` when the session started, moved there outside the session), then Phase 7 step 5 (`track_csr!` `test_bunch`;
   user: continue on this existing branch, 2026-10-15).
 - **`upstream-refresh`** (from `phase7-step5` `7d344c9`, 2026-10-15): session item 4 (upstream reports, docs
-  workflow). **Latest state.**
+  workflow).
+- **`sagan-tref`** (from `upstream-refresh` `0ec4424`, 2026-10-15): SaganCavity slices accumulate `t_ref` as
+  BeamTracking 0.8.7 (Section 4). **Latest state.**
 
 | Commit | Branch | Content |
 |---|---|---|
@@ -112,7 +114,8 @@ keep testing on Julia 1.13.1.
 4. **Done 2026-10-15** (branch `upstream-refresh`; Section 9): upstream reports refreshed (Bmad lines unchanged,
    PR #2085 still open with a line map; BeamTracking items 1–3 fixed upstream or not reproducible, removed);
    docs workflow on Documenter 1.19's template versions. **Found:** CSR.jl's SaganCavity slices still copy the old
-   BeamTracking `t_ref` reset, which 0.8.7 fixed (Section 4, open; user decision). The user files the reports and
+   BeamTracking `t_ref` reset, which 0.8.7 fixed; user chose to match 0.8.7, fixed on branch `sagan-tref` (Section 4).
+   The user files the reports and
    enables GitHub Pages.
 5. Later (not today): Stage 2 with variables per D37.
 
@@ -283,13 +286,14 @@ BeamTracking: the `R_to_gamma`/`R_to_v` ion bug only (SaganCavity items fixed in
 (2026-10-09, rechecked 2026-10-15). Bmad PR #2085 still open (2026-10-15); it moves but does not change any cited
 site (line map in `upstream_reports.md`). V9 (small-angle path excess) drafted as Bmad item 5 (2026-10-14).
 
-**Open (user decision), found 2026-10-15:** BeamTracking 0.8.7 (`8c302c6`, 2026-09-18) accumulates `t_ref` through a
-SaganCavity (`t_exit = t_enter + dt_ref`); CSR.jl's `track_slice!(::SaganSlice)` (`sagan.jl`) still reproduces the old
-reset (last slice: `t_exit = sagan_dt_ref(c, c.L)`). `track_csr!` through an lcavity therefore ends with `t_ref` short by
-the cavity's entrance `t_ref` (1.0007e-9 s after three 0.1 m bends; `diagnostics/sagan_tref_check.jl`), CSR on or off
-in the cavity. Coordinates are unaffected as far as the existing tests see (`lcavity_test.jl` compares coordinates
-only, so no test caught it). Proposed fix: last slice `t_enter − sagan_dt_ref(c, s0) + sagan_dt_ref(c, L)` and a
-`t_ref` comparison in `lcavity_test.jl` (round-off tolerance: the telescoped sum is not BeamTracking's expression).
+**Fixed 2026-10-15 (user: match BeamTracking v0.8.7; branch `sagan-tref`):** BeamTracking 0.8.7 (`8c302c6`,
+2026-09-18) accumulates `t_ref` through a SaganCavity (`t_exit = t_enter + dt_ref`); CSR.jl's
+`track_slice!(::SaganSlice)` (`sagan.jl`) reproduced the old reset (last slice: `t_exit = sagan_dt_ref(c, c.L)`), so
+`track_csr!` with the cavity sliced (CSR on there) ended with `t_ref` short by the cavity's entrance `t_ref` (1.0007e-9
+s after three 0.1 m bends; `diagnostics/sagan_tref_check.jl`). Unsliced cavities (CSR off) were tracked by BeamTracking
+and correct. Coordinates were unaffected (the kernels use relative time: BeamTracking's `sagan_cavity` passes
+`t_ref = 0`). Now every slice adds `sagan_dt_ref(c, s1) − sagan_dt_ref(c, s0)` (s1 = L at the last slice); after: 1e-24 s
+from BeamTracking (round-off of the telescoped sum).
 
 ---
 
@@ -419,7 +423,8 @@ Other Bmad notes:
 ### 7b. BeamTracking (checked at `7d79938`; rechecked at 0.8.7 `65e343f` on 2026-10-15)
 - Fixed in 0.8.7 (`8c302c6`, 2026-09-18): `universal!` for SaganCavity set `bunch.t_ref = dt_ref`, dropping the
   entrance `t_ref` (now `t_enter + dt_ref`); error messages interpolated an undefined `ele_name`; a stray `\` ended
-  the FourPotentialParams check line. CSR.jl's `sagan.jl` still reproduces the old `t_ref` reset (Section 4, open).
+  the FourPotentialParams check line. CSR.jl's `sagan.jl` followed the old `t_ref` reset until 2026-10-15 (Section 4,
+  fixed).
 - RFParams with `voltage = 0` count as inactive, so a zero-voltage SaganCavity errors ("without RFParams").
 - Not reproducible with 0.8.7: "`bunch.p_over_q_ref` is not updated after a SaganCavity" (`track!` updates it:
   `diagnostics/sagan_tref_check.jl`; how it was concluded earlier is not recorded).
@@ -710,6 +715,13 @@ Hat costs ~5× the source solves of point sampling.
 - Checks (`4a6140f`): full suite 1484/1484 on 4 threads; on 1 thread 1483/1484 (the D32 flake), then 1484/1484 on
   rerun; docs build clean (existing warnings only). Then `2748fb9` fixed the flake (Section 4): `ad_rrule_test.jl`
   206/206 under 10 seeds (1 thread) and 3 seeds (4 threads); full suite not rerun after `2748fb9` (test file only).
+
+### SaganCavity slice `t_ref` (10-15, branch `sagan-tref`)
+- `track_slice!(::SaganSlice)`: `t_exit = t_enter − sagan_dt_ref(c, s0) + sagan_dt_ref(c, last ? L : s1)` (Section 4).
+- Tests (`lcavity_test.jl`): `lc_bunch` starts at `t_ref = 1e-6` (the slices-vs-whole test started at 0 and could not
+  see the reset); Branch test: CSR off `t_ref` equal, cavity sliced `t_ref ≈` element-by-element `track!` (rtol 1e-14).
+  With the old `sagan.jl`: 46 failures; with the fix 229/229.
+- Suite 1608/1608 on 4 threads (3m53s) and 1 thread (4m13s).
 
 ### Upstream refresh (10-15, branch `upstream-refresh`)
 - Bmad: fetched; `origin/main` still `7c9df4059`, all cited lines re-read and matching. PR #2085 fetched
