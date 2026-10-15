@@ -42,7 +42,8 @@ GTPSA TPS).
 - **`phase7-step5`** (from `phase7-tps` `aff3059`, 2026-10-15): this handoff (D37, D38). **Latest state; today's work
   goes here.** (Local `fwd-primal-search` no longer exists; its head is `0a4cfbc`.)
 - **`phase7-review-fixes`** (from `phase7-step5` `e5a0ede`, 2026-10-15): fixes from the `phase7-tps` review
-  (findings 3, 5, 6, 7; Section 9). **Latest state.**
+  (findings 3, 5, 6, 7; Section 9) `4a6140f`; D32 flake fixed (γ scaled in `test_rrule`, s_kick restored; Section 4)
+  `2748fb9`. **Latest state.**
 
 | Commit | Branch | Content |
 |---|---|---|
@@ -95,7 +96,7 @@ keep testing on Julia 1.13.1.
      (independence of the Jacobian/Hessian references, tolerances, gaps such as TPS order > 2); docs example vs API.
    - Output: findings ranked by severity, file:line, failure scenario, confidence. Claude verifies each finding before
      reporting; **no fixes until the user decides.**
-2. **V2 (ion kick prefactor) and V3 (`s_ref_to_s_chord`)** — physics decisions, before step 5: for each, show the Bmad
+2. **Next.** **V2 (ion kick prefactor) and V3 (`s_ref_to_s_chord`)** — physics decisions, before step 5: for each, show the Bmad
    code and derivation, give options with a recommendation, change nothing until the user chooses.
 3. **Phase 7 step 5** (`track_csr!` with a TPS test bunch; D38). Tests: order 1 = ForwardDiff Jacobian, order 2 =
    ForwardDiff Hessian of the same Float64 tracking; Float64 test particles == bunch kicks.
@@ -670,6 +671,9 @@ Hat costs ~5× the source solves of point sampling.
   a direction moving g, s_kick, γ, relative to the same at the primal root: ≤ 1e-14 (bound 1e-10). Mutation check:
   with one Newton step (`root_order(Dual) = 1`) the ratio is 1.2–7, so the test detects a missing step.
 - Deferred: findings 2, 4, 8 (Section 4).
+- Checks (`4a6140f`): full suite 1484/1484 on 4 threads; on 1 thread 1483/1484 (the D32 flake), then 1484/1484 on
+  rerun; docs build clean (existing warnings only). Then `2748fb9` fixed the flake (Section 4): `ad_rrule_test.jl`
+  206/206 under 10 seeds (1 thread) and 3 seeds (4 threads); full suite not rerun after `2748fb9` (test file only).
 
 ### Forward mode with primal source search, D31 (10-14 evening, branch `fwd-primal-search`)
 - `PrimalSearch(primal(geom), primal(kp))` built once per table call when the table type is a `Dual`
