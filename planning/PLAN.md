@@ -41,6 +41,8 @@ GTPSA TPS).
   steps 1–3 (D33–D36).
 - **`phase7-step5`** (from `phase7-tps` `aff3059`, 2026-10-15): this handoff (D37, D38). **Latest state; today's work
   goes here.** (Local `fwd-primal-search` no longer exists; its head is `0a4cfbc`.)
+- **`phase7-review-fixes`** (from `phase7-step5` `e5a0ede`, 2026-10-15): fixes from the `phase7-tps` review
+  (findings 3, 5, 6, 7; Section 9). **Latest state.**
 
 | Commit | Branch | Content |
 |---|---|---|
@@ -73,11 +75,12 @@ keep testing on Julia 1.13.1.
 2. TPS basics in `CSRGTPSAExt` (`primal` = scalar part, `root_order` = truncation order). **Done.**
 3. Stage 1: frozen-wake kick on TPS test particles (`csr_apply_test_kicks!`, `csr_kick!(...; test_particles)`). **Done.**
 4. Stage 2: full collective TPS (TPS deposit, TPS tables). Variables decided: D37 (knobs + 6D on test particles). Needs `<:Real` relaxed to `<:Number` in the types (TPS is a
-   `Number`), a TPS `modulo2`, and a TPS deposit (serial path).
+   `Number`), a TPS `modulo2`, and a TPS deposit (serial path). Also review findings 4 and 8 (Section 4).
 5. `track_csr!` with a TPS test bunch tracked alongside the bunch (BeamTracking per slice). Not started.
 
 **Session 2026-10-15 — handoff (the user restarted the session to load a custom subagent). Agreed plan, in order:**
-1. **Code review of `phase7-tps`** by the project subagent `sonnet-reviewer` (`.claude/agents/sonnet-reviewer.md`,
+1. **Done 2026-10-15** (diff was 9 files, +234/−39; findings and fixes in Section 9, deferred items in Section 4).
+   **Code review of `phase7-tps`** by the project subagent `sonnet-reviewer` (`.claude/agents/sonnet-reviewer.md`,
    `model: sonnet`, tools Read + Bash, read-only; untracked file, the user decides whether to commit or ignore it), at
    effort `high`, foreground. The user approved this subagent plan; launch it directly. If the type is still not found
    after the restart, tell the user (do not fall back silently). Prompt essentials:
@@ -226,7 +229,23 @@ extensions silently do not load.
   reads partials). Other seed scales spread a derivative by ~2e-11–5e-11 relative, with images only (free space
   ≤ 3e-14): round-off amplified in the image derivative (likely `1 − N·β′ ≈ 1/(2γ²)`, cubed, and the root slope
   `∂ddz/∂s = O(1/γ²)`; the attribution is an inference, not measured term by term). The 7e-11 is that round-off.
-  (2) `test_rrule` "images, bmad_compat" s_kick FD flake: fixed by D32 (3/3 runs pass).
+  (2) `test_rrule` "images, bmad_compat" s_kick FD flake: fixed by D32 (3/3 runs pass). **Recurred 2026-10-15**
+  (branch `phase7-review-fixes`, full suite, 1 thread): 1 failure in that testset, 1483/1484; the next full 1-thread
+  run and 3 runs of `ad_rrule_test.jl` alone passed. Failing run's RNG: `Xoshiro(0x620b862c3f3a50f7,
+  0x31a050bb29ec984c, 0xd0ff6bd94546534b, 0xd24373f881d7c19c, 0xcbc1bf67a4460596)`. Which comparison failed was not
+  captured. Not investigated.
+- **Deferred from the 2026-10-15 `phase7-tps` review** (user: address in Phase 8 / Stage 2; numbers are the
+  review's finding numbers):
+  - (2, Phase 8) `csr_apply_test_kicks!` (`src/kick.jl`) copies `bins`/`kick` only when the test particles are on the
+    CPU: a CPU bunch with GPU test particles passes CPU arrays to a GPU kernel; `z_t`/`alive_t` backends are not
+    checked against `pz_t`; `pz_scale` is not passed through `device_scalar` (a `Float64` scale on Metal). Confirmed
+    by reading, not run.
+  - (4, Stage 2) The out-of-range error in `csr_apply_test_kicks!` is raised after the kernel has kicked the in-range
+    particles; a caller that catches it and retries kicks them twice. Not documented. Confirmed by reading.
+  - (8, Stage 2) Thread safety of TPS arithmetic in `csr_apply_kicks_kernel!`: no shared mutable TPS found (each op
+    allocates; `pz[i] += …` rebinds). GTPSA documents its `div`/`divc` call counters as not thread-safe
+    (`GTPSA.jl/src/low_level/rtpsa.jl` ~2431): possibly a benign race if `TPS/Float64` reaches `mad_tpsa_divc`. Not
+    verified (compiled C library). Matters more for the Stage 2 TPS deposit.
 - Float32 on GPUs limits strongly shielded kicks to ~3e-4 relative (cancellation); a mixed-precision table/convolve
   path would be needed for better.
 
@@ -628,6 +647,22 @@ Hat costs ~5× the source solves of point sampling.
 - Suite 1446/1446 on 1 and 4 threads; docs build clean (TPS section in `usage.md` as a non-executed block: the docs
   environment does not load GTPSA; the example was run by hand).
 
+### Review of `phase7-tps` and fixes (10-15, branch `phase7-review-fixes`)
+- Review by the project subagent `sonnet-reviewer` (effort high), each finding checked by reading the code. No defect
+  in the Newton scheme (error O(δ^k) → O(δ^(k+1)) per step with the constant primal slope; `root_order` correct for
+  Float64, nested Duals of any tags, TPS `mo`) and no branch on non-primal values in the changed code. Known scope
+  (finding 1): the TPS root path is unreachable until Stage 2 (`T<:Real` types, no GTPSA `mod` for `modulo2`).
+- Fixed: (3) the out-of-range message printed `[zc[1] − dz/2, zc[end] + dz/2]`; the kernel accepts
+  `[zc[1] − dz/100, zc[end])`, now in the message and docstring, with an edge test. (5) `root_order(x)` recursed to a
+  `StackOverflowError` for non-Real numbers (e.g. `Complex`): now `root_order(x::Number)`, a `MethodError`. (6)
+  `tps_test.jl`: Jacobian compared per column (a matrix norm is dominated by column 6, ∂pz/∂pz = 1); cubic term added
+  to the test particles' z and all third derivatives (order 3 = truncation order) compared with nested ForwardDiff;
+  dead test particle checked with `isequal` (GTPSA `==` compares scalar parts only).
+- Added (7): `ad_geometry_test.jl` "residual stationary to second order": nested-Dual d²/dt² of `ddz` at the root along
+  a direction moving g, s_kick, γ, relative to the same at the primal root: ≤ 1e-14 (bound 1e-10). Mutation check:
+  with one Newton step (`root_order(Dual) = 1`) the ratio is 1.2–7, so the test detects a missing step.
+- Deferred: findings 2, 4, 8 (Section 4).
+
 ### Forward mode with primal source search, D31 (10-14 evening, branch `fwd-primal-search`)
 - `PrimalSearch(primal(geom), primal(kp))` built once per table call when the table type is a `Dual`
   (`primal_search`); `s_source_calc(k, geom, kp, search)` walks in `Float64` (`s_source_walk`) and evaluates once
@@ -702,7 +737,7 @@ Hat costs ~5× the source solves of point sampling.
 | 5 | Shielding (image charges) | done (+ D20, D24, V9) |
 | 6 | AD: steps 0–2 particles (done); step 3 geometry/γ via implicit differentiation of the source root | done (3a forward, 3b rrules, D30 cheaper pullback) |
 | 7 | TPS: generic root (done), frozen-wake test particles (done), full collective TPS, `track_csr!` with TPS (D33–D36); tests: first order = Jacobian, second = ForwardDiff Hessian | in progress |
-| 8 | FFT convolution (`CSRAbstractFFTsExt`) for large n_bin; benchmarks; GPU wake table (isbits geometry via Adapt; work struct immutable since D29; errors/recursion in the source search); issue for a BeamTracking collective-step hook (route b) | not started |
+| 8 | FFT convolution (`CSRAbstractFFTsExt`) for large n_bin; benchmarks; GPU wake table (isbits geometry via Adapt; work struct immutable since D29; errors/recursion in the source search); issue for a BeamTracking collective-step hook (route b); test-particle backend handling (review finding 2, Section 4) | not started |
 
 Follow-ups not requested: per-element `ds_step` (Bmad `csr_ds_step`); caching slices per element (rebuilt every step);
 Metal tests in the suite (conditional on Metal.jl).

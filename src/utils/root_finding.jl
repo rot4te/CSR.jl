@@ -89,9 +89,9 @@ end
     root_order(x)
 
 Number of Newton steps `root_tangent` needs for `x`'s number type: 0 for plain numbers, 1 per level of `Dual`
-nesting (a TPS extension adds its truncation order).
+nesting (a TPS extension adds its truncation order). Other number types (e.g. `Complex`) have no method.
 """
-root_order(x) = root_order(typeof(x))
+root_order(x::Number) = root_order(typeof(x))
 root_order(::Type{<:Real}) = 0
 root_order(::Type{<:Dual{T,V}}) where {T,V} = 1 + root_order(V)
 

@@ -54,6 +54,24 @@
     end
   end
 
+  # Second order (nested Duals, two Newton steps in root_tangent): the residual at the root has zero first and second
+  # derivatives along a direction moving g, s_kick and gamma; at the primal root the second derivative is not zero
+  @testset "Source root: residual stationary to second order (bmad_compat = $bc)" for bc in (false, true)
+    for dz in (2e-5, 3e-4, 1e-3)
+      function resid(t, fixed)
+        G = CSRGeometry(L3, g3 .+ t .* [0.1, 1.0, 0.0], c3; bmad_compat = bc)
+        kp = CSRKickPoint(G, 2, 0.17 + 0.05t, 200.0 + 50t)
+        k, s = CSR.s_source_calc(CSR.CSRKick1(G, kp; ix_ele_source = 2, dz_particles = dz), G, kp)
+        k2 = CSR.CSRKick1(G, kp; ix_ele_source = k.ix_ele_source, dz_particles = dz)
+        return last(CSR.ddz_calc_csr(k2, fixed ? CSR.primal(s) : s, G, kp))
+      end
+      d1(fixed) = ForwardDiff.derivative(t -> resid(t, fixed), 0.0)
+      d2(fixed) = ForwardDiff.derivative(t -> ForwardDiff.derivative(u -> resid(u, fixed), t), 0.0)
+      @test abs(d1(false)) < 1e-10 * abs(d1(true))
+      @test abs(d2(false)) < 1e-10 * abs(d2(true))
+    end
+  end
+
   # Dual tables search their sources in primal values (PrimalSearch) and evaluate them once in Duals: the same work
   # struct as searching in Duals, for sources in the lattice, ahead of the kick point and on both infinite drifts
   @testset "Primal search == search in Duals (bmad_compat = $bc)" for bc in (false, true)

@@ -17,6 +17,7 @@
     t = 0.3 + 2x[1] + x[5]^2
     @test CSR.primal(t) == 0.3
     @test CSR.root_order(t) == 3
+    @test_throws MethodError CSR.root_order(1.0 + 2.0im)
   end
 
   @testset "Frozen-wake test particles (images = $n_img)" for n_img in (0, 2)
@@ -26,7 +27,7 @@
     # (1024), so that with threads the TPS arithmetic runs concurrently
     m = 3000
     z0 = range(-5e-3, 5e-3; length = m)
-    zfun(v, j) = z0[j] + v[5] * (1 + 0.1j / m) + 0.3 * v[1]^2 - 0.2 * v[5] * v[6]
+    zfun(v, j) = z0[j] + v[5] * (1 + 0.1j / m) + 0.3 * v[1]^2 - 0.2 * v[5] * v[6] + 0.5 * v[1] * v[5]^2
     pzfun(v, j) = v[6] + 1e-4j / m
     f(v) = CSR.csr_apply_test_kicks!([pzfun(v, j) for j in 1:m], [zfun(v, j) for j in 1:m], fill(true, m), st.bins,
                                      st.kick; pz_scale = 1.3)
@@ -35,9 +36,18 @@
     v0 = zeros(6)
     y0 = f(v0)
     @test scalar.(pzt) == y0
-    @test GTPSA.jacobian(pzt) ≈ ForwardDiff.jacobian(f, v0) rtol = 1e-14
+    # Per column: column 6 (∂pz/∂pz = 1) would dominate a norm over the whole matrix
+    Jt, Jf = GTPSA.jacobian(pzt), ForwardDiff.jacobian(f, v0)
+    for c in 1:6
+      @test Jt[:, c] ≈ Jf[:, c] rtol = 1e-14
+    end
     for j in (1, m ÷ 2, m)
       @test GTPSA.hessian(pzt[j]) ≈ ForwardDiff.hessian(v -> f(v)[j], v0) rtol = 1e-13
+      # Third order (truncation order of d): every ∂³pz/∂a∂b∂c from the TPS vs nested ForwardDiff
+      T3f = reshape(ForwardDiff.jacobian(u -> vec(ForwardDiff.hessian(v -> f(v)[j], u)), v0), 6, 6, 6)
+      T3t = [scalar(GTPSA.deriv(pzt[j], [count(==(i), (a, b, c)) for i in 1:6])) for a in 1:6, b in 1:6, c in 1:6]
+      @test any(!iszero, T3f)
+      @test T3t ≈ T3f rtol = 1e-13
     end
     # Float64 test particles at bunch particles' positions get the bunch particles' kicks
     pzb = zeros(n)
@@ -51,9 +61,17 @@
     p = CSRParams(n_bin = 40, ds_step = 0.1)
     st = CSR.csr_binned_kick(z, q, alive, geom, 2, 0.17, 200.0, electron, p)
     @test_throws ErrorException CSR.csr_apply_test_kicks!([x[6]], [0.05 + x[5]], [true], st.bins, st.kick)
+    # Accepted range [z_center[1] - dz/100, z_center[end]), as in the error message
+    zc, dz = st.bins.z_center, st.bins.dz
+    @test CSR.csr_apply_test_kicks!([0.0, 0.0], [zc[1] - dz / 200, zc[end] - dz / 4], [true, true], st.bins,
+                                    st.kick) isa Vector
+    for zt in (zc[1] - dz / 50, zc[end] + dz / 4)
+      err = try CSR.csr_apply_test_kicks!([0.0], [zt], [true], st.bins, st.kick); nothing catch e; e end
+      @test err isa ErrorException && occursin("$(zc[end]))", err.msg)
+    end
     # Dead test particles are skipped wherever they are
     pzt = [x[6]]
     CSR.csr_apply_test_kicks!(pzt, [0.05 + x[5]], [false], st.bins, st.kick)
-    @test pzt[1] == x[6]
+    @test isequal(pzt[1], x[6])   # every coefficient (TPS == compares the scalar parts only)
   end
 end

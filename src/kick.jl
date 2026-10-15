@@ -62,7 +62,8 @@ Frozen-wake kick on test particles: `csr_apply_kicks!` with the bins and kick of
 part of (they deposit no charge). For TPS (or `Dual`) test particles this gives the kick's expansion in their
 coordinates about the primal `z`, with the bunch's wake held fixed. The test particles' arrays may live on another
 backend than the bunch (e.g. TPS on the CPU); `bins` and `kick` are copied there. Live test particles must lie within
-the bunch's bin range (the kick is only known there).
+the bunch's bin range, `z_center[1] - dz/100 ≤ z < z_center[end]` (the range `csr_apply_kicks_kernel!` interpolates
+over).
 """
 function csr_apply_test_kicks!(pz_t::AbstractVector, z_t::AbstractVector, alive_t::AbstractVector{Bool}, bins::CSRBins,
                                kick::AbstractVector; pz_scale = 1)
@@ -71,7 +72,7 @@ function csr_apply_test_kicks!(pz_t::AbstractVector, z_t::AbstractVector, alive_
   zc, k = on_cpu ? (cpu(bins.z_center), cpu(kick)) : (bins.z_center, kick)
   n = apply_kicks_outside!(pz_t, z_t, alive_t, zc, k, primal(bins.dz), pz_scale)
   n == 0 || error("csr_apply_test_kicks!: $n test particle(s) outside the bunch's bin range " *
-                  "[$(primal(first(zc)) - primal(bins.dz) / 2), $(primal(last(zc)) + primal(bins.dz) / 2)]")
+                  "[$(primal(first(zc)) - primal(bins.dz) / 100), $(primal(last(zc))))")
   return pz_t
 end
 
