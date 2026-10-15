@@ -2,15 +2,31 @@
 
 Drafted 2026-10-09 for the user to review and file. Nothing here has been sent anywhere.
 Line numbers: Bmad master `00b4557af` (2026-10-08; `csr_and_space_charge_mod.f90` unchanged through `7c9df4059`,
-REL 20261014-0, checked 2026-10-14); BeamTracking.jl `fe92aac` (2026-10-02). Item 5 added 2026-10-14. Items 6–8
-added 2026-10-15, line numbers checked at `7c9df4059`.
+REL 20261014-0). Item 5 added 2026-10-14, items 6–8 2026-10-15.
+
+**Refreshed 2026-10-15:**
+- Bmad: `origin/main` is still `7c9df4059` after a fetch; every cited line was re-read there and matches its quoted
+  content (lines 290, 339, 769, 907, 951–959, 992, 1054–1057, 1077, 1083, 1141, 1414–1426, 1469, 1609, 1770–1799,
+  1817–1842).
+- Bmad PR #2085 (wiggler subdivision, David Sagan): **still open** (GitHub page, 2026-10-15), head `3dd783a67`
+  (2026-07-04), no formal review; a long review comment by C. Mayes (2026-07-04) lists eight findings, one of them
+  "a roundoff-recovery path that sets the wrong `s_source` value" (our V4, below). It changes 417+/127− lines of
+  `csr_and_space_charge_mod.f90` but none of the code of items 1–8: every site is unchanged in the PR, only moved.
+  Line numbers there are in the table at the end of the Bmad section; quote both if it merges before filing.
+- BeamTracking.jl: `origin/main` = v0.8.7 `65e343f`. Former items 1–2 (SaganCavity `t_ref` reset, undefined
+  `$ele_name`, stray `\`) were fixed upstream by `8c302c6` (2026-09-18, "Fix bugs in SaganCavity universal!", in
+  v0.8.7, not in `fe92aac`, which the draft was checked against). Former item 3 (`p_over_q_ref` not updated after
+  a SaganCavity) does not occur with v0.8.7 (`diagnostics/sagan_tref_check.jl`: −0.33356 → −0.66713 after an
+  lcavity with dE_ref = 1e8 eV). They are removed below; the two ion items remain.
+- Existing issues (GitHub issue search via WebFetch, titles only, summarized by a model: moderately reliable): none
+  matching in bmad-ecosystem ("csr", 36 results) or BeamTracking.jl (`R_to_gamma`, `R_to_v`, `SaganCavity`: 0).
 
 Already fixed upstream, no report needed: **V6** (swapped energy-interpolation weights), bmad-ecosystem PR #2199,
-merged 2026-10-06. Note: open PR #2085 (wiggler subdivision) rewrites `s_source_calc`/`ddz_calc_csr`; V7 and V8 sites
-(and item 8's) may move if it merges. PR status not rechecked since 2026-10-09.
+merged 2026-10-06.
 
 Not proposed for reporting: V4 (round-off branches that return a `ddz` residual as the source position; harmless
-for symmetric bends). Item 8 describes when they are reached; V4 could be added there as a question.
+for symmetric bends). Item 8 describes when they are reached; V4 could be added there as a question. Mayes's PR #2085
+comment appears to raise the same point (not read in full: summary of the PR page).
 
 ---
 
@@ -116,30 +132,34 @@ and `zz` from `ddz_calc_csr` at the entrance. `ddz` is then continuous to round-
 and at the lattice ends, each lag has one source, and the drift image kick at zero lag becomes 0 (y = 1 cm, γ = 200:
 0.031 with `L/(2γ²)`). Cost ~1%.
 
+**Line numbers in open PR #2085** (head `3dd783a67`; code at each site unchanged, found by its text):
+
+| Item | master `7c9df4059` | PR #2085 |
+|---|---|---|
+| 1 `dspline_len` s⁴ term | 1796 (function 1770–1799) | 1840 (1814–1843) |
+| 2 `I_csr` first bin | 1414–1426 (`zz` 1422, update 1425) | `zz` 1462, update 1465 (subroutine `I_csr` from 1409) |
+| 3 `super_zbrent` in `s_source_calc` | 992 | 1024 |
+| 4 `floor_s%theta` | 1077; read at 1469 | 1118; 1509 |
+| 5 `dspline_len` callers | 290, 907, 1055, 1065–1072, 1420 | 1969 (`chord%dL_s`), 2113 (`Lsz0`, moved to a helper), 1089, 1101–1113, 1460 |
+| 6 kick prefactor | 769, 1141, 1609 | 801, 1182, 1653 |
+| 7 `s_ref_to_s_chord` | function 1817–1842, call 339 | subroutine 1863–1901 (per sub-chord; bend branch unchanged), call 364 |
+| 8 `ddz_calc_csr` | 1054, 1057, 1083 (function 1023–1086) | 1088, 1091, 1124 (1055–1127) |
+| V4 round-off branches | 951–959 | 982–990 |
+
 ---
 
-## BeamTracking.jl: one issue, five items
+## BeamTracking.jl: one issue, two items
 
-**Title:** SaganCavity `universal!` and energy conversions: t_ref, error messages, p_over_q_ref, R_to_gamma/R_to_v for ions
+**Title:** `R_to_gamma` and `R_to_v` wrong for ions with |Z| ≠ 1
 
-Line numbers for `fe92aac`.
+Line numbers for v0.8.7 `65e343f` (re-read 2026-10-15). (Former items 1–3 on SaganCavity `universal!`: fixed
+upstream or not reproducible with v0.8.7; see the header.)
 
-**1. `universal!` (SaganCavity), `ext/BeamTrackingBeamlinesExt/unpack_bl.jl:395, 460`: `t_ref` reset.**
-`t_exit = dt_ref` and then `bunch.t_ref = t_exit`, so the entrance `bunch.t_ref` is dropped (expected
-`t_enter + dt_ref`). Every other `universal!` adds to `t_ref` (e.g. line 85).
-
-**2. Same function, lines 356–361: `$ele_name` is undefined** (not an argument of `universal!`), so each of these
-checks throws `UndefVarError` instead of its message. Also a stray `\` ends line 359: it parses as left division
-between the two `||` expressions on lines 359 and 360 (harmless at present, but unintended).
-
-**3. `bunch.p_over_q_ref` is not updated after a SaganCavity** when `p_over_q_ref` is not time dependent (only the
-`TimeDependentParam` branch, line ~413, calls `setfield!`).
-
-**4. `src/utils/energy.jl:6`, `R_to_gamma` omits the charge state:** `sqrt((R*C_LIGHT/massof)^2 + 1)` should be
+**1. `src/utils/energy.jl:6`, `R_to_gamma` omits the charge state:** `sqrt((R*C_LIGHT/massof)^2 + 1)` should be
 `sqrt((R*C_LIGHT*chargeof/massof)^2 + 1)` (as `R_to_E`, `R_to_beta_gamma`). Correct for |Z| = 1 only.
 Checked: He²⁺ at R = 1 T·m gives 1.00323 vs `R_to_E/massof` = 1.01286.
 
-**5. `src/utils/energy.jl:9`, `R_to_v` misplaces the charge:** `abs(chargeof)*C_LIGHT / sqrt(1 + (m/(R c))^2)` should
+**2. `src/utils/energy.jl:9`, `R_to_v` misplaces the charge:** `abs(chargeof)*C_LIGHT / sqrt(1 + (m/(R c))^2)` should
 be `C_LIGHT / sqrt(1 + (m/(R c chargeof))^2)`. Correct for |Z| = 1 only; for |Z| > 1 it can exceed c. Checked: He²⁺ at
 R = 1 gives v/c = 0.16034 vs 0.15882 from `beta_gamma_to_v(R_to_beta_gamma)`; ¹²C⁶⁺ 0.16091 vs 0.15892. Used by
 `rf_omega_calc` (`utils_bl.jl:205`), so RF frequencies set by harmonic number are wrong for multiply charged ions.

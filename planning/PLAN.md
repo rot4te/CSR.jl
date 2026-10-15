@@ -47,7 +47,9 @@ GTPSA TPS).
 - **`v2-v3-physics`** (from `phase7-review-fixes` `da6650d`, 2026-10-15): V2 and V3 fixed in default mode (D39, D40),
   continuous retardation condition, one source per lag (D41).
 - **`phase7-step5`** (at `v2-v3-physics` `12ec910` when the session started, moved there outside the session), then Phase 7 step 5 (`track_csr!` `test_bunch`;
-  user: continue on this existing branch, 2026-10-15). **Latest state.**
+  user: continue on this existing branch, 2026-10-15).
+- **`upstream-refresh`** (from `phase7-step5` `7d344c9`, 2026-10-15): session item 4 (upstream reports, docs
+  workflow). **Latest state.**
 
 | Commit | Branch | Content |
 |---|---|---|
@@ -107,9 +109,11 @@ keep testing on Julia 1.13.1.
 3. **Done 2026-10-15: Phase 7 step 5** (`track_csr!` with a TPS test bunch; D38; Section 9). Tests: order 1 =
    ForwardDiff Jacobian, order 2 = nested-ForwardDiff second derivatives of the same Float64 tracking; Float64 test
    particles follow bunch particles (to 1e-15, not bitwise: BeamTracking SIMD, Section 7b).
-4. **Next: upstream reports / Pages:** refresh `planning/upstream_reports.md` (V7/V8 line numbers vs the current Bmad
-   checkout, Bmad PR #2085 status); check action versions in `.github/workflows/Documentation.yml` against current
-   docs. The user files the reports and enables GitHub Pages.
+4. **Done 2026-10-15** (branch `upstream-refresh`; Section 9): upstream reports refreshed (Bmad lines unchanged,
+   PR #2085 still open with a line map; BeamTracking items 1–3 fixed upstream or not reproducible, removed);
+   docs workflow on Documenter 1.19's template versions. **Found:** CSR.jl's SaganCavity slices still copy the old
+   BeamTracking `t_ref` reset, which 0.8.7 fixed (Section 4, open; user decision). The user files the reports and
+   enables GitHub Pages.
 5. Later (not today): Stage 2 with variables per D37.
 
 Original notes for step 3 (from the reorg handoff, 2026-10-14): Goal: derivatives of a kick w.r.t. the geometry and the reference speed/energy (γ), and `s_kick`.
@@ -128,9 +132,9 @@ Starting points (suggestions, not decided):
 
 Later: Phase 7 (TPS), Phase 8 (FFT convolution, benchmarks, GPU wake table, upstream hook proposal).
 
-**For the user:** file the upstream reports in `planning/upstream_reports.md` (Section 4, incl. V9); verify the
-action versions in `.github/workflows/Documentation.yml` (from memory) and enable GitHub Pages (`gh-pages`) after
-pushing.
+**For the user:** file the upstream reports in `planning/upstream_reports.md` (Section 4, incl. V9); enable GitHub
+Pages (`gh-pages`) after pushing. Action versions in `.github/workflows/Documentation.yml` now follow Documenter
+1.19's hosting page (checked 2026-10-15; the workflow itself has not run on GitHub).
 
 ---
 
@@ -274,9 +278,18 @@ extensions silently do not load.
   path would be needed for better.
 
 **Upstream reports — drafted in `planning/upstream_reports.md`, not filed (the user files):** Bmad V1, V5, V7, V8, V2, V3, seam (items 6–8, 2026-10-15);
-BeamTracking Section 7b items and the `R_to_gamma`/`R_to_v` ion bug. A GitHub search (via WebFetch, summarized:
-moderately reliable) found no existing issue. Open Bmad PR #2085 rewrites `s_source_calc`; V7/V8 line numbers may
-move. V9 (small-angle path excess) drafted as Bmad item 5 (2026-10-14).
+BeamTracking: the `R_to_gamma`/`R_to_v` ion bug only (SaganCavity items fixed in 0.8.7 or not reproducible, refreshed
+2026-10-15). GitHub searches (via WebFetch, titles, summarized: moderately reliable) found no existing issue
+(2026-10-09, rechecked 2026-10-15). Bmad PR #2085 still open (2026-10-15); it moves but does not change any cited
+site (line map in `upstream_reports.md`). V9 (small-angle path excess) drafted as Bmad item 5 (2026-10-14).
+
+**Open (user decision), found 2026-10-15:** BeamTracking 0.8.7 (`8c302c6`, 2026-09-18) accumulates `t_ref` through a
+SaganCavity (`t_exit = t_enter + dt_ref`); CSR.jl's `track_slice!(::SaganSlice)` (`sagan.jl`) still reproduces the old
+reset (last slice: `t_exit = sagan_dt_ref(c, c.L)`). `track_csr!` through an lcavity therefore ends with `t_ref` short by
+the cavity's entrance `t_ref` (1.0007e-9 s after three 0.1 m bends; `diagnostics/sagan_tref_check.jl`), CSR on or off
+in the cavity. Coordinates are unaffected as far as the existing tests see (`lcavity_test.jl` compares coordinates
+only, so no test caught it). Proposed fix: last slice `t_enter − sagan_dt_ref(c, s0) + sagan_dt_ref(c, L)` and a
+`t_ref` comparison in `lcavity_test.jl` (round-off tolerance: the telescoped sum is not BeamTracking's expression).
 
 ---
 
@@ -390,7 +403,7 @@ Every function has a docstring (the docs build enforces it with `checkdocs = :al
 | V4 | `s_source_calc` 951–959 | Round-off branches assign `ddz_calc_csr(...)` (a residual) to `s_source`. Matters for the image kick's `g_bend`. | Ported literally (D11). |
 | V5 | `I_csr` first bin 1414–1426 | Holds `I_csr` constant over the rest of the bin: 2/3 of the integral in steady state, 3–4× too small in the entrance transient. Write-up: `upstream-bin.md`. | Quadrature (D15); compat flag. |
 | V6 | `track1_bunch_csr` 330–331 | Energy interpolation weights reversed. | Fixed upstream (PR #2199); both modes follow it (D21). |
-| V7 | `s_source_calc` 997 | After `super_zbrent`, source geometry from the last evaluation, not the root. Catastrophic only when `ddz(0) == 0` exactly with CSR.jl's first-bin quadrature (I_csr 9.6e6 instead of −40). | Re-evaluated unless compat; regression test. |
+| V7 | `s_source_calc` 992 (`super_zbrent`; was "997", the `out_io` after the loop) | After `super_zbrent`, source geometry from the last evaluation, not the root. Catastrophic only when `ddz(0) == 0` exactly with CSR.jl's first-bin quadrature (I_csr 9.6e6 instead of −40). | Re-evaluated unless compat; regression test. |
 | V8 | `ddz_calc_csr` 1077 | `floor_s%theta` = source direction + π for sources ahead (image kick only). Drift check: ahead sources 1.21, 8.99 (Bmad) vs −0.826, −0.111 analytic; true direction matches to 5 digits. Line from `ff57a4dda` (2016). | Fixed (D13); compat flag. Script `diagnostics/v8_drift.jl`. |
 | V9 | `dspline_len` (all callers) | Small-angle path excess `½∫(x′ − dθ)²` drops the dθ⁴ terms: on a circle too large by Ls⁵/(1920ρ⁴) (1.8e-5, 1.9e-4, 1.9e-3 m at Ls = 3.2, 5.2, 8.2 m; ρ = 10 m). Acts as a lag shift; the image kernel near lag 0 at large y was ~14% low. | Exact `path_excess` in default mode; compat keeps Bmad. Drafted in `upstream_reports.md` (item 5). |
 
@@ -403,12 +416,13 @@ Other Bmad notes:
 - Bmad diagnostic file quirks: with images, kick and I_csr are divided by the last layer's `kick_factor` and
   `S_Source` is the last layer's; S-position has 6 decimals.
 
-### 7b. BeamTracking (checked at `7d79938`; ion bug still in 0.8.7)
-- `universal!` for SaganCavity (`ext/BeamTrackingBeamlinesExt/unpack_bl.jl`) sets `bunch.t_ref = dt_ref`, dropping the
-  entrance `t_ref`. CSR.jl reproduces it so CSR-off results match.
-- Error messages interpolate an undefined `ele_name`; a stray `\` ends the FourPotentialParams check line.
+### 7b. BeamTracking (checked at `7d79938`; rechecked at 0.8.7 `65e343f` on 2026-10-15)
+- Fixed in 0.8.7 (`8c302c6`, 2026-09-18): `universal!` for SaganCavity set `bunch.t_ref = dt_ref`, dropping the
+  entrance `t_ref` (now `t_enter + dt_ref`); error messages interpolated an undefined `ele_name`; a stray `\` ended
+  the FourPotentialParams check line. CSR.jl's `sagan.jl` still reproduces the old `t_ref` reset (Section 4, open).
 - RFParams with `voltage = 0` count as inactive, so a zero-voltage SaganCavity errors ("without RFParams").
-- `bunch.p_over_q_ref` is not updated after a SaganCavity.
+- Not reproducible with 0.8.7: "`bunch.p_over_q_ref` is not updated after a SaganCavity" (`track!` updates it:
+  `diagnostics/sagan_tref_check.jl`; how it was concluded earlier is not recorded).
 - `R_to_gamma` (`src/utils/energy.jl:6`) and `R_to_v` (`:9`) are wrong for |Z| ≠ 1 (He²⁺, R = 1: γ 1.00323 vs
   1.01286; v/c 0.16034 vs 0.15882; verified numerically). `R_to_v` feeds `rf_omega_calc`, which CSR.jl's lcavity code
   calls.
@@ -697,6 +711,22 @@ Hat costs ~5× the source solves of point sampling.
   rerun; docs build clean (existing warnings only). Then `2748fb9` fixed the flake (Section 4): `ad_rrule_test.jl`
   206/206 under 10 seeds (1 thread) and 3 seeds (4 threads); full suite not rerun after `2748fb9` (test file only).
 
+### Upstream refresh (10-15, branch `upstream-refresh`)
+- Bmad: fetched; `origin/main` still `7c9df4059`, all cited lines re-read and matching. PR #2085 fetched
+  (`refs/pull/2085/head` = `3dd783a67`, 2026-07-04), still open per its GitHub page; every cited site unchanged in it,
+  line map added to `upstream_reports.md`. In the PR `s_ref_to_s_chord` becomes a subroutine over wiggler sub-chords
+  (bend branch, V3, unchanged); V4 branches and V7 unchanged.
+- BeamTracking: `origin/main` = v0.8.7 `65e343f` (no newer commits). `unpack_bl.jl` changed since `fe92aac` (the
+  draft's reference); `8c302c6` fixed the SaganCavity `t_ref` reset and `$ele_name`; `p_over_q_ref` is updated after a
+  SaganCavity (`sagan_tref_check.jl`). Report reduced to `R_to_gamma`/`R_to_v` (lines 6, 9 and `utils_bl.jl:205`
+  unchanged). Consequence for CSR.jl: Section 4 (open).
+- Docs workflow: `actions/checkout@v4 → v7`, `julia-actions/setup-julia@v2 → v3`, `julia-actions/cache@v2 → v3`,
+  `actions: write` and `workflow_dispatch` added, as in Documenter 1.19's hosting page (WebFetch summary). Latest tags
+  by `git ls-remote`: checkout v7.0.1, setup-julia v3.0.2, cache v3.5.0. Release notes (WebFetch summaries): setup-julia
+  v3 needs Node 24 and `version: min` changed meaning (we use `'1'`); cache v3 saves on job failure; checkout v7 blocks
+  fork-PR checkout under `pull_request_target`/`workflow_run` (not used here). Not run on GitHub. The docs environment
+  resolves registered BeamTracking 0.8.7 and Beamlines 0.11.0 (local docs Manifest; Manifests are gitignored).
+
 ### Phase 7 step 5: `track_csr!` with a test bunch (10-15, branch `phase7-step5`)
 - **API.** `track_csr!(bunch, bl_or_branch; ..., test_bunch = nothing)`: a `Bunch` of any number type tracked through
   the same elements/slices (BeamTracking `track!` / `track_slice!`, incl. SaganCavity slices) and kicked through
@@ -878,6 +908,6 @@ Metal tests in the suite (conditional on Metal.jl).
 | `verify_analytic.jl` | Section 8 checks (Base Julia). |
 | `dspline_coeff.md`, `upstream-bin.md` | Write-ups for V1 and V5. |
 | `upstream_reports.md` | Drafted upstream reports (Section 4). |
-| `diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`, `bench_pullback.jl`, `bench_forward.jl`, `d32_flake.jl [compat\|free] [Γ]`, `d32_steps.jl`, `root_newton_mutation.jl`, `track_tps_probe.jl`, `track_tps_lcavity_probe.jl`, `track_tps_timing.jl`, `track_tps_compile.jl`, `track_tps_mutation.jl [none\|scale]`, `track_tps_docs_example.jl`, `track_tps_thread_spread.jl [n_runs]`, `v3_rrule_images.jl`, `v3_rrule_scan.jl`, `v3_hat_node_search.jl`, `v3_image_entry_adjoint.jl`, `v3_node_adjoint.jl`, `v3_warm_start.jl [s_kick] [layer]`, `seam_uniqueness.jl`, `drift_lag0_image.jl`; data `layer_terms_*.txt` (the `_400` files predate V9). |
+| `diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`, `bench_pullback.jl`, `bench_forward.jl`, `d32_flake.jl [compat\|free] [Γ]`, `d32_steps.jl`, `root_newton_mutation.jl`, `track_tps_probe.jl`, `track_tps_lcavity_probe.jl`, `track_tps_timing.jl`, `track_tps_compile.jl`, `track_tps_mutation.jl [none\|scale]`, `track_tps_docs_example.jl`, `track_tps_thread_spread.jl [n_runs]`, `sagan_tref_check.jl`, `v3_rrule_images.jl`, `v3_rrule_scan.jl`, `v3_hat_node_search.jl`, `v3_image_entry_adjoint.jl`, `v3_node_adjoint.jl`, `v3_warm_start.jl [s_kick] [layer]`, `seam_uniqueness.jl`, `drift_lag0_image.jl`; data `layer_terms_*.txt` (the `_400` files predate V9). |
 | `../crosscheck/` | Bmad/Tao cross-check (README there). |
 | `../docs/` | Documenter docs (`julia --project=docs docs/make.jl`; `docs/README.md`); pages Home, Usage, Physics model, Physics decisions, Validation, API, Internals. Deployed by `.github/workflows/Documentation.yml` from `main`. Keep "Physics decisions" in sync with Section 3 when physics changes. |
