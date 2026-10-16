@@ -54,8 +54,8 @@ function I_csr_calc(k::CSRKick1, i_bin, dz_slice, geom::CSRGeometry, kp::CSRKick
       else
         # zz: the lag of a source at the element entrance (ddz_calc_csr, so that the quadrature starts where the
         # source search crosses into the previous element); Ls: arc length from the entrance to the kick point.
-        _, zz = ddz_calc_csr(with_fields(k; ix_ele_source = ix_ele_kick, dz_particles = zero(k.dz_particles)), 0.0,
-                             geom, kp)
+        k_entry, zz = ddz_calc_csr(with_fields(k; ix_ele_source = ix_ele_kick, dz_particles = zero(k.dz_particles)),
+                                   0.0, geom, kp)
         Ls = path_excess(0.0, s_chord_kick, spl) + s_chord_kick
       end
       I_int_csr = -kp.kick_factor * ((g_bend * Ls / 2)^2 - log(straight * zz / Ls) / gamma2)
@@ -64,7 +64,9 @@ function I_csr_calc(k::CSRKick1, i_bin, dz_slice, geom::CSRGeometry, kp::CSRKick
         # (I ∝ u^(-1/3), zz ≪ z) this gives 2/3 of the integral.
         I_int_csr += I_csr * (z - zz)
       else
-        I_int_csr += I_csr_integral(zz, z, geom, kp, search)
+        # First node: the entrance source itself, not a search for lag zz (which may return the previous element's end,
+        # the same point but other numbers: two branches for derivatives w.r.t. the raw geometry numbers)
+        I_int_csr += I_csr_integral(zz, z, geom, kp, search; k0 = with_fields(k_entry; dz_particles = zz))
       end
     end
   else
@@ -74,13 +76,13 @@ function I_csr_calc(k::CSRKick1, i_bin, dz_slice, geom::CSRGeometry, kp::CSRKick
 end
 
 """
-    I_csr_integral(z0, z1, geom, kp, search = nothing; n = 16)
+    I_csr_integral(z0, z1, geom, kp, search = nothing; n = 16, k0 = nothing)
 
 `∫ I_csr(u) du` from `z0` to `z1` by composite Simpson in `t = u^(1/3)`, which makes the near-field
 `u^(-1/3)` behaviour smooth. Each node needs its own source-point solve, started in the kick element (`search` as in
-`s_source_calc`).
+`s_source_calc`). `k0`: the source at `z0`, if known (then not searched).
 """
-function I_csr_integral(z0, z1, geom::CSRGeometry, kp::CSRKickPoint, search = nothing; n = 16)
+function I_csr_integral(z0, z1, geom::CSRGeometry, kp::CSRKickPoint, search = nothing; n = 16, k0 = nothing)
   function f(t)
     k, _ = s_source_calc(CSRKick1(geom, kp; dz_particles = t^3), geom, kp, search)
     return I_csr_value(k, kp) * 3t^2
@@ -88,7 +90,7 @@ function I_csr_integral(z0, z1, geom::CSRGeometry, kp::CSRKickPoint, search = no
   t0 = cbrt(z0)
   t1 = cbrt(z1)
   h = (t1 - t0) / n
-  acc = f(t0) + f(t1)
+  acc = (k0 === nothing ? f(t0) : I_csr_value(k0, kp) * 3t0^2) + f(t1)
   for j in 1:n-1
     acc += (isodd(j) ? 4 : 2) * f(t0 + j * h)
   end

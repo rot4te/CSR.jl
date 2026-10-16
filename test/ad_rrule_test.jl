@@ -137,9 +137,11 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry, msg = ""; kw...)
   # ChainRulesTestUtils (finite differences). Small bunch to keep the number of FD directions down. z is held fixed
   # (wrapper, rrule via `rrule_f`): the bin grid moves with the extreme particles; ad_test.jl checks z by hand.
   # Steps capped at 1e-6: the kick curves strongly in some geometry fields (FD at h = 1e-4 off by ~10% in start.r[3]
-  # and L_chord of element 1, at h ≤ 1e-6 converged to the AD value). At such steps the source-root noise (zbrent
-  # abs_tol 1e-8) limits FD to ~1e-3 relative, so rtol = 1e-2 here: these tests check the tangent structure and the
-  # wiring; the accuracy checks are rrule == ForwardDiff above (1e-12) and ForwardDiff vs FD in ad_geometry_test.jl.
+  # and L_chord of element 1, at h ≤ 1e-6 converged to the AD value). rtol = 1e-2: these tests check the tangent
+  # structure and the wiring; the accuracy checks are rrule == ForwardDiff above (1e-12) and ForwardDiff vs FD in
+  # ad_geometry_test.jl. (FD columns of the geometry were off by ~1e-3 in free space, flaky at 2e-4 per run, until the
+  # first-bin quadrature's first node was pinned to the kick element's entrance; now ≤ 2e-6, planning/diagnostics/
+  # flake_geom_steps.jl.)
   # γ enters as γ/Γ: the step cap is absolute, and a step of 1e-6 in γ = 200 is lost in the source-root noise (FD
   # error of ∂kick/∂γ 4e-3 with images in compat, so ȳ⋅∂kick/∂γ failed rtol 1e-2 for ~23% of random ȳ; with Γ = 1e5,
   # 1.6e-6 and ~1e-4 of ȳ).

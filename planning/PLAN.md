@@ -56,7 +56,9 @@ GTPSA TPS).
   `image_kernel_exact.jl`); found and fixed the first-bin log term (D42).
 - **`s-kick-residual`** (from `reruns-d41` `1073953`, 2026-10-15): s_kick rrule residual traced to ForwardDiff
   round-off (Section 4, Section 9), `b24fd58`.
-- **`image-kernel-d43`** (from `s-kick-residual` `b24fd58`, 2026-10-15): image kernel without cancellation (D43).
+- **`image-kernel-d43`** (from `s-kick-residual` `b24fd58`, 2026-10-15): image kernel without cancellation (D43),
+  `1d76391`.
+- **`fd-flake-d44`** (from `image-kernel-d43` `1d76391`, 2026-10-15): free-space `test_rrule` flake fixed (D44).
   **Latest state.**
 
 | Commit | Branch | Content |
@@ -128,6 +130,8 @@ keep testing on Julia 1.13.1.
    spurious default-mode first-bin kick on straight lines since D41; user chose the fix D42.
 7. **Done 2026-10-15** (user's choice; branches `s-kick-residual`, `image-kernel-d43`; Section 9): s_kick rrule residual. Round-off in the
    image derivative, not a pullback error. User then chose to rewrite the image kernel's `1 − N·β′` (D43).
+8. **Done 2026-10-15** (user's choice; branch `fd-flake-d44`; Section 9): free-space `test_rrule` FD flake. Not a step
+   size problem (a D32-style rescaling cannot help); user chose to pin the first-bin quadrature's first node (D44).
 
 Original notes for step 3 (from the reorg handoff, 2026-10-14): Goal: derivatives of a kick w.r.t. the geometry and the reference speed/energy (γ), and `s_kick`.
 Starting points (suggestions, not decided):
@@ -238,6 +242,7 @@ extensions silently do not load.
 | D40 | 10-15 | V3: default kick point in a bend where the centroid spline crosses the reference normal plane at `s_kick` (Newton in Float64, `root_tangent` for Dual/TPS); straight elements and compat as Bmad. |
 | D42 | 10-15 | First-bin closed form in default mode: `log(γ²(1+β) z/Ls)` instead of Bmad's `log(2γ² z/Ls)`, so it vanishes on a straight line with D41's exact retardation (was `1/(4γ⁴)`); both branches of `I_csr_calc`. User chose this over reverting `zz` to Bmad's and over documenting it. Compat unchanged. |
 | D43 | 10-15 | Image kernel (both modes): `1 − N·β′ = 1/(γ²(1+β)) + β\|N − t\|²/2`, `N − β′ = (N − t) + (1−β)t`, `B·(N − β′) = (B − t)·(N − t) − \|N − t\|²/2 + (1−β)B·t` (same formula, no cancellation). |
+| D44 | 10-15 | First-bin quadrature (default mode): the node at `zz` is the kick element's entrance source from `ddz_calc_csr` (which defines `zz`), not a source search for lag `zz`. Same point in a consistent geometry; one branch for derivatives w.r.t. the raw geometry numbers. |
 | D41 | 10-15 | Seam (user: "only one root physically, so the simulation should only have one"): default `ddz_calc_csr` continuous at every element boundary and at the lattice ends: angle (not secant slope) of the L line for sources in the kick element, `−2 L_plane` for sources ahead in it, `L/(γ²(1+β))` for `L(1 − β)`; the first-bin split lag `zz` from `ddz_calc_csr`. Compat keeps Bmad. Chosen over a tie-break in the walk and over replaying the forward search in the pullback. |
 
 ---
@@ -279,9 +284,9 @@ extensions silently do not load.
   wrong input (inference: 3/3 passes after D32 has probability ~0.46 at a 23% failure rate). Fix: γ enters the
   wrapper as γ/Γ, Γ = 1e5 (pullback × Γ), s_kick restored: failure rate 1.5e-4 (3/20000, near-exact cancellations
   of ȳ⋅∂kick/∂γ); `ad_rrule_test.jl` 10/10 seeds on 1 thread, 3/3 on 4 threads (206 tests).
-  **After D43 (2026-10-15):** compat 0/20000; **free space 2e-4 (4/20000), still open**: element 2 geometry columns
-  (`theta_chord`, `spline[1]`), FD column error ~1e-3 (source-root noise, zbrent abs_tol 1e-8). Hit once in a full
-  4-thread run (Section 9, D43).
+  **After D43 (2026-10-15):** compat 0/20000; free space 2e-4 (4/20000), hit once in a full 4-thread run. **Fixed by
+  D44** (free space 0/20000; Section 9): not source-root noise but a branch ambiguity at the first-bin quadrature's
+  first node.
 - **Deferred from the 2026-10-15 `phase7-tps` review** (user: address in Phase 8 / Stage 2; numbers are the
   review's finding numbers):
   - (2, Phase 8) `csr_apply_test_kicks!` (`src/kick.jl`) copies `bins`/`kick` only when the test particles are on the
@@ -786,6 +791,27 @@ Hat costs ~5× the source solves of point sampling.
     added). Cross-check rerun: all five `result.txt` and the `.dat` files identical to before. Docs build
     clean (existing warnings); D43 row in `decisions.md`.
 
+### Free-space test_rrule flake, D44 (10-15, branch `fd-flake-d44`)
+- `diagnostics/flake_geom_steps.jl [compat]` (FD error per geometry column vs `max_range`, test_rrule wrapper of
+  `ad_rrule_test.jl`): five columns, element 2 `floor0.r[1]`, `theta_chord`, `spline[1]`, `spline[2]` and element 1
+  `floor0.r[3]`, had FD error 3e-4–1.3e-3 at every `max_range` from 1e-7 to 1e-3, and the same with zbrent `abs_tol`
+  1e-13 (temporary edit). So neither step size (D32's case) nor the root tolerance.
+- One output row vs h (element 2 `theta_chord`): `F(x₀+h) − F₀ − J h` is O(h²) for some h and −4.45e-7·h (0.4% of
+  the slope) for others, switching with round-off (h = ±1e-10 differ). The switch is the first-bin quadrature's first
+  node (`I_csr_integral(zz, z)`, lag `cbrt(zz)^3`): its source search returned element 1 at `s = L_chord` (AD's
+  branch) or element 2 at `s ≈ 0`. One point in a consistent geometry; perturbing one raw number of the kick element
+  makes them differ to first order. (Real derivatives go through `CSRGeometry(L, g, centroid)`, consistent.)
+- Fix (D44, user's choice): `I_csr_calc` keeps the entrance source from `ddz_calc_csr` and passes it as the first node
+  (`I_csr_integral(...; k0)`). After: the five columns ≤ 2.2e-8 at max_range 1e-6 (all free-space columns ≤ 1.8e-6;
+  compat ≤ 5.8e-6, except element 2 `ref_floor0.r[1]`, where AD gives 6e-19 and FD exactly 0);
+  `d32_flake.jl free 1e5`: 0/20000 (was 4/20000). Primal kicks bitwise unchanged (4 kick points incl. the entrance).
+- Test (`wake_test.jl`, "First-bin quadrature: one branch for each raw geometry number"): FD of I_int[1] w.r.t.
+  element 2's `theta_chord` at h = 1e-9…1e-6 vs ForwardDiff, rtol 1e-5; fails 3/4 without the fix (1–2%). The
+  `ad_rrule_test.jl` comment on FD accuracy updated (the ~1e-3 "source-root noise" was this).
+- Suite 1622/1622 on 4 threads (5m11s) and 1 thread (4m52s); docs build clean (existing warnings). Cross-check rerun:
+  identical except `csr_beam_tracking_patch` `free_space_default`, element 3 steps 1 and 5, kick ratio 0.815 → 0.584
+  and 0.0137 → 0.0154: kicks there are ~1e-33 /m (1e-29 of the peak, `drift_kick_default.jl`), round-off on both sides.
+
 ### SaganCavity slice `t_ref` (10-15, branch `sagan-tref`)
 - `track_slice!(::SaganSlice)`: `t_exit = t_enter − sagan_dt_ref(c, s0) + sagan_dt_ref(c, last ? L : s1)` (Section 4).
 - Tests (`lcavity_test.jl`): `lc_bunch` starts at `t_ref = 1e-6` (the slices-vs-whole test started at 0 and could not
@@ -990,6 +1016,6 @@ Metal tests in the suite (conditional on Metal.jl).
 | `verify_analytic.jl` | Section 8 checks (Base Julia). |
 | `dspline_coeff.md`, `upstream-bin.md` | Write-ups for V1 and V5. |
 | `upstream_reports.md` | Drafted upstream reports (Section 4). |
-| `diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`, `bench_pullback.jl`, `bench_forward.jl`, `d32_flake.jl [compat\|free] [Γ]`, `d32_steps.jl`, `root_newton_mutation.jl`, `track_tps_probe.jl`, `track_tps_lcavity_probe.jl`, `track_tps_timing.jl`, `track_tps_compile.jl`, `track_tps_mutation.jl [none\|scale]`, `track_tps_docs_example.jl`, `track_tps_thread_spread.jl [n_runs]`, `sagan_tref_check.jl`, `v3_rrule_images.jl`, `v3_rrule_scan.jl`, `v3_hat_node_search.jl`, `v3_image_entry_adjoint.jl`, `v3_node_adjoint.jl`, `v3_warm_start.jl [s_kick] [layer]`, `seam_uniqueness.jl`, `drift_lag0_image.jl`, `drift_kick_default.jl [case] [ix_last]`, `first_bin_straight.jl`, `s_kick_residual.jl [s]`, `image_kernel_roundoff.jl [s]`; data `layer_terms_*.txt` (the `_400` files predate V9). |
+| `diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`, `bench_pullback.jl`, `bench_forward.jl`, `d32_flake.jl [compat\|free] [Γ]`, `d32_steps.jl`, `root_newton_mutation.jl`, `track_tps_probe.jl`, `track_tps_lcavity_probe.jl`, `track_tps_timing.jl`, `track_tps_compile.jl`, `track_tps_mutation.jl [none\|scale]`, `track_tps_docs_example.jl`, `track_tps_thread_spread.jl [n_runs]`, `sagan_tref_check.jl`, `v3_rrule_images.jl`, `v3_rrule_scan.jl`, `v3_hat_node_search.jl`, `v3_image_entry_adjoint.jl`, `v3_node_adjoint.jl`, `v3_warm_start.jl [s_kick] [layer]`, `seam_uniqueness.jl`, `drift_lag0_image.jl`, `drift_kick_default.jl [case] [ix_last]`, `first_bin_straight.jl`, `s_kick_residual.jl [s]`, `image_kernel_roundoff.jl [s]`, `flake_geom_steps.jl [compat]`; data `layer_terms_*.txt` (the `_400` files predate V9). |
 | `../crosscheck/` | Bmad/Tao cross-check (README there). |
 | `../docs/` | Documenter docs (`julia --project=docs docs/make.jl`; `docs/README.md`); pages Home, Usage, Physics model, Physics decisions, Validation, API, Internals. Deployed by `.github/workflows/Documentation.yml` from `main`. Keep "Physics decisions" in sync with Section 3 when physics changes. |

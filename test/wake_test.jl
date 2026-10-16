@@ -91,6 +91,28 @@ using CSR: CSRKickPoint, CSRKick1, s_source_calc, ddz_calc_csr, I_csr_calc, zbre
     end
   end
 
+  @testset "First-bin quadrature: one branch for each raw geometry number" begin
+    # The quadrature's first node is the kick element's entrance (lag zz). Searched for, round-off put it at the
+    # previous element's end instead for some perturbations of the kick element's theta_chord alone: the same point in
+    # a consistent geometry, but FD then differed from ForwardDiff by 0.4% (flaky test_rrule, ad_rrule_test.jl).
+    L3 = [0.2, 0.3, 0.2]; g3 = [0.0, 1.5, 0.0]
+    c3 = zeros(4, 6)
+    c3[:, 1] = [0.0, 4e-4, 1.1e-3, 2e-3]; c3[:, 2] = [2e-3, 1.5e-3, 3e-3, 3e-3]; c3[:, 6] = [0.0, 1e-3, -2e-3, 0.0]
+    v0 = CSR.geometry_to_vector(CSRGeometry(L3, g3, c3))
+    c = 4 + 26 + 20   # theta_chord of element 2
+    function I1(x)
+      v = Vector{typeof(x)}(v0); v[c] = x
+      g = CSR.geometry_from_vector(v, 3, false)
+      kpg = CSRKickPoint(g, 2, 0.17, 200.0)
+      k, _ = s_source_calc(CSRKick1(g, kpg; dz_particles = 6e-4), g, kpg)
+      return I_csr_calc(k, 1, 6e-4, g, kpg, 0.0).I_int_csr
+    end
+    d = ForwardDiff.derivative(I1, v0[c])
+    for h in (1e-9, 1e-8, 1e-7, 1e-6)
+      @test (I1(v0[c] + h) - I1(v0[c] - h)) / 2h ≈ d rtol = 1e-5
+    end
+  end
+
   @testset "Source upstream of the lattice" begin
     # Short bend: large lags put the source on the infinite upstream drift (ix_ele_source = 0)
     g2 = CSRGeometry([0.2], [0.1], zeros(2, 6))
