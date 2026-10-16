@@ -53,7 +53,9 @@ GTPSA TPS).
 - **`sagan-tref`** (from `upstream-refresh` `0ec4424`, 2026-10-15): SaganCavity slices accumulate `t_ref` as
   BeamTracking 0.8.7 (Section 4).
 - **`reruns-d41`** (from `sagan-tref` `bb34954`, 2026-10-15): reruns after D39–D41 (Bmad cross-check,
-  `image_kernel_exact.jl`); found and fixed the first-bin log term (D42). **Latest state.**
+  `image_kernel_exact.jl`); found and fixed the first-bin log term (D42).
+- **`s-kick-residual`** (from `reruns-d41` `1073953`, 2026-10-15): s_kick rrule residual traced to ForwardDiff
+  round-off (Section 4, Section 9); diagnostic and notes only, no code change. **Latest state.**
 
 | Commit | Branch | Content |
 |---|---|---|
@@ -122,6 +124,8 @@ keep testing on Julia 1.13.1.
 5. Later (not today): Stage 2 with variables per D37.
 6. **Done 2026-10-15** (user's choice of next task; branch `reruns-d41`; Section 9): reruns after D39–D41. Found a
    spurious default-mode first-bin kick on straight lines since D41; user chose the fix D42.
+7. **Done 2026-10-15** (user's choice; branch `s-kick-residual`; Section 9): s_kick rrule residual. Round-off in the
+   image derivative, not a pullback error; no code change.
 
 Original notes for step 3 (from the reorg handoff, 2026-10-14): Goal: derivatives of a kick w.r.t. the geometry and the reference speed/energy (γ), and `s_kick`.
 Starting points (suggestions, not decided):
@@ -243,9 +247,9 @@ extensions silently do not load.
   −1.111111e-3 vs exact −1.111111e-3 (was −1.3e-4). Lag 0 at y = 3 mm is still 0.945 of exact, but the absolute error
   (0.07) is no larger than at the neighbouring lags ±1e-4 (0.08, 0.27; kernel ~1e4 there): the value sits near a sign
   change, so the ratio shows the ~1e-5 relative accuracy of the other lags (inference from the table, not traced).
-- rrule vs ForwardDiff for `s_kick` with images (default mode): 4e-11–5e-10 relative at a few kick positions
-  (s = 0.19, 0.23 in the `ad_rrule_test.jl` lattice; `diagnostics/v3_rrule_scan.jl`), the same before and after
-  D40/D41; γ ≤ 2.3e-13 everywhere. Not investigated (the test's s = 0.17 gives 9e-16).
+- rrule vs ForwardDiff for `s_kick` with images (default mode), 4e-11–5e-10 relative at s = 0.19, 0.23: **closed
+  2026-10-15, round-off** (Section 9, `diagnostics/s_kick_residual.jl`). ForwardDiff alone moves by as much when its
+  seed is rescaled; the rrule lies inside that spread.
 - V4 round-off branches (`SRC_END`/`SRC_START`, D11) remain; with D41 they are reached only at round-off level.
 - At h = 1 cm the hat-integrated shielded result depends on n_bin below ~240 bins (likely charge-density resolution
   on a small residual; not verified).
@@ -747,6 +751,21 @@ Hat costs ~5× the source solves of point sampling.
   Suite 1616/1616 on 4 threads (5m27s) and 1 thread (4m43s). Docs build clean (existing warnings); D42 row in
   `decisions.md`, item 9 in the `CSRParams` docstring. Cross-check result files rerun with D42.
 
+### s_kick rrule residual (10-15, branch `s-kick-residual`)
+- `v3_rrule_scan.jl` reproduces it: rrule vs ForwardDiff for s_kick 4.0e-11 (s = 0.19), 4.0e-10 (s = 0.23), 1 or 2
+  image layers; γ ≤ 2.4e-14. `diagnostics/s_kick_residual.jl [s]`:
+  - Free space alone: 4.4e-16 (s = 0.23), 1.3e-13 (0.19). The residual is in the image part.
+  - Per image hat node (layer 1, 683 nodes, s = 0.23): node_adjoint! vs ForwardDiff of `image_kernel_at` differ by
+    ≤ 2.7e-10 relative, largest on upstream-drift nodes near u = 4.5e-3 whose s_kick derivatives are ~1e6–1e7;
+    weighted, they cancel to a total of 3.8e-5 (sum of the kick derivative).
+  - ForwardDiff with its seed rescaled by c (d/dt f(s + c t)/c, exact in exact arithmetic), relative to the rrule:
+    s = 0.23: −4.0e-10 to +4.7e-10 over c ∈ {1, 2, 3, 0.7, 1/3, 5, 0.1}; s = 0.19: −2.7e-11 to +5.2e-11; s = 0.13:
+    −1.5e-11 to +5.7e-11. ForwardDiff's own round-off spread covers the rrule–ForwardDiff difference at each s.
+- Conclusion: round-off in the image derivative (as in Section 4, issue (1): `1 − N·β′ ≈ 1/(2γ²)` cubed, root slope
+  `O(1/γ²)`; attribution inferred, not measured term by term), amplified by the cancellation over nodes. Not a pullback
+  error. A BigFloat reference was not usable: its root search stops at a different point (`zbrent` tolerance 1e-8 m),
+  so it is not the same discretized function. No code change.
+
 ### SaganCavity slice `t_ref` (10-15, branch `sagan-tref`)
 - `track_slice!(::SaganSlice)`: `t_exit = t_enter − sagan_dt_ref(c, s0) + sagan_dt_ref(c, last ? L : s1)` (Section 4).
 - Tests (`lcavity_test.jl`): `lc_bunch` starts at `t_ref = 1e-6` (the slices-vs-whole test started at 0 and could not
@@ -951,6 +970,6 @@ Metal tests in the suite (conditional on Metal.jl).
 | `verify_analytic.jl` | Section 8 checks (Base Julia). |
 | `dspline_coeff.md`, `upstream-bin.md` | Write-ups for V1 and V5. |
 | `upstream_reports.md` | Drafted upstream reports (Section 4). |
-| `diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`, `bench_pullback.jl`, `bench_forward.jl`, `d32_flake.jl [compat\|free] [Γ]`, `d32_steps.jl`, `root_newton_mutation.jl`, `track_tps_probe.jl`, `track_tps_lcavity_probe.jl`, `track_tps_timing.jl`, `track_tps_compile.jl`, `track_tps_mutation.jl [none\|scale]`, `track_tps_docs_example.jl`, `track_tps_thread_spread.jl [n_runs]`, `sagan_tref_check.jl`, `v3_rrule_images.jl`, `v3_rrule_scan.jl`, `v3_hat_node_search.jl`, `v3_image_entry_adjoint.jl`, `v3_node_adjoint.jl`, `v3_warm_start.jl [s_kick] [layer]`, `seam_uniqueness.jl`, `drift_lag0_image.jl`, `drift_kick_default.jl [case] [ix_last]`, `first_bin_straight.jl`; data `layer_terms_*.txt` (the `_400` files predate V9). |
+| `diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`, `bench_pullback.jl`, `bench_forward.jl`, `d32_flake.jl [compat\|free] [Γ]`, `d32_steps.jl`, `root_newton_mutation.jl`, `track_tps_probe.jl`, `track_tps_lcavity_probe.jl`, `track_tps_timing.jl`, `track_tps_compile.jl`, `track_tps_mutation.jl [none\|scale]`, `track_tps_docs_example.jl`, `track_tps_thread_spread.jl [n_runs]`, `sagan_tref_check.jl`, `v3_rrule_images.jl`, `v3_rrule_scan.jl`, `v3_hat_node_search.jl`, `v3_image_entry_adjoint.jl`, `v3_node_adjoint.jl`, `v3_warm_start.jl [s_kick] [layer]`, `seam_uniqueness.jl`, `drift_lag0_image.jl`, `drift_kick_default.jl [case] [ix_last]`, `first_bin_straight.jl`, `s_kick_residual.jl [s]`; data `layer_terms_*.txt` (the `_400` files predate V9). |
 | `../crosscheck/` | Bmad/Tao cross-check (README there). |
 | `../docs/` | Documenter docs (`julia --project=docs docs/make.jl`; `docs/README.md`); pages Home, Usage, Physics model, Physics decisions, Validation, API, Internals. Deployed by `.github/workflows/Documentation.yml` from `main`. Keep "Physics decisions" in sync with Section 3 when physics changes. |
