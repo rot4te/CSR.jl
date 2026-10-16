@@ -230,6 +230,8 @@ Parameters for the 1D CSR calculation. Names follow Bmad's `space_charge_com` co
        make `ddz` jump at the kick element's ends and the lattice ends, giving two roots or none for some lags (the
        source then depends on where the search starts). CSR.jl uses the angle, `2 L_plane` and `L/(γ²(1 + β))`:
        `ddz` is continuous and each lag has one source (`planning/PLAN.md`, seam).
+    9. First-bin closed form over the kick element: Bmad's `log(2γ² z/Ls)` vanishes on a straight line only with its
+       `L/(2γ²)` retardation; CSR.jl uses `log(γ²(1 + β) z/Ls)` to match item 8 (`planning/PLAN.md`, D42).
 """
 Base.@kwdef struct CSRParams
   n_bin::Int = 40

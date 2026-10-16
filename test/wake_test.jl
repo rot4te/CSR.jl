@@ -80,6 +80,17 @@ using CSR: CSRKickPoint, CSRKick1, s_source_calc, ddz_calc_csr, I_csr_calc, zbre
     @test first_bin(geom_c, 1e-3).I_int_csr / ss_int(1e-3) ≈ 2 / 3 rtol = 1e-2
   end
 
+  @testset "First-bin integral vanishes on a straight line (D42)" begin
+    # Closed form with exact retardation; with 2γ² in the log it was 1/(4γ⁴) (planning/diagnostics/first_bin_straight.jl)
+    g = CSRGeometry(fill(0.5, 4), zeros(4), zeros(5, 6))
+    for γ in (82.0, 1e3), dz in (1e-7, 1e-4)   # source in the kick element, upstream of it
+      kpg = CSRKickPoint(g, 3, 0.25, γ)
+      k, _ = s_source_calc(CSRKick1(; ix_ele_source = 3, dz_particles = dz), g, kpg)
+      @test (k.ix_ele_source == 3) == (dz < 1e-6)
+      @test abs(I_csr_calc(k, 1, dz, g, kpg, 0.0).I_int_csr) < 1e-6 / (4γ^4)   # measured ≤ 2e-9 of it
+    end
+  end
+
   @testset "Source upstream of the lattice" begin
     # Short bend: large lags put the source on the infinite upstream drift (ix_ele_source = 0)
     g2 = CSRGeometry([0.2], [0.1], zeros(2, 6))

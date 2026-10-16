@@ -51,7 +51,9 @@ GTPSA TPS).
 - **`upstream-refresh`** (from `phase7-step5` `7d344c9`, 2026-10-15): session item 4 (upstream reports, docs
   workflow).
 - **`sagan-tref`** (from `upstream-refresh` `0ec4424`, 2026-10-15): SaganCavity slices accumulate `t_ref` as
-  BeamTracking 0.8.7 (Section 4). **Latest state.**
+  BeamTracking 0.8.7 (Section 4).
+- **`reruns-d41`** (from `sagan-tref` `bb34954`, 2026-10-15): reruns after D39–D41 (Bmad cross-check,
+  `image_kernel_exact.jl`); found and fixed the first-bin log term (D42). **Latest state.**
 
 | Commit | Branch | Content |
 |---|---|---|
@@ -118,6 +120,8 @@ keep testing on Julia 1.13.1.
    The user files the reports and
    enables GitHub Pages.
 5. Later (not today): Stage 2 with variables per D37.
+6. **Done 2026-10-15** (user's choice of next task; branch `reruns-d41`; Section 9): reruns after D39–D41. Found a
+   spurious default-mode first-bin kick on straight lines since D41; user chose the fix D42.
 
 Original notes for step 3 (from the reorg handoff, 2026-10-14): Goal: derivatives of a kick w.r.t. the geometry and the reference speed/energy (γ), and `s_kick`.
 Starting points (suggestions, not decided):
@@ -157,7 +161,8 @@ Pages (`gh-pages`) after pushing. Action versions in `.github/workflows/Document
 ### Paths (two machines: `$HOME` is `/Users/alexcoxe` or `/Users/coxea3`; always write `~`)
 - Package `~/.julia/dev/CSR.jl`; dev checkouts beside it: `BeamTracking.jl` (v0.8.7, `65e343f`), `Beamlines.jl`
   (v0.11.0, `35fe016`), `AtomicAndPhysicalConstants.jl`, `GTPSA.jl`, `SciBmad.jl`, `SpaceCharge.jl`.
-- Bmad source `~/bmad-ecosystem` (`7c9df4059`, REL 20261014-0 on one machine); conda env `~/miniforge3/envs/bmad`.
+- Bmad source `~/bmad-ecosystem` (`7c9df4059`, REL 20261014-0 on one machine); conda env `~/miniforge3/envs/bmad`
+  on one machine, `~/miniconda3/envs/bmad` on the other (set `ENV["TAO"]` for the cross-check there).
 - Julia 1.13.1 via juliaup `release` (user, 2026-10-14; earlier phases ran on 1.12.7). `Project.toml`: `julia = "1.10"`.
 
 ### Git
@@ -225,6 +230,7 @@ extensions silently do not load.
 | D38 | 10-15 | Phase 7 order: step 5 (`track_csr!` with a TPS test bunch) before Stage 2; V2 and V3 decided before step 5. |
 | D39 | 10-15 | V2: default kick coefficient `ds r_e abs(q) / (rel_mass e β² γ)` (`Δpz = ΔE/(β²E)`; user chose to include 1/β²); compat keeps Bmad's `ds r_c / (rel_mass e abs(q) γ)`. |
 | D40 | 10-15 | V3: default kick point in a bend where the centroid spline crosses the reference normal plane at `s_kick` (Newton in Float64, `root_tangent` for Dual/TPS); straight elements and compat as Bmad. |
+| D42 | 10-15 | First-bin closed form in default mode: `log(γ²(1+β) z/Ls)` instead of Bmad's `log(2γ² z/Ls)`, so it vanishes on a straight line with D41's exact retardation (was `1/(4γ⁴)`); both branches of `I_csr_calc`. User chose this over reverting `zz` to Bmad's and over documenting it. Compat unchanged. |
 | D41 | 10-15 | Seam (user: "only one root physically, so the simulation should only have one"): default `ddz_calc_csr` continuous at every element boundary and at the lattice ends: angle (not secant slope) of the L line for sources in the kick element, `−2 L_plane` for sources ahead in it, `L/(γ²(1+β))` for `L(1 − β)`; the first-bin split lag `zz` from `ddz_calc_csr`. Compat keeps Bmad. Chosen over a tie-break in the walk and over replaying the forward search in the pullback. |
 
 ---
@@ -233,9 +239,10 @@ extensions silently do not load.
 
 **Open (user decisions or unresolved):**
 - V2, V3: decided 2026-10-15 (D39, D40). The seam is removed in default mode (D41).
-- Seam/V4 (measured before D41, not rerun): at y = 3 mm, lag −3 mm (retarded image source at the kick point) the
-  image kernel was −1.3e-4 vs exact −1.11e-3 (~1e-7 of the peak). Lag 0 at small y: 0.94 of exact (attributed then to
-  Bmad's approximate retardation, now exact in default mode). Rerun `image_kernel_exact.jl` to update.
+- Seam/V4: closed by the rerun of `image_kernel_exact.jl` after D41 (2026-10-15): y = 3 mm, lag −3 mm now
+  −1.111111e-3 vs exact −1.111111e-3 (was −1.3e-4). Lag 0 at y = 3 mm is still 0.945 of exact, but the absolute error
+  (0.07) is no larger than at the neighbouring lags ±1e-4 (0.08, 0.27; kernel ~1e4 there): the value sits near a sign
+  change, so the ratio shows the ~1e-5 relative accuracy of the other lags (inference from the table, not traced).
 - rrule vs ForwardDiff for `s_kick` with images (default mode): 4e-11–5e-10 relative at a few kick positions
   (s = 0.19, 0.23 in the `ad_rrule_test.jl` lattice; `diagnostics/v3_rrule_scan.jl`), the same before and after
   D40/D41; γ ≤ 2.3e-13 everywhere. Not investigated (the test's s = 0.17 gives 9e-16).
@@ -716,6 +723,30 @@ Hat costs ~5× the source solves of point sampling.
   rerun; docs build clean (existing warnings only). Then `2748fb9` fixed the flake (Section 4): `ad_rrule_test.jl`
   206/206 under 10 seeds (1 thread) and 3 seeds (4 threads); full suite not rerun after `2748fb9` (test file only).
 
+### Reruns after D39–D41 and D42 (10-15, branch `reruns-d41`)
+- **`image_kernel_exact.jl`:** all ratios 0.99997–1.00003 at y = 3 mm–1.92 m except lag 0 at y = 3 mm (0.945) and
+  3 cm (1.0002), both near a sign change (Section 4). Lag −3 mm at y = 3 mm: exact (was −1.3e-4 vs −1.11e-3).
+- **Bmad cross-check** (this machine: Bmad conda 20260918.0 at `~/miniconda3/envs/bmad`, `TAO` set). Compat sections:
+  changes only in the 3rd digit of round-off-level numbers (CSR-off z 1.970e-15 → 1.972e-15, y rel. diff 2.34e-8 →
+  2.35e-8, one Tao-example shielded kick 7.33e-6 → 7.34e-6). The old code `f3c69bf` on this machine gives the new
+  numbers exactly, so the change is the machine (the 10-14 rerun was on the other one), not D39–D41. `geom_check.txt`
+  unchanged.
+- **Default sections, before → after D39–D42** (Δpz free, shielded; worst I_csr): single bends 0.48–0.49 → 0.48–0.50,
+  0.42–0.43 → 0.42–0.43; I_csr 1.8e-2 → 2.4e-2–2.7e-2 (growing towards the bend exit, with s_source 5e-4: consistent
+  with V3 moving the kick point, not checked term by term). Tao example 0.046 → 0.047, 0.85 → 0.85; I_csr 5.8e-2 →
+  0.13.
+- **Found:** default mode after D41 gave a kick on the Tao example's first drift (all sources on the upstream infinite
+  drift) of 2.81e-11 /m, constant over steps 1–6, 2.2e-7 of the peak bend kick (Bmad 0; compat round-off), visible as
+  kick ratios 1.26e297 (Bmad's 0 normalized by `floatmin`). Cause: the first-bin closed form
+  `−kf((g Ls/2)² − log(2γ² zz/Ls)/γ²)` vanishes at g = 0 only for zz = Ls/(2γ²); D41 made zz exact, Ls/(γ²(1+β)), so
+  the log gave 1/(4γ⁴) (`diagnostics/first_bin_straight.jl`: I_int[1] = 1/(4γ⁴) to 6e-5 in both branches, γ = 82, 1e3).
+  Fixed by D42 (`wake.jl`): I_int[1] ≤ 2e-9 of 1/(4γ⁴); drift kick ≤ 1e-66 (Tao example), patch case ≤ 4e-19 of the
+  peak (`diagnostics/drift_kick_default.jl`). The patch case's remaining kick ratio 9.7e12 is round-off (8.6e-23 /m at
+  steps 3 and 6, also in compat in the non-patch case) over Bmad's ~1e-35.
+- Test (`wake_test.jl`, "First-bin integral vanishes on a straight line (D42)"): 8 tests, 4 fail without the fix.
+  Suite 1616/1616 on 4 threads (5m27s) and 1 thread (4m43s). Docs build clean (existing warnings); D42 row in
+  `decisions.md`, item 9 in the `CSRParams` docstring. Cross-check result files rerun with D42.
+
 ### SaganCavity slice `t_ref` (10-15, branch `sagan-tref`)
 - `track_slice!(::SaganSlice)`: `t_exit = t_enter − sagan_dt_ref(c, s0) + sagan_dt_ref(c, last ? L : s1)` (Section 4).
 - Tests (`lcavity_test.jl`): `lc_bunch` starts at `t_ref = 1e-6` (the slices-vs-whole test started at 0 and could not
@@ -866,7 +897,7 @@ Hat costs ~5× the source solves of point sampling.
 | 0 | Package skeleton | done |
 | 1 | Serial CPU reference port (Float64) | done |
 | 2 | BeamTracking integration (route a) | done |
-| 3 | Bmad cross-check | done |
+| 3 | Bmad cross-check | done (rerun after D39–D42, 2026-10-15) |
 | 4 | KernelAbstractions kernels | done (GPU: particle side + CPU tables, Stage C) |
 | 5 | Shielding (image charges) | done (+ D20, D24, V9) |
 | 6 | AD: steps 0–2 particles (done); step 3 geometry/γ via implicit differentiation of the source root | done (3a forward, 3b rrules, D30 cheaper pullback) |
@@ -920,6 +951,6 @@ Metal tests in the suite (conditional on Metal.jl).
 | `verify_analytic.jl` | Section 8 checks (Base Julia). |
 | `dspline_coeff.md`, `upstream-bin.md` | Write-ups for V1 and V5. |
 | `upstream_reports.md` | Drafted upstream reports (Section 4). |
-| `diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`, `bench_pullback.jl`, `bench_forward.jl`, `d32_flake.jl [compat\|free] [Γ]`, `d32_steps.jl`, `root_newton_mutation.jl`, `track_tps_probe.jl`, `track_tps_lcavity_probe.jl`, `track_tps_timing.jl`, `track_tps_compile.jl`, `track_tps_mutation.jl [none\|scale]`, `track_tps_docs_example.jl`, `track_tps_thread_spread.jl [n_runs]`, `sagan_tref_check.jl`, `v3_rrule_images.jl`, `v3_rrule_scan.jl`, `v3_hat_node_search.jl`, `v3_image_entry_adjoint.jl`, `v3_node_adjoint.jl`, `v3_warm_start.jl [s_kick] [layer]`, `seam_uniqueness.jl`, `drift_lag0_image.jl`; data `layer_terms_*.txt` (the `_400` files predate V9). |
+| `diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`, `bench_pullback.jl`, `bench_forward.jl`, `d32_flake.jl [compat\|free] [Γ]`, `d32_steps.jl`, `root_newton_mutation.jl`, `track_tps_probe.jl`, `track_tps_lcavity_probe.jl`, `track_tps_timing.jl`, `track_tps_compile.jl`, `track_tps_mutation.jl [none\|scale]`, `track_tps_docs_example.jl`, `track_tps_thread_spread.jl [n_runs]`, `sagan_tref_check.jl`, `v3_rrule_images.jl`, `v3_rrule_scan.jl`, `v3_hat_node_search.jl`, `v3_image_entry_adjoint.jl`, `v3_node_adjoint.jl`, `v3_warm_start.jl [s_kick] [layer]`, `seam_uniqueness.jl`, `drift_lag0_image.jl`, `drift_kick_default.jl [case] [ix_last]`, `first_bin_straight.jl`; data `layer_terms_*.txt` (the `_400` files predate V9). |
 | `../crosscheck/` | Bmad/Tao cross-check (README there). |
 | `../docs/` | Documenter docs (`julia --project=docs docs/make.jl`; `docs/README.md`); pages Home, Usage, Physics model, Physics decisions, Validation, API, Internals. Deployed by `.github/workflows/Documentation.yml` from `main`. Keep "Physics decisions" in sync with Section 3 when physics changes. |

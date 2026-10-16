@@ -36,10 +36,12 @@ function I_csr_calc(k::CSRKick1, i_bin, dz_slice, geom::CSRGeometry, kp::CSRKick
     ek = geom.ele[ix_ele_kick]
     spl = ek.spline
     g_bend = -spline_d2(spl, s_chord_kick) / sqrt(1 + spline_d1(spl, s_chord_kick)^2)^3
+    # Ls/z of a straight line: 2γ² with Bmad's retardation, γ²(1 + β) exact (D42), so the log vanishes there
+    straight = geom.bmad_compat ? 2gamma2 : gamma2 * (1 + kp.beta)
 
     if k.ix_ele_source == ix_ele_kick
       Ls = k.L + k.dL
-      I_int_csr = -kp.kick_factor * ((g_bend * Ls / 2)^2 - log(2gamma2 * z / Ls) / gamma2)
+      I_int_csr = -kp.kick_factor * ((g_bend * Ls / 2)^2 - log(straight * z / Ls) / gamma2)
     else
       # Source point in another element: first integrate over the element containing the kick point,
       # then add the rest.
@@ -56,7 +58,7 @@ function I_csr_calc(k::CSRKick1, i_bin, dz_slice, geom::CSRGeometry, kp::CSRKick
                              geom, kp)
         Ls = path_excess(0.0, s_chord_kick, spl) + s_chord_kick
       end
-      I_int_csr = -kp.kick_factor * ((g_bend * Ls / 2)^2 - log(2gamma2 * zz / Ls) / gamma2)
+      I_int_csr = -kp.kick_factor * ((g_bend * Ls / 2)^2 - log(straight * zz / Ls) / gamma2)
       if geom.bmad_compat
         # Bmad approximates the rest of the integral with I_csr held at its value at z. In steady state
         # (I ∝ u^(-1/3), zz ≪ z) this gives 2/3 of the integral.
