@@ -1,6 +1,6 @@
 # D32 flake: FD vs exact Jacobian of the test_rrule wrapper ("images, bmad_compat"), then failure rate over random ȳ
 # drawn as ChainRulesTestUtils does (rand(-9:0.01:9) per output), with test_approx's semantics.
-# Usage (test env, 1 thread): julia --project=<env> -t 1 d32_flake.jl [compat|free] [Γ]
+# Usage (test env, 1 thread): julia --project=<env> -t 1 d32_flake.jl [compat|free] [Γ] [rtol, 1e-2]
 # γ enters as Γ·x (Γ = 1 old test, 1e5 the fix in 2748fb9); s_kick included. Results: PLAN.md Section 4 (D32).
 using Test, CSR, ForwardDiff, StaticArrays, Random, LinearAlgebra, Printf
 using ChainRulesTestUtils: FiniteDifferences
@@ -22,6 +22,7 @@ gv = CSR.geometry_to_vector(geom)
 pz0 = 1e-4 .* sin.(1:60)
 ng = length(gv)
 Γ = parse(Float64, get(ARGS, 2, "1"))
+rtol = parse(Float64, get(ARGS, 3, "1e-2"))
 blocks = (pz = 1:60, q = 61:120, geom = 121:120+ng, s = 121+ng:121+ng, gamma = 122+ng:122+ng)
 x0 = [pz0; qs; gv; 0.17; 200.0 / Γ]
 F(x) = csr_kick_pz(x[blocks.pz], zs, x[blocks.q], as, CSR.geometry_from_vector(x[blocks.geom], 3, bc), 2, x[blocks.s[1]],
@@ -41,15 +42,15 @@ for t in 1:N
   for (k, r) in pairs(blocks)
     a, e = Jad[:, r]' * ȳ, Jfd[:, r]' * ȳ
     a, e = vec(a), vec(e)
-    isapprox(a, e; rtol = 1e-2, atol = 1e-10) && continue
-    bad = findall(i -> !isapprox(a[i], e[i]; rtol = 1e-2, atol = 1e-10), eachindex(a))
+    isapprox(a, e; rtol, atol = 1e-10) && continue
+    bad = findall(i -> !isapprox(a[i], e[i]; rtol, atol = 1e-10), eachindex(a))
     isempty(bad) && continue
     fails[k] += 1; failed = true
     for i in bad; elfail[(k, i)] = get(elfail, (k, i), 0) + 1; end
   end
   global anyfail += failed
 end
-@printf("case %s, Γ = %g: P(fail) = %.4f over %d draws\n", case, Γ, anyfail / N, N)
+@printf("case %s, Γ = %g, rtol = %g: P(fail) = %.4f over %d draws\n", case, Γ, rtol, anyfail / N, N)
 for k in keys(blocks); @printf("  %-6s fails %d\n", k, fails[k]); end
 for ((k, i), c) in sort(collect(elfail); by = last, rev = true)[1:min(end, 10)]
   col = blocks[k][i]
