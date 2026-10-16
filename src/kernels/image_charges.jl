@@ -7,7 +7,8 @@
 Longitudinal field at the kick point of an image charge at the source point stored in `k` (height
 `kp.y_source`), times `kp.kick_factor`: the Liénard–Wiechert velocity (`coulomb1`) and acceleration (`radiate`)
 terms, without the `q/(4πε₀)` factor. The source moves with speed `β` along the centroid with the centroid's
-curvature (zero on the infinite drifts outside the lattice).
+curvature (zero on the infinite drifts outside the lattice). `1 − N⋅β′ ≈ 1/(2γ²)` and `B⋅(N − β′)` are computed
+without cancellation (from `N − t`, `t` the source's direction; D43), in both modes.
 """
 function image_charge_kick(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
   ix = k.ix_ele_source
@@ -18,19 +19,25 @@ function image_charge_kick(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
     g_bend = 0.0
   end
   theta = k.floor_s.theta
-  Bp_vec = kp.beta * SVector(sin(theta), 0.0, cos(theta))              # β vector at the source point
+  t_vec = SVector(sin(theta), 0.0, cos(theta))                         # Direction of motion at the source point
   G_vec = kp.beta^2 * g_bend * SVector(-cos(theta), 0.0, sin(theta))   # Acceleration vector
 
   N_vec = (kp.floor_k.r - k.floor_s.r) / k.L
   theta = kp.floor_k.theta
   B_vec = SVector(sin(theta), 0.0, cos(theta))                         # β direction at the kick point
 
-  OneNBp3 = (1 - dot3(N_vec, Bp_vec))^3
-  NBp_vec = N_vec - Bp_vec
+  # 1 - N⋅β′ and N - β′ (β′ = β t) without cancellation, from d = N - t (|N| = |t| = 1) and 1 - β = 1/(γ²(1 + β)):
+  # 1 - N⋅β′ = (1 - β) + β|d|²/2 and B⋅(N - β′) = (B - t)⋅d - |d|²/2 + (1 - β) B⋅t
+  d_vec = N_vec - t_vec
+  dd = dot3(d_vec, d_vec)
+  one_m_beta = 1 / (kp.gamma2 * (1 + kp.beta))
+  OneNBp3 = (one_m_beta + kp.beta * dd / 2)^3
+  NBp_vec = d_vec + one_m_beta * t_vec
   rad_cross_vec = cross3(N_vec, cross3(NBp_vec, G_vec))
 
   radiate = dot3(B_vec, rad_cross_vec) / (k.L * OneNBp3)
-  coulomb1 = dot3(B_vec, NBp_vec) / (kp.gamma2 * k.L^2 * OneNBp3)
+  B_NBp = dot3(B_vec - t_vec, d_vec) - dd / 2 + one_m_beta * dot3(B_vec, t_vec)
+  coulomb1 = B_NBp / (kp.gamma2 * k.L^2 * OneNBp3)
   return kp.kick_factor * (radiate + coulomb1)
 end
 

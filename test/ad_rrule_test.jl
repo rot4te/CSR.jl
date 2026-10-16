@@ -79,6 +79,19 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry, msg = ""; kw...)
     @test maxrel(reduce(vcat, [[ft.r; ft.theta] for ft in tg4[4]]), rx) < 1e-9
   end
 
+  # Image kernel round-off (D43): with Bmad's 1 − N⋅β′ the s_kick derivatives at these kick points differed by 4e-11
+  # and 4e-10 (round-off in both, ForwardDiff's spread under seed scaling as large; diagnostics/s_kick_residual.jl)
+  @testset "s_kick with images, round-off (D43)" begin
+    p = CSRParams(n_bin = 40, ds_step = 0.1, n_shield_images = 1, beam_chamber_height = 0.01)
+    geom = CSRGeometry(L3, g3, c3)
+    ybar = cos.(1:n)
+    for s in (0.19, 0.23)
+      _, back = ChainRulesCore.rrule(csr_kick_pz, pz, z, q, alive, geom, 2, s, 200.0, electron, p)
+      @test back(ybar)[8] ≈ ForwardDiff.derivative(x -> sum(ybar .* csr_kick_pz(pz, z, q, alive, geom, 2, x, 200.0,
+                                                                                 electron, p)), s) rtol = 1e-11
+    end
+  end
+
   # Per-evaluation local derivatives (csr_kick_param_adjoint) == ForwardDiff through csr_bins_kick with every geometry
   # number seeded, in cases that exercise each source branch and table type
   @testset "Parameter adjoint == ForwardDiff: $name" for (name, Lv, gv, ix, sk, n_img, bc, abq) in (
