@@ -137,7 +137,14 @@ keep testing on Julia 1.13.1.
    size problem (a D32-style rescaling cannot help); user chose to pin the first-bin quadrature's first node (D44).
 9. **Done 2026-10-16** (branches `tighten-rrule-rtol` by the user, `tighten-rrule-tol-atol`; Section 9): `test_rrule`
    tolerance tightening. User chose (rtol, atol) = (1e-6, 1e-9) free space, (3e-3, 1e-8) compat, with the
-   atol/cotangent ratio measured and reported.
+   atol/cotangent ratio measured and reported. Per-field tolerances (a custom `test_approx` for the geometry
+   `Tangent`, so element 2's `g` and `ref_floor0.theta` are held to 1e-6 rather than ~8.5e-5 / ~5e-6 through atol):
+   **user: keep the general (rtol, atol) for now** (2026-10-16).
+
+**Handoff 2026-10-16 (session end).** Latest state: branch `tighten-rrule-tol-atol` at `bfa6e3b` + this handoff
+commit, not pushed (the user pushes). Suite 1622/1622 on 1 and 4 threads. No task in progress. Open candidates for
+the next session (user decides): Stage 2 per D37 (item 5); review findings 4 and 8 (Section 4, Stage 2); Phase 8 items
+(Section 10). The test environment is a scratch env (Section 2), rebuilt each session.
 
 Original notes for step 3 (from the reorg handoff, 2026-10-14): Goal: derivatives of a kick w.r.t. the geometry and the reference speed/energy (γ), and `s_kick`.
 Starting points (suggestions, not decided):
@@ -155,7 +162,7 @@ Starting points (suggestions, not decided):
 
 Later: Phase 7 (TPS), Phase 8 (FFT convolution, benchmarks, GPU wake table, upstream hook proposal).
 
-**For the user:** file the upstream reports in `planning/upstream_reports.md` (Section 4, incl. V9); enable GitHub
+**For the user:** push `tighten-rrule-tol-atol`; file the upstream reports in `planning/upstream_reports.md` (Section 4, incl. V9); enable GitHub
 Pages (`gh-pages`) after pushing. Action versions in `.github/workflows/Documentation.yml` now follow Documenter
 1.19's hosting page (checked 2026-10-15; the workflow itself has not run on GitHub).
 
