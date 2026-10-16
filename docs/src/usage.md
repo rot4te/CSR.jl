@@ -99,7 +99,7 @@ In `Float32`, strongly shielded kicks (a small residual of large image terms) ar
 differentiation of its root, `ds/dp = −(∂ddz/∂p)/(∂ddz/∂s)`, not by differentiating the root finder (for nested
 `Dual`s, e.g. `ForwardDiff.hessian`, one more Newton step from the root per order). The search
 runs on a `Float64` copy of the geometry, and each source is then evaluated once in `Dual`s. One pass with 12
-partials costs about 4–5 kicks (ρ = 10 m arc of 0.1 m elements, 1 thread; `planning/diagnostics/bench_forward.jl`). Held
+partials costs about 4–5 kicks (ρ = 10 m arc of 0.1 m elements, 1 thread). Held
 constant: the bin grid (from the extreme live particles) and the discrete choices (number of steps, the element each
 source lies in, the adaptive quadrature's subdivision), so derivatives are one-sided where these switch, e.g. at an
 element entrance.
@@ -164,4 +164,18 @@ must stay within the bunch's bin range.
 tb = Bunch(reshape([0.0, 0.0, 0.0, 0.0, 0.2e-3, 0.0] .+ x, 1, 6); species = e, p_over_q_ref = bunch.p_over_q_ref)
 track_csr!(bunch, bl; params, test_bunch = tb)
 GTPSA.jacobian(tb.coords.v[1, :])   # 6×6 linear map including the frozen-wake CSR kicks
+```
+
+The collective kick itself also takes TPS: `csr_kick_pz` and `csr_kick!` accept TPS particle coordinates and charges,
+a geometry built by `CSRGeometry` from TPS lengths, curvatures or centroid, and TPS `s_kick` and `gamma`. The deposit
+and the kick tables are then computed in TPS, and each retarded source point gets its expansion by Newton steps from
+its primal root (one order per step). The bin grid and the discrete choices are held constant, as with `Dual`s. TPS
+arithmetic is not safe on several threads (GTPSA's C library shares scratch space between Julia threads), so kernels
+with TPS numbers run on the calling thread.
+
+```julia
+x = @vars(Descriptor(2, 2))
+g = [0.0, 1.5 + x[1], 0.0]   # bend curvature as a knob
+pz_new = csr_kick_pz(pz, z, q .* (1 + x[2]), alive, CSRGeometry(L, g, centroid), 2, 0.17, 200.0, e, params)
+GTPSA.jacobian(pz_new)   # ∂Δpz/∂g₂ and ∂Δpz/∂(charge scale) for each particle
 ```

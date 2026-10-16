@@ -9,7 +9,7 @@ Straight elements (`|g| ≤ 1e-5`): `s_ref * L_chord / L`, as Bmad. Bends: the c
 spline crosses the reference normal plane at `s_ref` (`chord_normal_offset` = 0; Newton steps on primal values, then
 `root_tangent`); `0` and `L_chord` at the element ends. `bmad_compat = true`: Bmad's formula
 `|ρ| atan(s_ref cos dθ, |ρ + x + s_ref sin dθ|)`, which on an on-axis bend gives `ρ atan(s/ρ)` instead of the chord
-coordinate (`planning/PLAN.md`, V3).
+coordinate (docs, "Physics decisions", V3).
 """
 function s_ref_to_s_chord(s_ref, e::CSRElementInfo; bmad_compat::Bool = false)
   abs(primal(e.g)) > 1e-5 || return s_ref * e.L_chord / e.L

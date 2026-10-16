@@ -42,7 +42,7 @@ Small-slope length difference between the spline curve and a reference line, `½
 from `s0` to `s1`. The reference line is the spline axis rotated by `dtheta_ref`.
 
 With `bmad_compat = true`, the s⁴ term uses Bmad's coefficient `9c₃²` instead of the integral's `9c₃²/5`
-(see `planning/dspline_coeff.md`).
+(docs, "Physics decisions", V1).
 """
 function dspline_len(s0, s1, c, dtheta_ref = 0.0; bmad_compat::Bool = false)
   c1 = c[2] - dtheta_ref
@@ -80,7 +80,7 @@ Gauss–Legendre (exact for its `x′²/2` part; `x′` is the small slope relat
 
 With `bmad_compat = true`, Bmad's small-angle form `dspline_len(...; bmad_compat = true)`. That form drops the
 `dθ⁴` terms: on a circle of radius ρ it overestimates the excess over an arc Ls by `Ls⁵/(1920ρ⁴)`, which shifts image
-sources at large heights (`planning/PLAN.md`, V9).
+sources at large heights (docs, "Physics decisions", V9).
 """
 function path_excess(s0, s1, c, dtheta_ref = 0.0; bmad_compat::Bool = false)
   bmad_compat && return dspline_len(s0, s1, c, dtheta_ref; bmad_compat)

@@ -23,6 +23,25 @@ Backend the kick tables are computed on. The table kernels need the CPU (non-isb
 table_backend(backend) = backend isa CPU ? backend : CPU()
 
 """
+    thread_safe_number(T...)
+
+`true` if arithmetic in all number types `T` may run on several threads at once: plain and `Dual` numbers (`Real`
+types). `false` for GTPSA TPS (non-`Real` types): GTPSA's C library takes scratch TPSs for nonlinear operations
+(`/`, `sqrt`, `sin`, ...) from a per-thread stack indexed by the OpenMP thread number, which is 0 on every Julia
+thread, so concurrent TPS operations corrupt memory.
+"""
+thread_safe_number(T::Type...) = all(t -> t <: Real, T)
+
+"""
+    cpu_workgroupsize(n, T...)
+
+Workgroup size for a kernel launch over `n` work items in number types `T`: `nothing` (KernelAbstractions' default)
+if `thread_safe_number(T...)`, else `n`, a single workgroup, which the KernelAbstractions CPU backend runs on the
+calling thread.
+"""
+cpu_workgroupsize(n, T::Type...) = thread_safe_number(T...) ? nothing : n
+
+"""
     to_backend(backend, A)
 
 Copy a CPU table to `backend` in `csr_float_type(backend)`; no copy on the CPU.

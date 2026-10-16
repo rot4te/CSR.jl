@@ -8,7 +8,9 @@
 """
 function csr_convolve!(kick::AbstractVector, I_int::AbstractVector, edge_grad::AbstractVector, coef)
   backend = get_backend(kick)
-  csr_convolve_kernel!(backend)(kick, I_int, edge_grad, coef; ndrange = length(kick))
+  n = length(kick)
+  wg = cpu_workgroupsize(n, eltype(kick), eltype(I_int), eltype(edge_grad), typeof(coef))
+  csr_convolve_kernel!(backend)(kick, I_int, edge_grad, coef; ndrange = n, workgroupsize = wg)
   KernelAbstractions.synchronize(backend)
   return kick
 end
@@ -23,7 +25,9 @@ gradient). One work item per bin.
 function csr_image_convolve!(kick::AbstractVector, image::AbstractVector, charge::AbstractVector, coef)
   length(image) == 2length(kick) + 1 || error("csr_image_convolve!: image must have 2n_bin + 1 entries")
   backend = get_backend(kick)
-  csr_image_convolve_kernel!(backend)(kick, image, charge, coef; ndrange = length(kick))
+  n = length(kick)
+  wg = cpu_workgroupsize(n, eltype(kick), eltype(image), eltype(charge), typeof(coef))
+  csr_image_convolve_kernel!(backend)(kick, image, charge, coef; ndrange = n, workgroupsize = wg)
   KernelAbstractions.synchronize(backend)
   return kick
 end
@@ -50,7 +54,9 @@ Launch `csr_apply_kicks_kernel!` on the backend of `pz`; returns the number of l
 function apply_kicks_outside!(pz, z, alive, z_center, kick, dz, pz_scale)
   backend = get_backend(pz)
   n_outside = KernelAbstractions.zeros(backend, Int32, 1)   # Int32: no 64-bit atomics on some GPUs
-  csr_apply_kicks_kernel!(backend)(pz, n_outside, z, alive, z_center, kick, dz, pz_scale; ndrange = length(pz))
+  n = length(pz)
+  wg = cpu_workgroupsize(n, eltype(pz), eltype(z), eltype(kick), typeof(dz), typeof(pz_scale))
+  csr_apply_kicks_kernel!(backend)(pz, n_outside, z, alive, z_center, kick, dz, pz_scale; ndrange = n, workgroupsize = wg)
   KernelAbstractions.synchronize(backend)
   return Int(Array(n_outside)[1])
 end
@@ -125,7 +131,8 @@ Differentiable with ForwardDiff `Dual`s in any of these: the particles (`pz`, `z
 tables then carry derivatives; each retarded source point gets its derivatives by Newton steps from its primal
 root (`root_tangent`: implicit differentiation at first order; nested `Dual`s, e.g. Hessians, also work). Held
 constant: the bin grid (it depends on the extreme live particles) and the discrete choices (number of steps
-`csr_n_step`, the element a source lies in, the adaptive quadrature's subdivision). With ChainRulesCore loaded an
+`csr_n_step`, the element a source lies in, the adaptive quadrature's subdivision). GTPSA TPS in the same arguments
+give the kick's expansion (one Newton step per order; computed on the calling thread). With ChainRulesCore loaded an
 `rrule` gives the pullback with respect to `pz`, `z`, `q`, `geom`, `s_kick` and `gamma` (not the keywords).
 """
 function csr_kick_pz(pz::AbstractVector, z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool},

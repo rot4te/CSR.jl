@@ -13,9 +13,10 @@ table_type(geom::CSRGeometry, kp::CSRKickPoint, dz) = float(promote_type(number_
 Kick integral `I_csr`, its integral over each bin `I_int`, and the reference s of the source point, for lags
 `i * dz`, `i = 1:n_bin`, at kick point `kp`. The lags are split into `n_block` blocks (one work item and
 workgroup each); a block reuses the previous lag's source element as the start of the next search.
-Default: 4 blocks per thread. CPU backend only: `CSRGeometry` is not isbits (its element vector), and the source
-search raises errors and recurses (adaptive quadrature). The tables are in `table_type(geom, kp, dz)` (`Float64`, or e.g. `Dual`s for derivatives
-with respect to the geometry, `s_kick` or `gamma`; the sources are then searched in primal values, `primal_search`).
+Default: 4 blocks per thread; always one block for TPS tables (`thread_safe_number`). CPU backend only: `CSRGeometry`
+is not isbits (its element vector), and the source search raises errors and recurses (adaptive quadrature). The tables
+are in `table_type(geom, kp, dz)` (`Float64`, or e.g. `Dual`s or TPS for derivatives with respect to the geometry,
+`s_kick` or `gamma`; the sources are then searched in primal values, `primal_search`).
 
 `I_int` for bins `i ≥ 2`: trapezoid in `I_csr`, or with `all_bin_quadrature` Simpson in `u^(1/3)` with 8 nodes per
 bin (`I_csr_quadrature`; 8 more source solves per bin, in blocks as above).
@@ -23,6 +24,7 @@ bin (`I_csr_quadrature`; 8 more source solves per bin, in blocks as above).
 function csr_wake_table(geom::CSRGeometry, kp::CSRKickPoint, dz, n_bin, backend;
                         n_block = min(n_bin, 4 * Threads.nthreads()), all_bin_quadrature::Bool = false)
   T = table_type(geom, kp, dz)
+  thread_safe_number(T) || (n_block = 1)
   I_csr = KernelAbstractions.zeros(backend, T, n_bin)
   I_int = KernelAbstractions.zeros(backend, T, n_bin)
   s_source = KernelAbstractions.zeros(backend, T, n_bin)
@@ -36,7 +38,7 @@ function csr_wake_table(geom::CSRGeometry, kp::CSRKickPoint, dz, n_bin, backend;
       n_q = cld(n_bin - 1, min(n_bin - 1, n_block))
       csr_bin_quadrature_kernel!(backend)(I_int, geom, kp, dz, n_q, 8, search; ndrange = cld(n_bin - 1, n_q), workgroupsize = 1)
     else
-      csr_trapezoid_kernel!(backend)(I_int, I_csr, dz; ndrange = n_bin - 1)
+      csr_trapezoid_kernel!(backend)(I_int, I_csr, dz; ndrange = n_bin - 1, workgroupsize = cpu_workgroupsize(n_bin - 1, T))
     end
     KernelAbstractions.synchronize(backend)
   end
@@ -54,13 +56,14 @@ Image-charge kick (`image_charge_kick`) and reference s of the source point for 
 function of width `2dz` centred on each lag (the charge density interpolated linearly between bin centres), by
 adaptive Simpson with absolute tolerance `rtol * dz * max|K|` per interval (`image_hat_tol`), down to lag widths of
 `0.01 y/γ`. The kernel's structure can be much finer than a bin (`~y/γ` on a drift, `~Ls³/24ρ²` in a bend), which
-point sampling does not resolve (`planning/PLAN.md`, Phase 5 and Stage B). `s_source` is at the lags in both cases.
+point sampling does not resolve (docs, "Physics decisions", D20). `s_source` is at the lags in both cases.
 """
 function csr_image_table(geom::CSRGeometry, kp::CSRKickPoint, dz, n_bin, backend;
                          n_block = min(2n_bin + 1, 4 * Threads.nthreads()), bin_integrate::Bool = false,
                          rtol = 1e-6)
   n = 2n_bin + 1
   T = table_type(geom, kp, dz)
+  thread_safe_number(T) || (n_block = 1)
   image = KernelAbstractions.zeros(backend, T, n)
   s_source = KernelAbstractions.zeros(backend, T, n)
   n_lag = cld(n, n_block)
@@ -78,7 +81,7 @@ function csr_image_table(geom::CSRGeometry, kp::CSRKickPoint, dz, n_bin, backend
   csr_image_hat_kernel!(backend)(rise, fall, geom, kp, dz, tol, u_min, n_int, search; ndrange = cld(n + 1, n_int),
                                  workgroupsize = 1)
   KernelAbstractions.synchronize(backend)
-  csr_image_hat_combine_kernel!(backend)(image, rise, fall, dz; ndrange = n)
+  csr_image_hat_combine_kernel!(backend)(image, rise, fall, dz; ndrange = n, workgroupsize = cpu_workgroupsize(n, T))
   KernelAbstractions.synchronize(backend)
   return image, s_source
 end

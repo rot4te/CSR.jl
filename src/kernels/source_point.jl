@@ -35,7 +35,7 @@ elements strictly between the source and kick elements (`add_mid`; used by `csr_
       theta_sl = spline_d1(sp, s0) - dtheta_L
       theta_lk = dtheta_L - spline_d1(sp, s1)
       # For a source ahead of the kick point L_vec points backwards, and this is the source direction + π
-      # (planning/PLAN.md, V8). Only the image-charge kick uses it.
+      # (PLAN.md, V8). Only the image-charge kick uses it.
       theta_s = theta_sl + theta_L
     else
       # The angle of the L line in the chord frame, as in the other branches, so that ddz is continuous across
@@ -168,11 +168,11 @@ end
 """
     primal_search(geom, kp, T) -> PrimalSearch or nothing
 
-`PrimalSearch(primal(geom), primal(kp))` for tables in number type `T <: Dual`, else `nothing` (search and evaluate
-in the same number type).
+`PrimalSearch(primal(geom), primal(kp))` for tables in number type `T <: Dual` or a non-`Real` `T` (GTPSA TPS), else
+`nothing` (search and evaluate in the same number type).
 """
 primal_search(geom::CSRGeometry, kp::CSRKickPoint, ::Type{T}) where {T} =
-  T <: Dual ? PrimalSearch(primal(geom), primal(kp)) : nothing
+  (T <: Dual || !(T <: Real)) ? PrimalSearch(primal(geom), primal(kp)) : nothing
 
 """
     s_source_calc(k, geom, kp, search) -> (k, s_chord_source)
@@ -296,7 +296,7 @@ root's derivatives with respect to the parameters attached by Newton steps from 
 zbrent's iterations are not differentiated. With a `PrimalSearch`, the slope `∂ddz/∂s` is computed in its primal
 geometry (`primal_slope`). Bmad leaves `k` describing zbrent's last evaluation `s_last`, not the
 returned root. These differ by up to the tolerance, or completely when the root is an endpoint with ddz exactly 0
-(zbrent then returns without evaluating there). CSR.jl evaluates at the root unless compat (planning/PLAN.md, V7).
+(zbrent then returns without evaluating there). CSR.jl evaluates at the root unless compat (docs, "Physics decisions", V7).
 With derivatives, `k` is evaluated again with the root's derivatives attached.
 """
 @inline function root_source(k::CSRKick1, s_root, s_last, geom::CSRGeometry, kp::CSRKickPoint, dmid, search = nothing)
@@ -372,7 +372,7 @@ function s_source_walk(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
     if ddz0 > 0 && ddz1 > 0
       # Source beyond this element. Beyond the kick element it is ahead of the kick point, which needs dz < 0
       # (image charges). Bmad ignores it there (k is left describing the source at the end of the kick element);
-      # CSR.jl continues downstream (planning/PLAN.md, V8).
+      # CSR.jl continues downstream (PLAN.md, V8).
       if ix == kp.ix_ele_kick && (geom.bmad_compat || primal(dz) >= 0)
         return with_fields(k; s_chord_source = 0.0), zero(number_type(k)), SourceOutcome(SRC_BEYOND, ix, 0.0, 0.0)
       end

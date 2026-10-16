@@ -39,6 +39,5 @@ reproduces Bmad.** Where Bmad's intent is unclear, its code is ported literally.
 
 ## Where the details are
 
-Derivations, scripts and the full measurement history are in the repository: `planning/PLAN.md` (sections
-"Findings in Bmad", "Results log"), `planning/upstream_reports.md` (reports drafted for Bmad and BeamTracking),
-`planning/dspline_coeff.md` (V1), `planning/upstream-bin.md` (V5), and the scripts in `planning/diagnostics/`.
+Most measured effects above come from development runs that are not part of the package. The tests and the Bmad
+cross-check that cover these decisions are described in [Validation](@ref).

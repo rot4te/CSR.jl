@@ -237,7 +237,7 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) * (r.z_center[2] - r.z_ce
     end
 
     # Steady-state bend on a 40 m arc (sources of high layers stay on the arc), h = 3 mm: the averaged sum is
-    # converged at 32 layers, the plain sum is not (planning/PLAN.md, D24).
+    # converged at 32 layers, the plain sum is not (PLAN.md, D24).
     N = 20001
     zb, qb, aliveb = gaussian_line_bunch(1e-3, 1e-9, N)
     geom = CSRGeometry(circle_lattice(10.0, 0.1, 400)...)

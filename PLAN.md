@@ -62,7 +62,9 @@ GTPSA TPS).
 - **`tighten-rrule-rtol`** (from `fd-flake-d44` `a1780f0`, by the user, pushed): `test_rrule` rtol per case, seed
   study script started (`cddf927`).
 - **`tighten-rrule-tol-atol`** (from `tighten-rrule-rtol` `cddf927`, 2026-10-16): tolerance tightening study
-  (Section 9): `test_approx` grouping in `d32_flake.jl`, (rtol, atol) per case. **Latest state.**
+  (Section 9): `test_approx` grouping in `d32_flake.jl`, (rtol, atol) per case.
+- **`stage2-tps`** (from `tighten-rrule-tol-atol` `8359698`, 2026-10-16): Stage 2a (collective TPS core, D45) and
+  docstrings without references to planning files. **Latest state.**
 
 | Commit | Branch | Content |
 |---|---|---|
@@ -141,10 +143,17 @@ keep testing on Julia 1.13.1.
    `Tangent`, so element 2's `g` and `ref_floor0.theta` are held to 1e-6 rather than ~8.5e-5 / ~5e-6 through atol):
    **user: keep the general (rtol, atol) for now** (2026-10-16).
 
-**Handoff 2026-10-16 (session end).** Latest state: branch `tighten-rrule-tol-atol` at `bfa6e3b` + this handoff
-commit, not pushed (the user pushes). Suite 1622/1622 on 1 and 4 threads. No task in progress. Open candidates for
-the next session (user decides): Stage 2 per D37 (item 5); review findings 4 and 8 (Section 4, Stage 2); Phase 8 items
-(Section 10). The test environment is a scratch env (Section 2), rebuilt each session.
+10. **Session 2026-10-16 (evening), branch `stage2-tps`.** User: Stage 2 per D37, in parts: **2a** (core collective
+    TPS) **done**, then stop for the user's review; **2b** (Stage 1 test particles carrying 6D + knobs, with TPS
+    tables; finding 4 fixed by checking the range **before** kicking, user's choice) and **2c** (`track_csr!` with a
+    TPS bunch; check that Beamlines/BeamTracking accept TPS element parameters) not started. The TPS thread crash was
+    diagnosed first (user's choice) and fixed by D45; GTPSA.jl report drafted. Docstrings and docs pages no longer
+    cite planning files (user: they are for development only; benchmark figures kept); they cite the docs page
+    "Physics decisions" by label instead. Code and test comments still name `diagnostics/...` scripts (not public).
+
+**Handoff 2026-10-16 (evening).** Latest state: branch `stage2-tps` (commit below), not pushed. Suite 1690/1690 on 1
+and 4 threads; docs build clean. Next (user decides after reviewing 2a): 2b, 2c; Phase 8 items (Section 10). The test
+environment is a scratch env (Section 2), rebuilt each session.
 
 Original notes for step 3 (from the reorg handoff, 2026-10-14): Goal: derivatives of a kick w.r.t. the geometry and the reference speed/energy (γ), and `s_kick`.
 Starting points (suggestions, not decided):
@@ -162,7 +171,7 @@ Starting points (suggestions, not decided):
 
 Later: Phase 7 (TPS), Phase 8 (FFT convolution, benchmarks, GPU wake table, upstream hook proposal).
 
-**For the user:** push `tighten-rrule-tol-atol`; file the upstream reports in `planning/upstream_reports.md` (Section 4, incl. V9); enable GitHub
+**For the user:** push `tighten-rrule-tol-atol`, `stage2-tps`; review Stage 2a; file the upstream reports in `planning/upstream_reports.md` (Section 4, incl. V9 and GTPSA.jl); enable GitHub
 Pages (`gh-pages`) after pushing. Action versions in `.github/workflows/Documentation.yml` now follow Documenter
 1.19's hosting page (checked 2026-10-15; the workflow itself has not run on GitHub).
 
@@ -176,17 +185,22 @@ Pages (`gh-pages`) after pushing. Action versions in `.github/workflows/Document
 - Code changes: report (1) what was wrong, (2) what changed, (3) tested/verified?, (4) what the user must do next.
 - Git: never commit to or push existing branches; create a new branch and commit there; never push.
 - Show a detailed plan and get approval before launching any subagent.
-- Save every diagnostic script written for this project in `planning/diagnostics/` (user, 2026-10-15).
+- Save every diagnostic script written for this project in `diagnostics/` of the planning folder (user, 2026-10-15).
+- Planning folder (user, 2026-10-16): `~/Library/CloudStorage/GoogleDrive-rot4te@gmail.com/My Drive/code/Bmad+/CSR`
+  (Google Drive; was `planning/` in git until `8359698`). PLAN.md lives at the repo root **and** as a copy there:
+  edit the repo copy, then copy it to the Drive folder at each handoff (user: keep both in sync).
 - Physics-model and upstream choices are the user's: ask with options and a recommendation.
 - Style: 2-space indent, `@kwdef`, docstrings with `## Properties` (BeamTracking style), sparse comments.
-- `planning/` is tracked in git (since `468fc83`).
+- Only PLAN.md is tracked in git; the rest of the planning folder is on Google Drive (above). Paths below written
+  `planning/...` or `diagnostics/...` refer to that folder.
 
 ### Paths (two machines: `$HOME` is `/Users/alexcoxe` or `/Users/coxea3`; always write `~`)
 - Package `~/.julia/dev/CSR.jl`; dev checkouts beside it: `BeamTracking.jl` (v0.8.7, `65e343f`), `Beamlines.jl`
   (v0.11.0, `35fe016`), `AtomicAndPhysicalConstants.jl`, `GTPSA.jl`, `SciBmad.jl`, `SpaceCharge.jl`.
 - Bmad source `~/bmad-ecosystem` (`7c9df4059`, REL 20261014-0 on one machine); conda env `~/miniforge3/envs/bmad`
   on one machine, `~/miniconda3/envs/bmad` on the other (set `ENV["TAO"]` for the cross-check there).
-- Julia 1.13.1 via juliaup `release` (user, 2026-10-14; earlier phases ran on 1.12.7). `Project.toml`: `julia = "1.10"`.
+- Julia 1.13.1 via juliaup `release` (user, 2026-10-14; earlier phases ran on 1.12.7); 1.13.2 on 2026-10-16.
+  `Project.toml`: `julia = "1.10"`.
 
 ### Git
 - Remote `origin` (`github.com/rot4te/CSR.jl`). Branches: `main` (`ae0ae77`), `phase6-open-questions` (`468fc83`, pushed
@@ -256,6 +270,7 @@ extensions silently do not load.
 | D42 | 10-15 | First-bin closed form in default mode: `log(γ²(1+β) z/Ls)` instead of Bmad's `log(2γ² z/Ls)`, so it vanishes on a straight line with D41's exact retardation (was `1/(4γ⁴)`); both branches of `I_csr_calc`. User chose this over reverting `zz` to Bmad's and over documenting it. Compat unchanged. |
 | D43 | 10-15 | Image kernel (both modes): `1 − N·β′ = 1/(γ²(1+β)) + β\|N − t\|²/2`, `N − β′ = (N − t) + (1−β)t`, `B·(N − β′) = (B − t)·(N − t) − \|N − t\|²/2 + (1−β)B·t` (same formula, no cancellation). |
 | D44 | 10-15 | First-bin quadrature (default mode): the node at `zz` is the kick element's entrance source from `ddz_calc_csr` (which defines `zz`), not a source search for lag `zz`. Same point in a consistent geometry; one branch for derivatives w.r.t. the raw geometry numbers. |
+| D45 | 10-16 | TPS and threads: after diagnosing GTPSA (user chose diagnosis first), every kernel launch with a non-`Real` (TPS) number type runs as one workgroup on the calling thread (`thread_safe_number`, `cpu_workgroupsize`), TPS tables in one block; chosen over serializing the tables only. GTPSA.jl report drafted (user files). |
 | D41 | 10-15 | Seam (user: "only one root physically, so the simulation should only have one"): default `ddz_calc_csr` continuous at every element boundary and at the lattice ends: angle (not secant slope) of the L line for sources in the kick element, `−2 L_plane` for sources ahead in it, `L/(γ²(1+β))` for `L(1 − β)`; the first-bin split lag `zz` from `ddz_calc_csr`. Compat keeps Bmad. Chosen over a tie-break in the walk and over replaying the forward search in the pullback. |
 
 ---
@@ -311,16 +326,16 @@ extensions silently do not load.
     by reading, not run.
   - (4, Stage 2) The out-of-range error in `csr_apply_test_kicks!` is raised after the kernel has kicked the in-range
     particles; a caller that catches it and retries kicks them twice. Not documented. Confirmed by reading.
-  - (8, Stage 2) Thread safety of TPS arithmetic in `csr_apply_kicks_kernel!`: no shared mutable TPS found (each op
-    allocates; `pz[i] += …` rebinds). GTPSA documents its `div`/`divc` call counters as not thread-safe
-    (`GTPSA.jl/src/low_level/rtpsa.jl` ~2431): possibly a benign race if `TPS/Float64` reaches `mad_tpsa_divc`. Not
-    verified (compiled C library). Matters more for the Stage 2 TPS deposit.
+  - (8, Stage 2) Thread safety of TPS arithmetic. **Resolved 2026-10-16: not benign, a crash** (Section 9, Stage 2a).
+    Nonlinear TPS operations segfault on several Julia threads (GTPSA C temporaries indexed by OpenMP thread number);
+    `+`, `*` (all the test-kick kernel uses) do not. Fixed in CSR.jl by D45; GTPSA.jl report drafted.
 - Float32 on GPUs limits strongly shielded kicks to ~3e-4 relative (cancellation); a mixed-precision table/convolve
   path would be needed for better.
 
 **Upstream reports — drafted in `planning/upstream_reports.md`, not filed (the user files):** Bmad V1, V5, V7, V8, V2, V3, seam (items 6–8, 2026-10-15);
 BeamTracking: the `R_to_gamma`/`R_to_v` ion bug only (SaganCavity items fixed in 0.8.7 or not reproducible, refreshed
-2026-10-15). GitHub searches (via WebFetch, titles, summarized: moderately reliable) found no existing issue
+2026-10-15). GTPSA.jl (2026-10-16): TPS on several threads segfaults (C temporaries by OpenMP thread number; cc
+BeamTracking, whose `use_cpu_multithreading = true` crashes with TPS). GitHub searches (via WebFetch, titles, summarized: moderately reliable) found no existing issue
 (2026-10-09, rechecked 2026-10-15). Bmad PR #2085 still open (2026-10-15); it moves but does not change any cited
 site (line map in `upstream_reports.md`). V9 (small-angle path excess) drafted as Bmad item 5 (2026-10-14).
 
@@ -361,8 +376,8 @@ Top level: types and host-side functions (launch kernels, allocate, check). `ker
 | `kernels/image_charges.jl` | `image_charge_kick`, `csr_image_kernel!`, hat integration (`image_kernel_at`, `image_simpson`, `image_segment`, `image_interval_moments`, each returning `(k, value)`, `csr_image_hat_kernel!`, `csr_image_hat_combine_kernel!`). |
 | `kernels/convolve.jl`, `kernels/kick.jl` | `csr_convolve_kernel!`, `csr_image_convolve_kernel!`; `csr_apply_kicks_kernel!`. |
 | `kernels/adjoint.jl` | `triangle_overlap_dzp`, `kick_cell`, `kick_adjoint_particle!`, five adjoint kernels. |
-| `utils/math.jl` | `nint`, `modulo2`, `cross3`, `dot3`. |
-| `utils/backend.jl` | `csr_float_type`, `device_scalar`, `table_backend`, `to_backend`, `AtomicAdd`, `PlainAdd`, `supports_atomic_add`, `primal`. |
+| `utils/math.jl` | `nint`, `modulo2`, `cube_root`, `cross3`, `dot3`. |
+| `utils/backend.jl` | `csr_float_type`, `device_scalar`, `table_backend`, `to_backend`, `AtomicAdd`, `PlainAdd`, `supports_atomic_add`, `primal`, `thread_safe_number`, `cpu_workgroupsize` (D45). |
 | `utils/spline.jl` | `spline_val/d1/d2`, `chord_spline`, `dspline_len` (Bmad, V1), `GL4_NODES/WEIGHTS`, `path_excess` (exact, V9). |
 | `utils/floor.jl` | `x_axis`, `z_axis`, `advance_floor`, `advance_floor_patch`, `planar_survey`, `centroid_floor`. |
 | `utils/chord_coordinates.jl` | `s_ref_to_s_chord` (D40; Bmad's formula in compat), `chord_normal_offset`, `source_s`. |
@@ -378,7 +393,7 @@ Every function has a docstring (the docs build enforces it with `checkdocs = :al
 |---|---|
 | `CSRBeamTrackingBeamlinesExt` | `slicing.jl`: `slice_element` following Bmad `makeup_super_slave1` (fringe at ends, SciBmadStandard → Symplectic order, RungeKutta n_steps scaled, multipoles scaled, apertures at ends, alignment per slice, patch on first slice, RF voltage ∝ length, four-potential/`EMFieldParams` shifted, SaganCavity → `slice_sagan`; maps whole); `csr_sliceable`. `sagan.jl`: `SaganSlice` windows of the cavity's kernel sequence, `track_slice!`. `track.jl`: `track_csr!(bunch, ::Beamline / ::Branch)` → `track_csr_line!` (survey, centroid, `CSRGeometry`, step loop with half kicks at ends, `L_slice = i·ds − s0`, `csr_ref_energies`, `pz_scale` in SaganCavity; keywords `params`, `csr_on`, `centroid_start`, `sliced_centroid`, `diagnostics`, `test_bunch` (Phase 7 step 5: `check_bunches!`, `test_kick_particles`)). Uses BeamTracking internals listed in the files' imports. |
 | `CSRChainRulesCoreExt` | `rrule` for `csr_kick_pz`. |
-| `CSRGTPSAExt` | `primal(::TPS)` = scalar part, `root_order(::TPS)` = truncation order (field `mo`). |
+| `CSRGTPSAExt` | `primal(::TPS)` = scalar part, `root_order(::TPS)` = truncation order (field `mo`), `modulo2` and `cube_root` for TPS. |
 | `CSRAbstractFFTsExt` | Empty stub. |
 
 ### Tests (`test/`)
@@ -396,6 +411,7 @@ Every function has a docstring (the docs build enforces it with `checkdocs = :al
 | `ad_test.jl` | rrule vs ForwardDiff vs finite differences (6 cases). |
 | `ad_geometry_test.jl`, `ad_rrule_test.jl` | Forward mode w.r.t. geometry/`s_kick`/γ vs FD; rrules vs ForwardDiff (incl. `csr_kick_param_adjoint` vs ForwardDiff through `csr_bins_kick`, 8 cases) and ChainRulesTestUtils. |
 | `tps_test.jl` | Phase 7: TPS `primal`/`root_order`; frozen-wake test particles (3000, threaded) vs ForwardDiff Jacobian/Hessian; Float64 test particles == bunch kicks; outside-range error. |
+| `tps_collective_test.jl` | Stage 2a: TPS helpers; collective TPS in knobs (L, g, centroid, s_kick, γ, bunch) vs ForwardDiff Jacobian, nested-Dual Hessian, order 3; free space, images, compat. |
 | `slicing_test.jl` | Phase 2 gate: sliced == unsliced (CSR off) for all element kinds; controls. |
 | `track_csr_test.jl` | Floor conventions, CSR off == track!, steady state via track_csr!, per-element selection, weights, patches/misalignment, errors, csr_ref_energy. |
 | `lcavity_test.jl` | SaganCavity slices vs whole cavity; reference momentum steps; Branch; `pz_scale`. |
@@ -852,6 +868,34 @@ Hat costs ~5× the source solves of point sampling.
   to ~1e-4 and ~5e-6 relative, not 1e-6.
 - `ad_rrule_test.jl` 208/208 on 1 and 4 threads; suite 1622/1622 on 4 threads (3m59s) and 1 thread (4m03s).
 
+### Phase 7 Stage 2a — collective TPS core, D45 (10-16, branch `stage2-tps`)
+- **Recon.** Four changes suffice for a TPS kick in knobs: `<:Real` → `<:Number` in `FloorPosition`, `CSRElementInfo`,
+  `CSRGeometry`, `CSRKickPoint`, `CSRKick1`; `primal_search` also for non-`Real` table types (TPS cannot be wrapped
+  in the `RootTag` Dual of `root_slope`, so the primal search's `primal_slope` is used); TPS `modulo2` (shifts the
+  scalar part); `cube_root` (GTPSA has no `mod`, `cbrt`, `copysign`, `trunc`/`round` for TPS; `atan(y, x)`, `log`,
+  `sqrt`, comparisons on the scalar part exist). Deposit already serial for TPS; bin grid primal.
+- **Threads (finding 8).** Segfault 3/3 on 4 and 8 threads, none on 1. `diagnostics/gtpsa_threads.jl` (pure GTPSA,
+  4 threads): `/`, `c/t`, `sqrt`, `log`, `sin`, `exp`, `atan(y, x)`, `^(1/3)` segfault; `+`, `*`, `abs` run. Cause in
+  MAD-NG `mad_tpsa_impl.h:168-186` (master `9f591769c`): temporaries at `d->t[tid*DESC_MAX_TMP + d->ti[tid]++]`,
+  `tid = omp_get_thread_num()` = 0 on every Julia thread. `libgtpsa.dylib` (GTPSA_jll 1.7.1+0) links libgomp; descriptor
+  `nth = 10` = `hw.ncpu`. BeamTracking 0.8.7 `track!` with 2000 TPS particles on 4 threads: segfault with
+  `use_cpu_multithreading = true`, runs with the default `false` (`diagnostics/bt_tps_threads.jl`); so BeamTracking is
+  safe only because CPU threading is opt-in. The frozen-wake test-kick kernel uses only `+`, `*`: safe by accident.
+- **D45.** `thread_safe_number(T...)` (`T <: Real`), `cpu_workgroupsize(n, T...)` (`n` = one workgroup, which KA's
+  CPU `__run` executes on the calling thread); applied to the edge-gradient, convolution, image convolution, kick,
+  trapezoid and hat-combine launches; table kernels forced to one block. Adjoint kernels unchanged (Real only).
+- **Checks** (`test/tps_collective_test.jl`, 68 tests; `diagnostics/stage2_tps_margins.jl`): knobs element 2 L and g,
+  centroid x (row 3), s_kick, γ, bunch knob (q × (1 + v), z × (1 + 0.2v)); 400 particles, n_bin 40. vs ForwardDiff,
+  relative to the largest entry: scalar part ≤ 7.5e-15; Jacobian columns ≤ 2.8e-13 (bound 1e-11); Hessian (nested
+  Duals, all outputs) ≤ 4.9e-13 (bound 1e-11); order 3 in (g, γ) ≤ 1.7e-12 (bound 1e-10); free space, 2 image layers,
+  compat. Mutation `root_order(::TPS) = 1`: Hessian errors 1.6e-2–4.3, order 3 0.07–0.42 (detected). 4-thread results
+  bitwise equal to 1 thread. Timing (probe, 3 knobs, order 2, 400 particles): 8 ms free space, 0.24 s with 4 layers.
+- Docs: `usage.md` GTPSA section (collective TPS example, not executed; run by hand in
+  `diagnostics/stage2_docs_example.jl`), `csr_kick_pz` docstring. Suite 1690/1690 on 4 threads (5m26s) and 1 thread
+  (5m41s), Julia 1.13.2. Docs build clean (existing warnings).
+- Docstrings/docs reworded (user): `(docs, "Physics decisions", <label>)` instead of `planning/...` files;
+  `decisions.md` "Where the details are" points to Validation. Comments: `planning/PLAN.md` → `PLAN.md`.
+
 ### SaganCavity slice `t_ref` (10-15, branch `sagan-tref`)
 - `track_slice!(::SaganSlice)`: `t_exit = t_enter − sagan_dt_ref(c, s0) + sagan_dt_ref(c, last ? L : s1)` (Section 4).
 - Tests (`lcavity_test.jl`): `lc_bunch` starts at `t_ref = 1e-6` (the slices-vs-whole test started at 0 and could not
@@ -1048,7 +1092,7 @@ Metal tests in the suite (conditional on Metal.jl).
 - **Others**: AtomicAndPhysicalConstants.jl (`chargeof`, `massof`; CODATA 2022), SpaceCharge.jl (3D solver, not a
   dependency), SciBmad.jl. KernelAbstractions: `supports_float64`, `supports_atomics` (checked in 0.9.35–0.9.45).
 
-### Planning files (`planning/`)
+### Planning files (Google Drive planning folder, Section 2; `planning/` in git until `8359698`)
 | File | Contents |
 |---|---|
 | `PLAN.md` | This document. |

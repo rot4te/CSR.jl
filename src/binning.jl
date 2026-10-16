@@ -49,7 +49,8 @@ function csr_bin_particles(z::AbstractVector, q::AbstractVector, alive::Abstract
                                     dz_particle, pbs)
     end
   end
-  csr_edge_gradient_kernel!(backend)(bins.edge_dcharge_density_dz, bins.charge, dz; ndrange = n_bin)
+  csr_edge_gradient_kernel!(backend)(bins.edge_dcharge_density_dz, bins.charge, dz; ndrange = n_bin,
+                                    workgroupsize = cpu_workgroupsize(n_bin, Tq))
   KernelAbstractions.synchronize(backend)
   Array(n_outside)[1] == 0 || error("csr_bin_particles: particle outside bin range (internal error)")
   return bins

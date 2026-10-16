@@ -39,4 +39,4 @@ Notes on Bmad's diagnostic file: with image charges it divides kick and I_csr by
 `kick_factor` (`(−1)^n·2` times the free-space one) and prints that layer's source points; the S-position has 6
 decimals (use `i_step·ds`).
 
-Results and their interpretation: `planning/PLAN.md`, Phase 3 (rerun 2026-10-14) and "Reruns after D39–D41 and D42" (2026-10-15).
+Results and their interpretation: `PLAN.md`, Phase 3 (rerun 2026-10-14) and "Reruns after D39–D41 and D42" (2026-10-15).

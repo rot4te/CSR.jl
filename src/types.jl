@@ -4,14 +4,15 @@
     FloorPosition(r, theta)
 
 Position `r = (X, Y, Z)` [m] and horizontal orientation angle `theta` [rad] in floor coordinates. The number type
-`T` is promoted from the arguments (`Float64`, or e.g. ForwardDiff `Dual`s for derivatives w.r.t. the geometry).
+`T` is promoted from the arguments (`Float64`, or e.g. ForwardDiff `Dual`s or GTPSA TPS for derivatives w.r.t. the
+geometry).
 """
-struct FloorPosition{T<:Real}
+struct FloorPosition{T<:Number}
   r::SVector{3,T}
   theta::T
 end
 
-function FloorPosition(r::AbstractVector, theta::Real)
+function FloorPosition(r::AbstractVector, theta::Number)
   T = float(promote_type(eltype(r), typeof(theta)))
   return FloorPosition{T}(SVector{3,T}(r), T(theta))
 end
@@ -32,7 +33,7 @@ Per-element centroid geometry (Bmad `csr_ele_info_struct`). The centroid "chord"
 centroid position at the element entrance to the centroid position at the exit. `spline` gives the
 centroid offset from the chord as a function of distance along the chord. Number type `T` as `FloorPosition`.
 """
-struct CSRElementInfo{T<:Real}
+struct CSRElementInfo{T<:Number}
   L::T                         # Element (reference) length
   g::T                         # Reference curvature (0 for straight elements)
   s_start::T                   # Reference s at the element entrance
@@ -60,7 +61,7 @@ end
 Centroid geometry for a beamline: `start` is the centroid floor position at the start of the lattice
 (Bmad `eleinfo(0)%floor1`), and `ele[i]` the information for element `i`. Number type `T` as `FloorPosition`.
 """
-struct CSRGeometry{T<:Real}
+struct CSRGeometry{T<:Number}
   start::FloorPosition{T}
   ele::Vector{CSRElementInfo{T}}
   bmad_compat::Bool
@@ -72,7 +73,7 @@ end
 Kick-point information that is the same for all source lags (part of Bmad's `csr_struct`). Number type `T` as
 `FloorPosition` (e.g. `Dual`s for derivatives w.r.t. `s_kick`, `gamma` or the geometry).
 """
-struct CSRKickPoint{T<:Real}
+struct CSRKickPoint{T<:Number}
   ix_ele_kick::Int           # Element containing the kick point
   s_kick::T                  # Kick point, reference s from the element entrance
   s_chord_kick::T            # Kick point along the centroid chord
@@ -97,7 +98,7 @@ end
 Kick quantities for one source-to-kick separation (Bmad `csr_kick1_struct`), in number type `T`. Immutable (isbits
 for isbits `T`): the source-point functions return an updated copy (`with_fields`).
 """
-struct CSRKick1{T<:Real}
+struct CSRKick1{T<:Number}
   I_csr::T                    # Kick integral
   I_int_csr::T                # Integrated kick integral
   L_vec::SVector{3,T}         # Source-to-kick vector in floor coordinates
@@ -202,26 +203,26 @@ Parameters for the 1D CSR calculation. Names follow Bmad's `space_charge_com` co
     kick is the binomially weighted average `2^-k Σ_j C(k, j) S_{M-k+j}` of the partial sums `S_m` (free space plus
     layers 1..m), i.e. layer `n` is weighted by `2^-k Σ_{j ≥ n-M+k} C(k, j)` (1 for `n ≤ M - k`); `k` is capped at `M`.
     Default 8: with `M ≥ 32` the steady-state kick agrees with a 1024-layer reference to ~1e-6
-    (`planning/PLAN.md`, D24). Use `M` of 32–64 when the chamber height is comparable to or smaller than the
+    (docs, "Physics decisions", D24). Use `M` of 32–64 when the chamber height is comparable to or smaller than the
     bunch length. Ignored with `bmad_compat = true` (Bmad: plain sum).
 - `all_bin_quadrature`: Integrate the kick integrand over every bin by quadrature (Simpson in `u^(1/3)`, 8 nodes per
     bin), instead of the trapezoid `(I_csr[i] + I_csr[i-1]) dz / 2` for bins `i ≥ 2`. Default `true`
-    (`planning/upstream-bin.md`, option B). `false` gives the previous default (first bin only, option A). Ignored with
+    (docs, "Physics decisions", V5). `false` integrates by quadrature over the first bin only. Ignored with
     `bmad_compat = true` (Bmad: trapezoid).
 - `bmad_compat`: If `true`, reproduce Bmad expressions that CSR.jl replaces, for like-for-like comparison with
     Bmad output. Default `false`.
-    1. `dspline_len` s⁴ term: Bmad uses `9c₃²`, the integral gives `9c₃²/5` (`planning/dspline_coeff.md`).
+    1. `dspline_len` s⁴ term: Bmad uses `9c₃²`, the integral gives `9c₃²/5` (docs, "Physics decisions", V1).
     2. First-bin kick integral when the source lies outside the kick element: Bmad holds `I_csr` constant
        over the rest of the bin (2/3 of the integral in steady state); CSR.jl integrates by quadrature
-       (`planning/upstream-bin.md`).
+       (docs, "Physics decisions", V5).
     3. Image charges, source ahead of the kick point: Bmad gives the source the reverse direction of motion,
-       and does not look for sources beyond the end of the kick element (`planning/PLAN.md`, V8).
+       and does not look for sources beyond the end of the kick element (docs, "Physics decisions", V8).
     4. Image charges: Bmad samples the image kernel at the bin centres and sums the layers plainly; CSR.jl integrates
        the kernel against the bin hat function and averages the layer sum (`image_sum_order`).
     5. Path-length excess of the centroid over the source–kick line (retardation): Bmad's small-angle form
        `½∫(x′ - dθ)²` (`dspline_len`); CSR.jl the exact form (`path_excess`). They differ by `~Ls²/(80ρ²)` relative.
     6. Kick coefficient (`csr_kick_coef`): Bmad's carries an extra `1/rel_mass` (`rel_mass = m/m_e`) and omits the
-       `1/β²` of `Δpz = ΔE/(β²E)` (`planning/PLAN.md`, V2).
+       `1/β²` of `Δpz = ΔE/(β²E)` (docs, "Physics decisions", V2).
     7. Kick point in a bend (`s_ref_to_s_chord`, set by the geometry's `bmad_compat`): Bmad's formula places it
        upstream by `≈ 7L³/(24ρ²)` at the exit of an on-axis bend; CSR.jl takes the crossing of the centroid spline with
        the reference normal plane (V3).
@@ -229,9 +230,9 @@ Parameters for the 1D CSR calculation. Names follow Bmad's `space_charge_com` co
        as the angle of the source–kick line and `2Δs_chord` for sources ahead, and `L/(2γ²)` for `L(1 - β)`. These
        make `ddz` jump at the kick element's ends and the lattice ends, giving two roots or none for some lags (the
        source then depends on where the search starts). CSR.jl uses the angle, `2 L_plane` and `L/(γ²(1 + β))`:
-       `ddz` is continuous and each lag has one source (`planning/PLAN.md`, seam).
+       `ddz` is continuous and each lag has one source (docs, "Physics decisions", seam).
     9. First-bin closed form over the kick element: Bmad's `log(2γ² z/Ls)` vanishes on a straight line only with its
-       `L/(2γ²)` retardation; CSR.jl uses `log(γ²(1 + β) z/Ls)` to match item 8 (`planning/PLAN.md`, D42).
+       `L/(2γ²)` retardation; CSR.jl uses `log(γ²(1 + β) z/Ls)` to match item 8 (docs, "Physics decisions", D42).
 """
 Base.@kwdef struct CSRParams
   n_bin::Int = 40

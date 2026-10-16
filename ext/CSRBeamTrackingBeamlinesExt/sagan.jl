@@ -4,7 +4,7 @@
 # src/kernels/sagan_cavity.jl), since SaganCavity has no fringe_at and cannot be split with track!.
 # Point events (cell kicks, fringes, and the half multipole/ponderomotive kicks at drift-segment ends) at position p
 # belong to the slice with s0 <= p < s1 (p <= s1 for the last slice). Only drifts are split, so slices reproduce the
-# whole cavity to round-off (planning/PLAN.md, D22).
+# whole cavity to round-off (PLAN.md, D22).
 # Consecutive slices must share their boundary exactly (s0 + L_slice of one == s0 of the next), or an event on a
 # boundary can be dropped or applied twice.
 

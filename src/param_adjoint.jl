@@ -1,6 +1,6 @@
 # Pullback of one CSR kick with respect to the geometry, s_kick and gamma (host side, CPU): the kick tables are
 # linear combinations of source evaluations at fixed lags; each evaluation is differentiated with local Duals
-# (planning/PLAN.md, D30).
+# (PLAN.md, D30).
 
 # Geometry as a flat vector of its numbers, for derivatives with respect to every field of a CSRGeometry.
 

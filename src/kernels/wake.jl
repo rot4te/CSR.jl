@@ -87,8 +87,8 @@ function I_csr_integral(z0, z1, geom::CSRGeometry, kp::CSRKickPoint, search = no
     k, _ = s_source_calc(CSRKick1(geom, kp; dz_particles = t^3), geom, kp, search)
     return I_csr_value(k, kp) * 3t^2
   end
-  t0 = cbrt(z0)
-  t1 = cbrt(z1)
+  t0 = cube_root(z0)
+  t1 = cube_root(z1)
   h = (t1 - t0) / n
   acc = (k0 === nothing ? f(t0) : I_csr_value(k0, kp) * 3t0^2) + f(t1)
   for j in 1:n-1
@@ -105,11 +105,11 @@ order). Searches end in the same element whatever the start element, so the resu
 start. Returns the work struct after the last node, for the next warm start. `search` as in `s_source_calc`.
 """
 function I_csr_quadrature(k::CSRKick1, z0, z1, geom::CSRGeometry, kp::CSRKickPoint, n, search = nothing)
-  t0 = cbrt(z0)
-  h = (cbrt(z1) - t0) / n
+  t0 = cube_root(z0)
+  h = (cube_root(z1) - t0) / n
   acc = zero(number_type(k))
   for j in 0:n
-    t = j == n ? cbrt(z1) : t0 + j * h
+    t = j == n ? cube_root(z1) : t0 + j * h
     k, _ = s_source_calc(with_fields(k; dz_particles = t^3), geom, kp, search)
     w = (j == 0 || j == n) ? 1 : (isodd(j) ? 4 : 2)
     acc += w * I_csr_value(k, kp) * 3t^2
