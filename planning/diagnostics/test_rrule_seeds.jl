@@ -1,6 +1,7 @@
 # The test_rrule check of ad_rrule_test.jl ("test_rrule: …", csr_kick_pz wrapper only) under many RNG seeds, to
 # check its rtol against the actual ChainRulesTestUtils FD (j′vp of ȳ⋅F, not the Jacobian of d32_flake.jl).
-# Usage (test env, 1 thread): julia --project=<env> -t 1 test_rrule_seeds.jl [free|compat] [rtol] [n_seeds, 100] [atol, 1e-10]
+# Usage (test env, 1 thread): julia --project=<env> -t 1 test_rrule_seeds.jl [free|compat] [rtol] [n_seeds, 100] [atol, 1e-10] [verbose]
+# verbose: print the failure messages (which comparison, values) instead of only the seed numbers.
 using Test, CSR, ForwardDiff, StaticArrays, Random, ChainRulesCore, ChainRulesTestUtils, Printf
 using ChainRulesTestUtils: FiniteDifferences
 include(expanduser("~/.julia/dev/CSR.jl/test/utils.jl"))
@@ -22,6 +23,7 @@ n_img, bc, abq = case == "compat" ? (2, true, false) : (0, false, true)
 rtol = parse(Float64, get(ARGS, 2, case == "compat" ? "3e-3" : "1e-5"))
 n_seeds = parse(Int, get(ARGS, 3, "100"))
 atol = parse(Float64, get(ARGS, 4, "1e-10"))
+verbose = get(ARGS, 5, "") == "verbose"
 fdm = FiniteDifferences.central_fdm(5, 1; max_range = 1e-6)
 Γ = 1e5
 zs, qs, as = kernel_test_bunch(1e-3, 1e-9, 60)
@@ -38,7 +40,7 @@ n_fail = 0
 for seed in 1:n_seeds
   Random.seed!(seed)
   failed = try   # an outermost @testset throws on any failure or error
-    redirect_stdout(devnull) do
+    redirect_stdout(verbose ? stdout : devnull) do
       @testset "seed $seed" begin
         test_rrule(h ⊢ NoTangent(), 1e-4 .* sin.(1:60), qs, geom, 0.17, 200.0 / Γ;
                    rrule_f = h_rrule, fdm, check_inferred = false, rtol, atol)

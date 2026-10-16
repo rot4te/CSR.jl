@@ -59,7 +59,10 @@ GTPSA TPS).
 - **`image-kernel-d43`** (from `s-kick-residual` `b24fd58`, 2026-10-15): image kernel without cancellation (D43),
   `1d76391`.
 - **`fd-flake-d44`** (from `image-kernel-d43` `1d76391`, 2026-10-15): free-space `test_rrule` flake fixed (D44).
-  **Latest state.**
+- **`tighten-rrule-rtol`** (from `fd-flake-d44` `a1780f0`, by the user, pushed): `test_rrule` rtol per case, seed
+  study script started (`cddf927`).
+- **`tighten-rrule-tol-atol`** (from `tighten-rrule-rtol` `cddf927`, 2026-10-16): tolerance tightening study
+  (Section 9): `test_approx` grouping in `d32_flake.jl`, (rtol, atol) per case. **Latest state.**
 
 | Commit | Branch | Content |
 |---|---|---|
@@ -132,6 +135,9 @@ keep testing on Julia 1.13.1.
    image derivative, not a pullback error. User then chose to rewrite the image kernel's `1 − N·β′` (D43).
 8. **Done 2026-10-15** (user's choice; branch `fd-flake-d44`; Section 9): free-space `test_rrule` FD flake. Not a step
    size problem (a D32-style rescaling cannot help); user chose to pin the first-bin quadrature's first node (D44).
+9. **Done 2026-10-16** (branches `tighten-rrule-rtol` by the user, `tighten-rrule-tol-atol`; Section 9): `test_rrule`
+   tolerance tightening. User chose (rtol, atol) = (1e-6, 1e-9) free space, (3e-3, 1e-8) compat, with the
+   atol/cotangent ratio measured and reported.
 
 Original notes for step 3 (from the reorg handoff, 2026-10-14): Goal: derivatives of a kick w.r.t. the geometry and the reference speed/energy (γ), and `s_kick`.
 Starting points (suggestions, not decided):
@@ -287,6 +293,9 @@ extensions silently do not load.
   **After D43 (2026-10-15):** compat 0/20000; free space 2e-4 (4/20000), hit once in a full 4-thread run. **Fixed by
   D44** (free space 0/20000; Section 9): not source-root noise but a branch ambiguity at the first-bin quadrature's
   first node.
+  **Tolerances tightened 2026-10-16** (Section 9): the rates above used a too lenient grouping (whole geometry block
+  by norm); with `test_approx`'s field-by-field grouping, (rtol, atol) = (1e-6, 1e-9) free, (3e-3, 1e-8) compat:
+  0/20000 each.
 - **Deferred from the 2026-10-15 `phase7-tps` review** (user: address in Phase 8 / Stage 2; numbers are the
   review's finding numbers):
   - (2, Phase 8) `csr_apply_test_kicks!` (`src/kick.jl`) copies `bins`/`kick` only when the test particles are on the
@@ -812,6 +821,30 @@ Hat costs ~5× the source solves of point sampling.
   identical except `csr_beam_tracking_patch` `free_space_default`, element 3 steps 1 and 5, kick ratio 0.815 → 0.584
   and 0.0137 → 0.0154: kicks there are ~1e-33 /m (1e-29 of the peak, `drift_kick_default.jl`), round-off on both sides.
 
+### test_rrule tolerance tightening (10-15/16, branches `tighten-rrule-rtol`, `tighten-rrule-tol-atol`)
+- Started by the user (`cddf927`): rtol 1e-2 → 1e-5 (free), 3e-3 (compat) from `d32_flake.jl` rates, and
+  `test_rrule_seeds.jl` (the real `test_rrule` over RNG seeds; arg `verbose` added 10-16 prints the failing check).
+- **`d32_flake.jl` was too lenient.** It passed the geometry block when the norm over all its entries passed.
+  `test_approx` (ChainRulesTestUtils, `check_result.jl`) compares numeric vectors (pz, q) by norm but a `Tangent`
+  field by field: each scalar field alone, `SVector` fields (r, spline) by norm; `_can_pass_early` ignores the
+  kwargs (default rtol). Free space at rtol 1e-7: old estimate 0, real test 42/100 seeds (first failure element 2
+  `ref_floor0.theta`, AD 7.2585845e-4 vs FD 7.2585871e-4). `d32_flake.jl` now groups as `test_approx` (`tangent`,
+  default; `block` the old rule) and takes atol; with it free space 0.42 at 1e-7, 0.75 at 1e-8 (seeds: 42/100,
+  72/100).
+- Failure rates, 20000 ȳ, Γ = 1e5 (rtol, atol → P): free (1e-5, 1e-10) 0; (3e-6, 1e-10) 3e-4; (1e-6, 1e-10) 1.5e-3;
+  (1e-6, 1e-9) 0; (1e-6, 1e-8) 0. Compat (3e-3, 1e-10) 5.5e-4 (the committed rtol; all 11 failures element 2
+  `L_chord`, FD column error only 2.6e-6: ȳ⋅column cancels and the FD absolute error ~1e-8 exceeds both bounds, so
+  no rtol fixes it); (3e-3, 1e-9) 5e-4; (3e-3, 1e-8) 0; (1e-3, 1e-8) 5e-5; (1e-4, 1e-8) 2e-3; (1e-4, 1e-7) 5.5e-4.
+  Seeds (100 each, atol 1e-10): free 0 at ≥ 1e-6; compat 0 at ≥ 1e-3, 1 at 3e-4 and 1e-4.
+- **Chosen (user):** free (1e-6, 1e-9), compat (3e-3, 1e-8). 200 seeds each: 0 failures.
+- **atol/‖cotangent‖** (per `test_approx` group, AD value, over the 20000 ȳ; all-zero groups excluded, 33 free / 32
+  compat): free median 6.3e-8, atol binds (atol > rtol·‖a‖) in 16% of comparisons: always for element 2 `g` (median
+  ratio 8.5e-5, |∂kick| ≤ 1.1e-6) and `ref_floor0.theta` (5.1e-6), sometimes for element 2 `L_chord` (26%,
+  5e-7), element 1 `theta_chord` (16%), `start.theta` (12%); max ratio 0.63. Compat median 1.2e-7, binds in 3e-4 of
+  comparisons (element 2 `g`, `L_chord`: 0.2% each), max 0.19. So in free space the two small cotangents are checked
+  to ~1e-4 and ~5e-6 relative, not 1e-6.
+- `ad_rrule_test.jl` 208/208 on 1 and 4 threads; suite 1622/1622 on 4 threads (3m59s) and 1 thread (4m03s).
+
 ### SaganCavity slice `t_ref` (10-15, branch `sagan-tref`)
 - `track_slice!(::SaganSlice)`: `t_exit = t_enter − sagan_dt_ref(c, s0) + sagan_dt_ref(c, last ? L : s1)` (Section 4).
 - Tests (`lcavity_test.jl`): `lc_bunch` starts at `t_ref = 1e-6` (the slices-vs-whole test started at 0 and could not
@@ -1016,6 +1049,6 @@ Metal tests in the suite (conditional on Metal.jl).
 | `verify_analytic.jl` | Section 8 checks (Base Julia). |
 | `dspline_coeff.md`, `upstream-bin.md` | Write-ups for V1 and V5. |
 | `upstream_reports.md` | Drafted upstream reports (Section 4). |
-| `diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`, `bench_pullback.jl`, `bench_forward.jl`, `d32_flake.jl [compat\|free] [Γ]`, `d32_steps.jl`, `root_newton_mutation.jl`, `track_tps_probe.jl`, `track_tps_lcavity_probe.jl`, `track_tps_timing.jl`, `track_tps_compile.jl`, `track_tps_mutation.jl [none\|scale]`, `track_tps_docs_example.jl`, `track_tps_thread_spread.jl [n_runs]`, `sagan_tref_check.jl`, `v3_rrule_images.jl`, `v3_rrule_scan.jl`, `v3_hat_node_search.jl`, `v3_image_entry_adjoint.jl`, `v3_node_adjoint.jl`, `v3_warm_start.jl [s_kick] [layer]`, `seam_uniqueness.jl`, `drift_lag0_image.jl`, `drift_kick_default.jl [case] [ix_last]`, `first_bin_straight.jl`, `s_kick_residual.jl [s]`, `image_kernel_roundoff.jl [s]`, `flake_geom_steps.jl [compat]`; data `layer_terms_*.txt` (the `_400` files predate V9). |
+| `diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`, `bench_pullback.jl`, `bench_forward.jl`, `d32_flake.jl [compat\|free] [Γ] [rtol] [tangent\|block] [atol]`, `test_rrule_seeds.jl [free\|compat] [rtol] [n_seeds] [atol] [verbose]`, `d32_steps.jl`, `root_newton_mutation.jl`, `track_tps_probe.jl`, `track_tps_lcavity_probe.jl`, `track_tps_timing.jl`, `track_tps_compile.jl`, `track_tps_mutation.jl [none\|scale]`, `track_tps_docs_example.jl`, `track_tps_thread_spread.jl [n_runs]`, `sagan_tref_check.jl`, `v3_rrule_images.jl`, `v3_rrule_scan.jl`, `v3_hat_node_search.jl`, `v3_image_entry_adjoint.jl`, `v3_node_adjoint.jl`, `v3_warm_start.jl [s_kick] [layer]`, `seam_uniqueness.jl`, `drift_lag0_image.jl`, `drift_kick_default.jl [case] [ix_last]`, `first_bin_straight.jl`, `s_kick_residual.jl [s]`, `image_kernel_roundoff.jl [s]`, `flake_geom_steps.jl [compat]`; data `layer_terms_*.txt` (the `_400` files predate V9). |
 | `../crosscheck/` | Bmad/Tao cross-check (README there). |
 | `../docs/` | Documenter docs (`julia --project=docs docs/make.jl`; `docs/README.md`); pages Home, Usage, Physics model, Physics decisions, Validation, API, Internals. Deployed by `.github/workflows/Documentation.yml` from `main`. Keep "Physics decisions" in sync with Section 3 when physics changes. |

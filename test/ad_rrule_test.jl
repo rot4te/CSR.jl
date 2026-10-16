@@ -141,14 +141,16 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry, msg = ""; kw...)
   # γ enters as γ/Γ: the step cap is absolute, and a step of 1e-6 in γ = 200 is lost in the source-root noise (FD
   # error of ∂kick/∂γ 4e-3 with images in compat, so ȳ⋅∂kick/∂γ failed rtol 1e-2 for ~23% of random ȳ; with Γ = 1e5,
   # 1.6e-6 and ~1e-4 of ȳ).
-  # rtol per case, from failure rates over 20000 random ȳ (planning/diagnostics/d32_flake.jl): free space 0 down to
-  # rtol 1e-7 (FD geometry columns ≤ 2e-6 since D44); compat limited by the scalar s_kick and γ cotangents (FD column
-  # errors 3e-7, 4e-8; ȳ⋅column can cancel): 0 at 3e-3, 5e-5 at 1e-3, 2e-3 at 1e-4. The accuracy checks are
-  # rrule == ForwardDiff above (1e-12) and ForwardDiff vs FD in ad_geometry_test.jl.
+  # rtol, atol per case, from failure rates over 20000 random ȳ with test_approx's grouping (each scalar field of the
+  # geometry Tangent alone; planning/diagnostics/d32_flake.jl, test_rrule_seeds.jl): free space 0 at (1e-6, 1e-9),
+  # 1.5e-3 at (1e-6, 1e-10), 0.42 at 1e-7; compat 0 at (3e-3, 1e-8), 5.5e-4 at (3e-3, 1e-10). The rest is an absolute
+  # FD error (~1e-8 in compat) when ȳ⋅column of one scalar cancels (element 2 L_chord). atol is ≤ 1e-7 of the median
+  # cotangent, but bounds element 2's g and ref_floor0.theta in free space (atol/|cotangent| ~8.5e-5, 5e-6). The
+  # accuracy checks are rrule == ForwardDiff above (1e-12) and ForwardDiff vs FD in ad_geometry_test.jl.
   fdm = FiniteDifferences.central_fdm(5, 1; max_range = 1e-6)
   Γ = 1e5
-  @testset "test_rrule: $name" for (name, n_img, bc, abq, rtol) in (("free space", 0, false, true, 1e-5),
-                                                                    ("images, bmad_compat", 2, true, false, 3e-3))
+  @testset "test_rrule: $name" for (name, n_img, bc, abq, rtol, atol) in (("free space", 0, false, true, 1e-6, 1e-9),
+                                                                          ("images, bmad_compat", 2, true, false, 3e-3, 1e-8))
     zs, qs, as = kernel_test_bunch(1e-3, 1e-9, 60)
     p = CSRParams(n_bin = 24, ds_step = 0.1, n_shield_images = n_img, beam_chamber_height = n_img > 0 ? 0.01 : 0.0,
                   bmad_compat = bc, all_bin_quadrature = abq)
@@ -160,7 +162,7 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry, msg = ""; kw...)
       return y, h_pullback
     end
     test_rrule(h ⊢ NoTangent(), 1e-4 .* sin.(1:60), qs, geom, 0.17, 200.0 / Γ;
-               rrule_f = h_rrule, fdm, check_inferred = false, rtol, atol = 1e-10)
+               rrule_f = h_rrule, fdm, check_inferred = false, rtol, atol)
     test_rrule(CSRGeometry, L3, g3, c3; fkwargs = (; bmad_compat = bc), fdm, check_inferred = false, rtol = 1e-7)
   end
 end
