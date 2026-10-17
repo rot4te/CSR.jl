@@ -66,7 +66,8 @@ GTPSA TPS).
 - **`stage2-tps`** (from `tighten-rrule-tol-atol` `8359698`, 2026-10-16): Stage 2a (collective TPS core, D45) and
   docstrings without references to planning files, `2ad0ca8`.
 - **`stage2a-fixes`** (created by the user from `stage2-tps` `2ad0ca8`, 2026-10-16; name as proposed in the session,
-  verify): fixes from the Stage 2a review (D46, D47; Section 9), committed by the user. **Latest state.**
+  verify): fixes from the Stage 2a review (D46, D47; Section 9), committed by the user.
+- **`stage/csr/01-stage2b`** (from `stage2a-fixes` `2ddb2b8`, 2026-10-17; branch and commits by Claude under the session's git rules, not pushed): Stage 2b (D48) and its review fixes, spec `specs/stage2b.md`. **Latest state.**
 
 | Commit | Branch | Content |
 |---|---|---|
@@ -100,7 +101,7 @@ keep testing on Julia 1.13.1.
 3. Stage 1: frozen-wake kick on TPS test particles (`csr_apply_test_kicks!`, `csr_kick!(...; test_particles)`). **Done.**
 4. Stage 2: full collective TPS (TPS deposit, TPS tables). Variables decided: D37 (knobs + 6D on test particles). Needs `<:Real` relaxed to `<:Number` in the types (TPS is a
    `Number`), a TPS `modulo2`, and a TPS deposit (serial path). Also review findings 4 and 8 (Section 4).
-   **2a done** (D45), reviewed and fixed (D46, D47); 2b, 2c not started.
+   **2a done** (D45), reviewed and fixed (D46, D47); **2b done** (D48, 2026-10-17); 2c not started.
 5. `track_csr!` with a TPS test bunch tracked alongside the bunch (BeamTracking per slice). **Done 2026-10-15**
    (keyword `test_bunch`; Section 9).
 
@@ -173,9 +174,19 @@ keep testing on Julia 1.13.1.
     descriptor test; D47 added). Suite 1812/1812 on 4 threads (5m22s) and 1 thread (5m33s); docs build clean
     (existing warnings).
 
-**Handoff 2026-10-16 (late).** Latest state: branch `stage2a-fixes` (committed by the user), not pushed. Suite
-1812/1812 on 1 and 4 threads; docs build clean. Next (user decides): Stage 2b, 2c (each via a spec, Section 2);
-deferred review findings 3, 5, 6 (Section 4); Phase 8 items (Section 10). The test environment is a scratch env
+12. **Session 2026-10-17, branch `stage/csr/01-stage2b`. Done.** User: Stage 2b next (over 2c, deferred findings,
+    Phase 8); planning/ and diagnostics/ are tracked in git (Drive sync dropped). Scope (user): finding 4 (range check
+    before kicking, by a count kernel first), `pz_t` element-type error, descriptor check for test particles only when
+    the kick is TPS, tests with test particles in 6D + knobs (GTPSA variables, plus one testset with GTPSA parameters).
+    Kick order: `csr_kick!` kicks test particles before the bunch (user). Spec `specs/stage2b.md` → spec-implementer →
+    spec-tester (pass) → code review (no critical; user approved findings 1, 2, 3, 5, 6, 9, 10, 11 as spec 6.G; 4, 12
+    deferred to Phase 8; 7, 8 declined) → 6.G implemented and tested (pass) → 6.G.9 docstring sentence. Results in
+    Section 9.
+
+**Handoff 2026-10-17.** Latest state: branch `stage/csr/01-stage2b` (committed by Claude), not pushed. Suite
+2215/2215 on 1 and 4 threads (7m40s, 7m22s); docs build clean (existing warnings). Next (user decides): Stage 2c
+(`track_csr!` with a TPS bunch; check that Beamlines/BeamTracking accept TPS element parameters; descriptor checks
+there), deferred review findings (Section 4), Phase 8 items (Section 10). The test environment is a scratch env
 (Section 2), rebuilt each session.
 
 Original notes for step 3 (from the reorg handoff, 2026-10-14): Goal: derivatives of a kick w.r.t. the geometry and the reference speed/energy (γ), and `s_kick`.
@@ -194,8 +205,7 @@ Starting points (suggestions, not decided):
 
 Later: Phase 7 (TPS), Phase 8 (FFT convolution, benchmarks, GPU wake table, upstream hook proposal).
 
-**For the user:** push `tighten-rrule-tol-atol`, `stage2-tps`, `stage2a-fixes`; copy this PLAN.md to the Drive
-planning folder; file the upstream reports in `planning/upstream_reports.md` (Section 4, incl. V9 and GTPSA.jl); enable GitHub
+**For the user:** push `tighten-rrule-tol-atol`, `stage2-tps`, `stage2a-fixes`, `stage/csr/01-stage2b`, and merge as you choose; file the upstream reports in `planning/upstream_reports.md` (Section 4, incl. V9 and GTPSA.jl); enable GitHub
 Pages (`gh-pages`) after pushing. Action versions in `.github/workflows/Documentation.yml` now follow Documenter
 1.19's hosting page (checked 2026-10-15; the workflow itself has not run on GitHub).
 
@@ -209,22 +219,21 @@ Pages (`gh-pages`) after pushing. Action versions in `.github/workflows/Document
 - Code changes: report (1) what was wrong, (2) what changed, (3) tested/verified?, (4) what the user must do next.
 - Git: never commit to or push existing branches; create a new branch and commit there; never push.
 - Show a detailed plan and get approval before launching any subagent.
-- Save every diagnostic script written for this project in `diagnostics/` of the planning folder (user, 2026-10-15).
-- Planning folder (user, 2026-10-16): `~/Library/CloudStorage/GoogleDrive-rot4te@gmail.com/My Drive/code/Bmad+/CSR`
-  (Google Drive; was `planning/` in git until `8359698`). PLAN.md lives at the repo root **and** as a copy there:
-  edit the repo copy, then copy it to the Drive folder at each handoff (user: keep both in sync).
+- Save every diagnostic script written for this project in the repo's `diagnostics/` (user, 2026-10-15; in git since 2026-10-17).
+- Planning docs (user, 2026-10-17): `planning/` (this PLAN.md, upstream reports, design notes) and `diagnostics/` are
+  tracked in git and authoritative; the Google Drive copy (`~/Library/CloudStorage/GoogleDrive-rot4te@gmail.com/My Drive/code/Bmad+/CSR`)
+  is no longer kept in sync.
 - Physics-model and upstream choices are the user's: ask with options and a recommendation.
 - Style: 2-space indent, `@kwdef`, docstrings with `## Properties` (BeamTracking style), sparse comments.
-- Only PLAN.md is tracked in git; the rest of the planning folder is on Google Drive (above). Paths below written
-  `planning/...` or `diagnostics/...` refer to that folder.
+- Paths below written `planning/...` or `diagnostics/...` are relative to the repo root.
 
 ### Spec-driven workflow (since 2026-10-16)
 - The coordinating Claude session researches, designs, and writes a spec; it does not write project code. Specs live in
-  the repo's `specs/` (user's choice for `specs/stage2a-fixes.md`; untracked unless the user commits them).
+  the repo's `specs/` (user's choice for `specs/stage2a-fixes.md`; tracked in git).
 - `spec-implementer` implements a spec stage exactly; it stops with questions on ambiguity. `spec-tester` tests the
   result against the spec's acceptance criteria, reports code defects, and proposes spec changes (behaviour changes
   need the user's approval; logged in the spec's "Spec changes" table). At most 3 implement–test rounds per stage.
-- Agents never commit, push, or change branches; the user creates the branch beforehand and commits afterwards.
+- Agents never run git. Since 2026-10-17 the coordinating session creates stage branches (`stage/csr/NN-<desc>`) from the latest branch, makes checkpoint and final commits there, and never pushes. Specs in `specs/` are tracked.
 - Agents run in the background; scripts and logs in the session scratchpad (diagnostic scripts worth keeping: copy
   to the planning folder's `diagnostics/`).
 
@@ -310,6 +319,7 @@ weakdeps, or new extensions silently do not load.
 | D41 | 10-15 | Seam (user: "only one root physically, so the simulation should only have one"): default `ddz_calc_csr` continuous at every element boundary and at the lattice ends: angle (not secant slope) of the L line for sources in the kick element, `−2 L_plane` for sources ahead in it, `L/(γ²(1+β))` for `L(1 − β)`; the first-bin split lag `zz` from `ddz_calc_csr`. Compat keeps Bmad. Chosen over a tie-break in the walk and over replaying the forward search in the pullback. |
 | D46 | 10-16 | Descriptor check (review finding 1, user chose "entry check" over switching `GTPSA.desc_current` temporarily or building every TPS from an input value): `planar_survey`, both `CSRGeometry(L, g, ...)` methods, `CSRKickPoint(geom, ...)`, `csr_bin_particles`, `csr_kick!`, `csr_kick_pz` first call `check_descriptors`, which raises an `ErrorException` naming the argument when a **dynamic-descriptor** TPS (`TPS{Float64,GTPSA.Dynamic}`) is not in `GTPSA.desc_current`. Static-descriptor TPS (the `@vars` default), complex TPS, and test particles are not checked. Uses GTPSA internals `getdesc`, `desc_current` (1.5.6). |
 | D47 | 10-16 | `csr_kick!` raises a clear `ErrorException` up front when `eltype(pz) <: AbstractFloat` but the kick's number type (promoted from z, q, geometry, s_kick, γ, kick_factor, pz_scale) is not (`Dual`, TPS): "use csr_kick_pz, or a pz with element type …". User chose this over docs only. Float `pz` with float inputs unchanged. |
+| D48 | 10-17 | Stage 2b (user's scope): test particles in 6D + knobs with a collective TPS kick. `csr_apply_test_kicks!` counts live test particles outside the bin range first (`count_outside`, `csr_count_outside_kernel!`; cell and range test in a shared primal helper `kick_cell`, so count and kick agree; NaN/Inf/far-off z counts as outside) and kicks none if any is outside (review finding 4). `check_test_particles` (equal lengths, a float `pz_t` cannot hold a TPS/`Dual` kick, descriptor check only when the kick is TPS) runs in `csr_kick!` before the tables and again in `csr_apply_test_kicks!`; `csr_kick!` kicks test particles before the bunch, so these errors leave `pz`, `pz_t` unchanged. Zero-length launches return early. ULP-level change of the TPS range test at cell edges accepted. Spec `specs/stage2b.md`. |
 
 ---
 
@@ -362,8 +372,7 @@ weakdeps, or new extensions silently do not load.
     CPU: a CPU bunch with GPU test particles passes CPU arrays to a GPU kernel; `z_t`/`alive_t` backends are not
     checked against `pz_t`; `pz_scale` is not passed through `device_scalar` (a `Float64` scale on Metal). Confirmed
     by reading, not run.
-  - (4, Stage 2) The out-of-range error in `csr_apply_test_kicks!` is raised after the kernel has kicked the in-range
-    particles; a caller that catches it and retries kicks them twice. Not documented. Confirmed by reading.
+  - (4, Stage 2) Out-of-range error after kicking: **fixed by D48** (2026-10-17).
   - (8, Stage 2) Thread safety of TPS arithmetic. **Resolved 2026-10-16: not benign, a crash** (Section 9, Stage 2a).
     Nonlinear TPS operations segfault on several Julia threads (GTPSA C temporaries indexed by OpenMP thread number);
     `+`, `*` (all the test-kick kernel uses) do not. Fixed in CSR.jl by D45; GTPSA.jl report drafted.
@@ -374,8 +383,13 @@ weakdeps, or new extensions silently do not load.
     (`root_order` would `MethodError` there too). No action unless a clear error is wanted.
   - (6) `root_order(::TPS)` docstring/comments say "truncation order"; it returns the TPS's `mo` field, GTPSA's
     "Max order" (`GTPSA.jl/src/tps.jl` field list). If a lower truncation is set, extra Newton steps only cost time.
-  - Stage 2b/2c: descriptor checks for test particles combined with a collective TPS kick, and for `track_csr!`
-    (D46 exempts test particles).
+  - Stage 2c: descriptor checks for `track_csr!` (test particles with a collective TPS kick: done, D48).
+- **Deferred/declined from the 2026-10-17 Stage 2b review** (spec `specs/stage2b.md` 6.G.8): (4, Phase 8) the range
+  error message reads `first(zc)`/`last(zc)` from a device array when `pz_t` is on a GPU; (12, Phase 8) `csr_kick!`
+  passes `pz_scale` to the test-particle kick without `device_scalar`; (7, declined) no test fails without the
+  one-workgroup guard in `count_outside`; (8, declined) the test-particle descriptor check is keyed on the kick type,
+  not `pz_scale` (`csr_kick!` checks `pz_scale`). Also: element-type combinations other than a float `pz`/`pz_t` (e.g.
+  `Dual` `pz_t` with a TPS kick) are not checked and can leave a partial kick (documented in the docstrings).
 - Float32 on GPUs limits strongly shielded kicks to ~3e-4 relative (cancellation); a mixed-precision table/convolve
   path would be needed for better.
 
@@ -922,6 +936,24 @@ Hat costs ~5× the source solves of point sampling.
   to ~1e-4 and ~5e-6 relative, not 1e-6.
 - `ad_rrule_test.jl` 208/208 on 1 and 4 threads; suite 1622/1622 on 4 threads (3m59s) and 1 thread (4m03s).
 
+### Phase 7 Stage 2b, D48 (10-17, branch `stage/csr/01-stage2b`)
+- **Spec** `specs/stage2b.md` (6.A–6.F, amendment 6.G after review, 6.G.9 docstring). Changes: `src/kernels/kick.jl`
+  (`kick_cell`, `csr_count_outside_kernel!`), `src/kick.jl` (`count_outside`, `check_test_particles`,
+  `csr_apply_test_kicks!`, `csr_kick!` order and early checks, docstrings), `docs/src/usage.md` (GTPSA section: checks,
+  6D + knobs example), `test/tps_test.jl`, `test/tps_collective_test.jl`.
+- **Tests.** 6D + 3 knobs (element 2 g, γ, bunch knob), `Descriptor(9, 2)`, 50 test particles, images {0, 2} × compat:
+  worst Hessian err/bound 8.6e-3 (block (7,7), images, default), worst Jacobian column rel. error 9.6e-14, scalar ratio
+  ≤ 0.077; GTPSA parameters (`Descriptor(6, 2, 3, 2)`, `include_params = true`) identical to the variables case. Test
+  particles at bunch positions get the bunch's TPS kicks exactly (`isequal`), also with `pz_scale = 1.3`. Docs example:
+  ∂²Δpz/∂z∂g₂ = −0.0479.
+- **Sensitivity** (scratch): `root_order(::TPS) = 1` fails 3/45 Hessian blocks per case, only (7,7), (7,8), (8,8)
+  (bunch-knob and phase-space × knob blocks do not depend on the TPS root order; Stage 2a's tests cover it); old kick
+  order, missing count pass, old `kick_cell` (non-finite z), missing early check in `csr_kick!`: each makes its targeted
+  test fail.
+- **Suite** 2215/2215 on 4 threads (7m22s) and 1 thread (7m40s), Julia 1.13.2; first round 2177/2177 (1 thread took
+  11m03s once, not reproduced; likely load, not verified). Docs build: the two existing warnings only.
+- **Review** (code-reviewer, static): no critical; findings handled per Section 4 and spec 6.G.
+
 ### Phase 7 Stage 2a review and fixes, D46, D47 (10-16, branch `stage2a-fixes`)
 - **Review** (Claude, reading `src/utils/backend.jl`, `ext/CSRGTPSAExt`, `src/utils/math.jl`, `src/utils/root_finding.jl`,
   `src/kernels/source_point.jl`, `src/utils/chord_coordinates.jl`, `src/types.jl`, `src/tables.jl`, `src/binning.jl`,
@@ -1136,8 +1168,8 @@ Hat costs ~5× the source solves of point sampling.
 | 4 | KernelAbstractions kernels | done (GPU: particle side + CPU tables, Stage C) |
 | 5 | Shielding (image charges) | done (+ D20, D24, V9) |
 | 6 | AD: steps 0–2 particles (done); step 3 geometry/γ via implicit differentiation of the source root | done (3a forward, 3b rrules, D30 cheaper pullback) |
-| 7 | TPS: generic root (done), frozen-wake test particles (done), `track_csr!` with a TPS test bunch (done), full collective TPS (Stage 2, D37: 2a done + review fixes D46, D47; 2b, 2c open) (D33–D38); tests: first order = Jacobian, second = ForwardDiff Hessian | in progress |
-| 8 | FFT convolution (`CSRAbstractFFTsExt`) for large n_bin; benchmarks; GPU wake table (isbits geometry via Adapt; work struct immutable since D29; errors/recursion in the source search); issue for a BeamTracking collective-step hook (route b); test-particle backend handling (review finding 2, Section 4) | not started |
+| 7 | TPS: generic root (done), frozen-wake test particles (done), `track_csr!` with a TPS test bunch (done), full collective TPS (Stage 2, D37: 2a done + review fixes D46, D47; 2b done (D48); 2c open) (D33–D38); tests: first order = Jacobian, second = ForwardDiff Hessian | in progress |
+| 8 | FFT convolution (`CSRAbstractFFTsExt`) for large n_bin; benchmarks; GPU wake table (isbits geometry via Adapt; work struct immutable since D29; errors/recursion in the source search); issue for a BeamTracking collective-step hook (route b); test-particle backend handling (review finding 2; Stage 2b review findings 4, 12; Section 4) | not started |
 
 Follow-ups not requested: per-element `ds_step` (Bmad `csr_ds_step`); caching slices per element (rebuilt every step);
 Metal tests in the suite (conditional on Metal.jl).
@@ -1183,7 +1215,7 @@ Metal tests in the suite (conditional on Metal.jl).
 - **Others**: AtomicAndPhysicalConstants.jl (`chargeof`, `massof`; CODATA 2022), SpaceCharge.jl (3D solver, not a
   dependency), SciBmad.jl. KernelAbstractions: `supports_float64`, `supports_atomics` (checked in 0.9.35–0.9.45).
 
-### Planning files (Google Drive planning folder, Section 2; `planning/` in git until `8359698`)
+### Planning files (`planning/` and `diagnostics/` in git, Section 2)
 | File | Contents |
 |---|---|
 | `PLAN.md` | This document. |
@@ -1191,7 +1223,7 @@ Metal tests in the suite (conditional on Metal.jl).
 | `verify_analytic.jl` | Section 8 checks (Base Julia). |
 | `dspline_coeff.md`, `upstream-bin.md` | Write-ups for V1 and V5. |
 | `upstream_reports.md` | Drafted upstream reports (Section 4). |
-| `diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`, `bench_pullback.jl`, `bench_forward.jl`, `d32_flake.jl [compat\|free] [Γ] [rtol] [tangent\|block] [atol]`, `test_rrule_seeds.jl [free\|compat] [rtol] [n_seeds] [atol] [verbose]`, `d32_steps.jl`, `root_newton_mutation.jl`, `track_tps_probe.jl`, `track_tps_lcavity_probe.jl`, `track_tps_timing.jl`, `track_tps_compile.jl`, `track_tps_mutation.jl [none\|scale]`, `track_tps_docs_example.jl`, `track_tps_thread_spread.jl [n_runs]`, `sagan_tref_check.jl`, `v3_rrule_images.jl`, `v3_rrule_scan.jl`, `v3_hat_node_search.jl`, `v3_image_entry_adjoint.jl`, `v3_node_adjoint.jl`, `v3_warm_start.jl [s_kick] [layer]`, `seam_uniqueness.jl`, `drift_lag0_image.jl`, `drift_kick_default.jl [case] [ix_last]`, `first_bin_straight.jl`, `s_kick_residual.jl [s]`, `image_kernel_roundoff.jl [s]`, `flake_geom_steps.jl [compat]`; data `layer_terms_*.txt` (the `_400` files predate V9). Not yet copied there (session scratchpad, 2026-10-16, deleted when the session ends): the Stage 2a-fixes scripts `diag/r1–r8.jl` (MethodError matrix), `accept/margins.jl` (`MUTATE=1`), `accept/extras.jl`. |
+| `../diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`, `bench_pullback.jl`, `bench_forward.jl`, `d32_flake.jl [compat\|free] [Γ] [rtol] [tangent\|block] [atol]`, `test_rrule_seeds.jl [free\|compat] [rtol] [n_seeds] [atol] [verbose]`, `d32_steps.jl`, `root_newton_mutation.jl`, `track_tps_probe.jl`, `track_tps_lcavity_probe.jl`, `track_tps_timing.jl`, `track_tps_compile.jl`, `track_tps_mutation.jl [none\|scale]`, `track_tps_docs_example.jl`, `track_tps_thread_spread.jl [n_runs]`, `sagan_tref_check.jl`, `v3_rrule_images.jl`, `v3_rrule_scan.jl`, `v3_hat_node_search.jl`, `v3_image_entry_adjoint.jl`, `v3_node_adjoint.jl`, `v3_warm_start.jl [s_kick] [layer]`, `seam_uniqueness.jl`, `drift_lag0_image.jl`, `drift_kick_default.jl [case] [ix_last]`, `first_bin_straight.jl`, `s_kick_residual.jl [s]`, `image_kernel_roundoff.jl [s]`, `flake_geom_steps.jl [compat]`; data `layer_terms_*.txt` (the `_400` files predate V9). Not yet copied there (session scratchpad, 2026-10-16, deleted when the session ends): the Stage 2a-fixes scripts `diag/r1–r8.jl` (MethodError matrix), `accept/margins.jl` (`MUTATE=1`), `accept/extras.jl`. |
 | `../crosscheck/` | Bmad/Tao cross-check (README there). |
 | `../docs/` | Documenter docs (`julia --project=docs docs/make.jl`; `docs/README.md`); pages Home, Usage, Physics model, Physics decisions, Validation, API, Internals. Deployed by `.github/workflows/Documentation.yml` from `main`. Keep "Physics decisions" in sync with Section 3 when physics changes. |
 | `../specs/` (repo) | Specs for `spec-implementer`/`spec-tester` (Section 2): `stage2a-fixes.md` (D46, D47, per-block tolerances; with its "Spec changes" log). |
