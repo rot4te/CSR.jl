@@ -504,7 +504,7 @@ function check_test_particles(fname, pz_t, z_t, alive_t, Tkick, pz_scale)
 end
 ```
 
-In `csr_apply_test_kicks!`, replace its first four statements (the `Tt = …` line through the
+In `csr_apply_test_kicks!`, replace its first three statements (the `Tt = …` line through the
 `eltype(kick) <: Real || check_descriptors(…)` line) with the single statement
 `check_test_particles("csr_apply_test_kicks!", pz_t, z_t, alive_t, eltype(kick), pz_scale)`. The rest of the function
 is unchanged.
@@ -699,3 +699,4 @@ None affecting implementation. Later: Stage 2c (`track_csr!` with a TPS bunch; d
 | 2026-10-17 | Review findings 4, 12 (GPU test-particle backend: error message from a device array; `pz_scale` not through `device_scalar`). | Out of scope (test-particle backends). | Deferred to Phase 8 by the user |
 | 2026-10-17 | Review finding 7 (no test for the one-workgroup guard in `count_outside`). | Guard is conservative; a failing test would need GTPSA thread corruption on reads. | Declined by the user |
 | 2026-10-17 | Review finding 8 (descriptor check keyed on the kick type, not `pz_scale`). | User's rule is "the kick is TPS"; `csr_kick!` checks `pz_scale`. | Declined by the user |
+| 2026-10-17 | 6.G.3: "replace its first four statements (the `Tt = …` line through the `eltype(kick) <: Real || check_descriptors(…)` line)" changed to "first three statements". | Editorial: the block is three statements (the `error(…)` of the second spans three lines); found when implementing 6.G.3 (spec-implementer) and confirmed by reading `csr_apply_test_kicks!`. No behavior change. | Applied |
