@@ -2,6 +2,8 @@
 
 Spec date: 2026-10-17. Base: branch `stage2a-fixes` (`2ddb2b8`). Decisions: D37 (Stage 2 variables), review finding 4 of
 the `phase7-tps` review (planning/PLAN.md Section 4), user decisions of 2026-10-17 (recorded in Section 13).
+Amended 2026-10-17 after the Stage 2b code review: Section 6.G (see "Spec changes" at the end). Sections 6.A–6.F are
+implemented; 6.G changes some of their code and tests, and where they conflict, 6.G wins.
 
 ## 1. Overview
 
@@ -22,6 +24,9 @@ etc. carry the knobs (Stage 2a), so the kick tables are TPS. This stage makes th
 - **D. Tests.** Test particles TPS in 6D + 3 knobs vs ForwardDiff (Jacobian, Hessian including the mixed
   phase-space × knob blocks); one testset with the knobs as GTPSA parameters; consistency of test-particle and bunch
   kicks; tests for A, B, C.
+- **G. Review fixes (amendment).** Non-finite or far-off `z` counts as outside instead of throwing; zero-length
+  launches return early; equal lengths of the test-particle arrays; type-only test-particle checks in `csr_kick!`
+  before the table build; documented limits; docstring wording; stronger tests.
 
 ## 2. Out of scope
 
@@ -29,9 +34,10 @@ etc. carry the knobs (Stage 2a), so the kick tables are TPS. This stage makes th
   only its internal error), or the adjoint/rrule code.
 - `track_csr!` / `test_bunch` (Stage 2c). The 2b changes reach `track_csr!` only through `csr_kick!`; do not edit
   `ext/CSRBeamTrackingBeamlinesExt/`.
-- Review findings 3, 5, 6 (Section 4 of PLAN.md), finding 2 (test-particle backends, Phase 8).
-- No length checks on `pz_t`, `z_t`, `alive_t`; no handling of mixed static/dynamic descriptors or of two different
-  static descriptors (unchanged, untested).
+- Review findings 3, 5, 6 (Section 4 of PLAN.md), finding 2 (test-particle backends, Phase 8). Stage 2b review
+  findings 4, 7, 8, 12 (Section 6.G, "Not done").
+- No length checks on the bunch's `pz`, `z`, `q`, `alive` (only on `pz_t`, `z_t`, `alive_t`, 6.G.3); no handling of
+  mixed static/dynamic descriptors or of two different static descriptors (unchanged, untested).
 - No change to `docs/src/validation.md`, `docs/src/decisions.md`, README.
 - Do not edit `planning/PLAN.md` (the coordinator does). Do not run git (no commit, branch, stash, checkout).
 
@@ -59,6 +65,7 @@ etc. carry the knobs (Stage 2a), so the kick tables are TPS. This stage makes th
 - `test/tps_test.jl`: extend the testset "Test particles outside the bunch" (6.F.1).
 - `test/tps_collective_test.jl`: new testsets (6.F.2–6.F.5); extend "Descriptor check" (6.F.6); header comment.
 - `docs/src/usage.md`: GTPSA section (6.E).
+- 6.G changes `src/kernels/kick.jl`, `src/kick.jl`, `test/tps_test.jl`, `test/tps_collective_test.jl` only.
 
 ## 6. Components
 
@@ -432,6 +439,180 @@ that point `GTPSA.desc_current` is `d2`, `x` is dynamic in `d1` (not current), `
 (The descriptor `d1` of `x` and `pzt1` stays alive while `x` is referenced; this matches the existing steps of the
 testset, which already use `x` after `d2` was created.)
 
+### 6.G Review fixes (amendment, 2026-10-17)
+
+From the code review of the implemented 6.A–6.F (findings numbered as reported; approved by the user: 1, 2, 3, 5, 6,
+9, 10, 11). Implement all of 6.G.1–6.G.8.
+
+**6.G.1 Non-finite or far-off `z` is outside (finding 1).** In `kick_cell` (`src/kernels/kick.jl`), `trunc(Int, ·)`
+throws `InexactError` for NaN, ±Inf or values beyond `Int`'s range. Replace the function body with:
+
+```julia
+@inline function kick_cell(zp, z_center, dz)
+  zpp = primal(zp)
+  u = (zpp - z_center[1]) / dz
+  # NaN, Inf or far outside the table: outside (trunc(Int, ·) would throw)
+  (isfinite(u) && abs(u) < length(z_center) + 1) || return 0, false
+  i0 = trunc(Int, u) + 1   # Fortran int() truncates toward zero
+  inside = false
+  if 1 <= i0 < length(z_center)
+    r1p = (zpp - z_center[i0]) / dz
+    inside = oftype(r1p, -0.01) <= r1p <= oftype(r1p, 1.01)
+  end
+  return i0, inside
+end
+```
+
+(Every finite `u` with `abs(u) ≥ n_bin + 1` gives `i0 ≤ 0` or `i0 ≥ n_bin`, i.e. outside, so in-range results are
+unchanged.) Replace the `kick_cell` docstring with:
+
+"Interpolation cell of a particle at `zp` for `csr_apply_kicks_kernel!`: `i0` from the primal `zp` (Fortran `int`
+truncation toward zero, as Bmad), and `inside = true` if `1 ≤ i0 < n_bin` and the primal
+`r1 = (zp - z_center[i0]) / dz` lies in `[-0.01, 1.01]`. A non-finite primal `zp` (NaN, ±Inf) or one more than
+`n_bin + 1` bins from `z_center[1]` gives `(0, false)`. Computed from primal values only, so the count
+(`csr_count_outside_kernel!`) and the kick agree for every number type."
+
+This also applies to the bunch's own kick (`csr_apply_kicks!`): a NaN/Inf `z` there now reaches its existing
+"internal error" message instead of an `InexactError`. Accepted; no test for the bunch path.
+
+**6.G.2 Zero-length launches (finding 3).** In `count_outside` and in `apply_kicks_outside!` (`src/kick.jl`), return
+`0` before allocating `n_outside` when there are no work items: in `count_outside` add `length(z) == 0 && return 0`
+as the first statement; in `apply_kicks_outside!` add `length(pz) == 0 && return 0` as the first statement.
+
+**6.G.3 Equal lengths (finding 5) and 6.G.4 type-only checks first (finding 9).** Add to `src/kick.jl`, before
+`csr_apply_test_kicks!`:
+
+```julia
+"""
+    check_test_particles(fname, pz_t, z_t, alive_t, Tkick, pz_scale)
+
+Checks on test particles that need only their types and lengths, for a kick of number type `Tkick` (errors name
+function `fname`): equal lengths of `pz_t`, `z_t`, `alive_t`; a `pz_t` that can hold the kick (an `AbstractFloat`
+`pz_t` needs an `AbstractFloat` kick, `z_t` and `pz_scale`); and, for a non-`Real` `Tkick` (TPS),
+`check_descriptors` on `pz_t` and `z_t`.
+"""
+function check_test_particles(fname, pz_t, z_t, alive_t, Tkick, pz_scale)
+  length(pz_t) == length(z_t) == length(alive_t) ||
+    error("$fname: test particle arrays pz_t, z_t, alive_t have lengths $(length(pz_t)), $(length(z_t)), " *
+          "$(length(alive_t)); they must be equal.")
+  Tt = promote_type(Tkick, eltype(z_t), typeof(pz_scale))
+  eltype(pz_t) <: AbstractFloat && !(Tt <: AbstractFloat) &&
+    error("$fname: pz_t has element type $(eltype(pz_t)), which cannot hold the kick in number type " *
+          "$Tt; use a pz_t with element type $(promote_type(eltype(pz_t), Tt)).")
+  Tkick <: Real || check_descriptors(fname; pz_t, z_t)
+  return nothing
+end
+```
+
+In `csr_apply_test_kicks!`, replace its first four statements (the `Tt = …` line through the
+`eltype(kick) <: Real || check_descriptors(…)` line) with the single statement
+`check_test_particles("csr_apply_test_kicks!", pz_t, z_t, alive_t, eltype(kick), pz_scale)`. The rest of the function
+is unchanged.
+
+In `csr_kick!`, insert directly after the D47 check (the `eltype(pz) <: AbstractFloat && … error(…)` statement) and
+before `st = csr_binned_kick(…)`:
+
+```julia
+  test_particles === nothing || check_test_particles("csr_kick!", test_particles..., Tk, pz_scale)
+```
+
+So in `csr_kick!` the length, element-type and descriptor errors for test particles are raised before the tables are
+built, with the prefix `csr_kick!:`; `csr_apply_test_kicks!` repeats them (cheap) when `csr_kick!` calls it. `Tk` is
+non-`Real` exactly when an input is TPS, i.e. when the kick is TPS. The range error still comes from
+`csr_apply_test_kicks!` (it needs the bins).
+
+**6.G.5 Documented limits (finding 2) and wording (finding 11).** In `src/kick.jl`:
+
+1. `csr_apply_test_kicks!` docstring: in the error list, replace the item "`pz_t` of a hardware float type that cannot
+   hold the kick (TPS or `Dual` kick or `z_t`);" with "`pz_t`, `z_t`, `alive_t` of different lengths;" followed by a
+   new item "`pz_t` with an `AbstractFloat` element type that cannot hold the kick (TPS or `Dual` kick, `z_t` or
+   `pz_scale`);". After the list, add the paragraph: "Other element-type combinations that cannot hold the kick (e.g.
+   a `Dual` `pz_t` with a TPS kick, a TPS `pz_t` with a `Dual` kick) are not checked and fail inside the kick kernel,
+   possibly after part of `pz_t` has been kicked."
+2. `csr_kick!` docstring, `test_particles` bullet: replace "(a live test particle outside the bin range, a `pz_t` that
+   cannot hold the kick, a descriptor mismatch)" with "(a live test particle outside the bin range, arrays of
+   different lengths, a `pz_t` that cannot hold the kick, a descriptor mismatch; the last three are checked before the
+   kick tables are built)". Then append to the same bullet: "Other element-type combinations that cannot hold the
+   kick (e.g. a `Dual` `pz` or `pz_t` with a TPS kick, a TPS `pz` or `pz_t` with a `Dual` kick) are not checked and
+   fail inside the kick kernel, possibly after part of `pz` or `pz_t` has been kicked."
+
+**6.G.6 Tests: range edges, non-finite, empty, lengths (findings 1, 3, 5, 6).** Append to the end of the testset
+"Test particles outside the bunch" in `test/tps_test.jl` (after the 6.F.1 lines; uses that testset's `st`, `zc`, `dz`,
+`x`):
+
+```julia
+    # TPS z_t at the range edges: accepted where Float64 is, same kicked value (review finding 6)
+    for zt in (zc[1] - dz / 200, zc[1], zc[end - 1], zc[end] - dz / 4)
+      k64 = CSR.csr_apply_test_kicks!([0.0], [zt], [true], st.bins, st.kick)[1]
+      kt = CSR.csr_apply_test_kicks!([0.0 + x[6]], [zt + x[5]], [true], st.bins, st.kick)[1]
+      @test isapprox(scalar(kt), k64; rtol = 1e-13, atol = 1e-13 * maximum(abs, st.kick))
+    end
+    for zt in (zc[1] - dz / 50, zc[end] + dz / 4)
+      pzt = [0.0 + x[6]]
+      @test_throws ErrorException CSR.csr_apply_test_kicks!(pzt, [zt + x[5]], [true], st.bins, st.kick)
+      @test isequal(pzt[1], 0.0 + x[6])
+    end
+    # Non-finite or far-off z: the range error, not an InexactError (review finding 1)
+    for zt in (NaN, Inf, -Inf, 1e30)
+      pzt = [0.0]
+      err = try CSR.csr_apply_test_kicks!(pzt, [zt], [true], st.bins, st.kick); nothing catch e; e end
+      @test err isa ErrorException && occursin("outside the bunch's bin range", err.msg)
+      @test pzt == [0.0]
+      errt = try CSR.csr_apply_test_kicks!([0.0 + x[6]], [zt + x[5]], [true], st.bins, st.kick); nothing catch e; e end
+      @test errt isa ErrorException && occursin("outside the bunch's bin range", errt.msg)
+    end
+    # Empty TPS test particles (review finding 3)
+    T6 = typeof(x[6])
+    @test isempty(CSR.csr_apply_test_kicks!(T6[], T6[], Bool[], st.bins, st.kick))
+    # Different lengths (review finding 5)
+    err = try CSR.csr_apply_test_kicks!([0.0, 0.0], [0.0], [true, true], st.bins, st.kick); nothing catch e; e end
+    @test err isa ErrorException && occursin("must be equal", err.msg)
+    pzb = zeros(n)
+    err = try csr_kick!(pzb, z, q, alive, geom, 2, 0.17, 200.0, electron, p;
+                        test_particles = ([0.0], [0.0, 0.0], [true, true])); nothing catch e; e end
+    @test err isa ErrorException && occursin("csr_kick!: test particle arrays", err.msg)
+    @test all(iszero, pzb)
+```
+
+If the `isapprox` in the first loop fails, report `scalar(kt)`, `k64` and `zt`; do not loosen without approval.
+
+**6.G.7 Stronger tests (finding 10), in `test/tps_collective_test.jl`.**
+
+1. 6.F.2's consistency block (the lines after the comment "Test particles at bunch particles' positions …"): pass
+   `pz_scale = 1.3` to that `csr_kick!` call, keep the two existing `@test` lines, and add after them:
+
+   ```julia
+    pzb1 = [zero(x[1]) for _ in 1:n]
+    pzt1 = [zero(x[1]) for _ in idx]
+    csr_kick!(pzb1, zb, qb, alive, geom, 2, 0.17, w[8], electron, p; test_particles = (pzt1, zb[idx], fill(true, length(idx))))
+    @test scalar.(pzt) ≈ 1.3 .* scalar.(pzt1) rtol = 1e-14
+    @test GTPSA.jacobian(pzt) ≈ 1.3 .* GTPSA.jacobian(pzt1) rtol = 1e-14
+   ```
+
+2. 6.F.4 (testset "Test particles: pz_t element type"):
+   - After `msg = errmsg(f1)`, also `@test occursin("csr_kick!: pz_t", msg)` (6.G.4's early check).
+   - In the `Dual` case, name the test-particle array: replace `test_particles = (zeros(3), zt3, fill(true, 3))` in `f2`
+     with `test_particles = (pzt3, zt3, fill(true, 3))`, define `pzt3 = zeros(3)` before `f2`, and after the existing
+     `occursin` test add `@test all(iszero, pzbd) && pzt3 == zeros(3)`.
+   - Replace the last test (Float32 `pz_t`, `isa Vector{Float32}`) with:
+
+     ```julia
+    pz32 = CSR.csr_apply_test_kicks!(zeros(Float32, 3), zt3, fill(true, 3), st.bins, st.kick)
+    @test pz32 isa Vector{Float32}
+    @test pz32 == Float32.(CSR.csr_apply_test_kicks!(zeros(3), zt3, fill(true, 3), st.bins, st.kick))
+    @test any(!iszero, pz32)
+     ```
+
+3. 6.F.6 (end of "Descriptor check"): after `@test occursin("GTPSA's current Descriptor", msg) && occursin("`pz_t`", msg)`
+   add `@test occursin("csr_kick!:", msg)`; after the last line (`@test pzt2[1][[1 => 1]] != 0`) add
+   `@test pzt2[1][[3 => 1]] != 0   # z_t dependence (∂Δpz/∂y3)`.
+
+**6.G.8 Not done (logged as declined or deferred).** Finding 4 (error message reads `first(zc)` from a GPU array) and
+finding 12 (`pz_scale` not passed through `device_scalar` for test particles): Phase 8, with the test-particle
+backend work. Finding 7 (no test fails without the one-workgroup guard in `count_outside`): no action; the guard is
+conservative. Finding 8 (descriptor check keyed on the kick type, not `pz_scale`): no action; the user's rule is
+"the kick is TPS", and `csr_kick!` checks `pz_scale` itself.
+
 ## 7. Data formats
 
 No change.
@@ -441,7 +622,8 @@ No change.
 No physics change: no equation, model, constant or approximation is added or altered (the kick formula, tables and
 deposit are untouched). The only numerical change is the TPS range test at cell edges (6.A behavior note). Tolerances:
 6.F.2/6.F.3 use Stage 2a's bounds (scalar part ≤ 1e-13 relative to the largest kick, Jacobian columns `rtol = 1e-11`,
-Hessian per block `err ≤ 1e-10·ref + 1e-14·Hmax`); exact equality (`isequal`, `==`) where stated.
+Hessian per block `err ≤ 1e-10·ref + 1e-14·Hmax`); exact equality (`isequal`, `==`) where stated. 6.G.6: TPS vs Float64
+kick at the edges `rtol = 1e-13` (plus `atol = 1e-13·max|kick|`); 6.G.7: `pz_scale` ratio `rtol = 1e-14`.
 
 ## 9. Acceptance criteria
 
@@ -465,6 +647,11 @@ Hessian per block `err ≤ 1e-10·ref + 1e-14·Hmax`); exact equality (`isequal`
    `centroid = c3`, `e = electron`, `params = CSRParams(n_bin = 40, ds_step = 0.1)`, `z, q, alive` from
    `kernel_test_bunch(1e-3, 1e-9, 400)`, `pz = zeros(400)`), run the block, and report that
    `GTPSA.hessian(pz_t[1])[5, 7]` is nonzero.
+8. 6.G (amendment): criteria 1, 5 (now: pre-existing tests and the 6.F tests pass, modified only as 6.G.7 says) and
+   6 again after 6.G; all 6.G.6 and 6.G.7 assertions pass. Sensitivity in a scratch session: with the old `kick_cell`
+   (6.A version), 6.G.6's non-finite loop must fail; with `check_test_particles` removed from `csr_kick!`
+   (6.G.4), 6.G.7.2's `occursin("csr_kick!: pz_t", msg)` must fail. Report the new suite total and run times on
+   `-t 1` and `-t 4`; if `-t 1` again takes much longer than `-t 4` beyond the added tests, report per-file times.
 
 ## 10. Build and run
 
@@ -476,7 +663,7 @@ ChainRulesCore, ChainRulesTestUtils, GTPSA, AtomicAndPhysicalConstants, KernelAb
 (scripts and logs in the same scratchpad).
 
 - Full suite, from `test/`: `julia --project=<env> -t 4 -e 'include("runtests.jl")'` and the same with `-t 1`
-  (~5.5 min each before this stage).
+  (after 6.A–6.F: 7m23s on `-t 4`, 11m03s on `-t 1`).
 - One file, from `test/`: `julia --project=<env> -e 'using CSR, Test, StaticArrays, AbstractFFTs, BeamTracking,
   Beamlines, ChainRulesCore, ForwardDiff, GTPSA; include("utils.jl"); include("kernels_test.jl");
   include("tps_collective_test.jl")'` (`kernel_test_bunch` is in `kernels_test.jl:6`; same for `tps_test.jl`).
@@ -485,7 +672,7 @@ ChainRulesCore, ChainRulesTestUtils, GTPSA, AtomicAndPhysicalConstants, KernelAb
 ## 11. Implementation order
 
 One stage: 6.A–6.C (kernels, `count_outside`, `csr_apply_test_kicks!`, `csr_kick!` order), 6.E (docstrings, docs),
-then the tests 6.F.1–6.F.6.
+then the tests 6.F.1–6.F.6. Done. Amendment: 6.G.1–6.G.5 (code, docstrings), then the tests 6.G.6, 6.G.7.
 
 ## 12. Open items
 
@@ -502,8 +689,13 @@ None affecting implementation. Later: Stage 2c (`track_csr!` with a TPS bunch; d
 | Descriptor check | Test particles checked only when the kick is TPS (non-`Real`). |
 | Knobs in tests | GTPSA variables (`Descriptor(9, 2)`), plus one testset with GTPSA parameters (`Descriptor(6, 2, 3, 2)`). |
 | Test setup | Knobs g (element 2), γ, bunch knob; 50 test particles; images ∈ {0, 2} × `bmad_compat` ∈ {false, true}. |
+| Review findings | Act on 1, 2, 3, 5, 6, 9, 10, 11 (6.G); 4, 12 deferred to Phase 8; 7, 8 declined. |
 
 ## Spec changes
 
 | Date | Change | Reason | Status |
 |---|---|---|---|
+| 2026-10-17 | Section 6.G added (6.G.1 non-finite/far-off `z` outside in `kick_cell`; 6.G.2 zero-length early return in `count_outside`, `apply_kicks_outside!`; 6.G.3/6.G.4 `check_test_particles` with a length check, called by `csr_apply_test_kicks!` and early in `csr_kick!`; 6.G.5 docstrings; 6.G.6, 6.G.7 tests); Sections 1, 2, 5, 8, 9 (criterion 8), 10, 11, 13 updated. | Code review of Stage 2b, findings 1, 2, 3, 5, 6, 9, 10, 11. | Approved by the user |
+| 2026-10-17 | Review findings 4, 12 (GPU test-particle backend: error message from a device array; `pz_scale` not through `device_scalar`). | Out of scope (test-particle backends). | Deferred to Phase 8 by the user |
+| 2026-10-17 | Review finding 7 (no test for the one-workgroup guard in `count_outside`). | Guard is conservative; a failing test would need GTPSA thread corruption on reads. | Declined by the user |
+| 2026-10-17 | Review finding 8 (descriptor check keyed on the kick type, not `pz_scale`). | User's rule is "the kick is TPS"; `csr_kick!` checks `pz_scale`. | Declined by the user |
