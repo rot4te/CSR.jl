@@ -167,7 +167,7 @@ image tables are always computed on the CPU in `Float64` and copied to a GPU bac
 `csr_kick_reference!` is the serial phase 1 version.
 
 Dynamic-descriptor TPS arguments (`@vars(d, dynamic = true)`) must all be in GTPSA's current Descriptor (error
-otherwise; test particles are checked only when the kick is TPS, by `csr_apply_test_kicks!`); static-descriptor TPS (the
+otherwise; test particles are checked only when the kick is TPS, before the kick tables are built); static-descriptor TPS (the
 `@vars` default) carry their Descriptor in the type and are not checked.
 """
 function csr_kick!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool},
