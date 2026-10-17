@@ -442,7 +442,7 @@ testset, which already use `x` after `d2` was created.)
 ### 6.G Review fixes (amendment, 2026-10-17)
 
 From the code review of the implemented 6.A–6.F (findings numbered as reported; approved by the user: 1, 2, 3, 5, 6,
-9, 10, 11). Implement all of 6.G.1–6.G.8.
+9, 10, 11). Implement 6.G.1–6.G.7 and 6.G.9 (6.G.8 lists what is not done).
 
 **6.G.1 Non-finite or far-off `z` is outside (finding 1).** In `kick_cell` (`src/kernels/kick.jl`), `trunc(Int, ·)`
 throws `InexactError` for NaN, ±Inf or values beyond `Int`'s range. Replace the function body with:
@@ -613,6 +613,11 @@ backend work. Finding 7 (no test fails without the one-workgroup guard in `count
 conservative. Finding 8 (descriptor check keyed on the kick type, not `pz_scale`): no action; the user's rule is
 "the kick is TPS", and `csr_kick!` checks `pz_scale` itself.
 
+**6.G.9 `csr_kick!` docstring, descriptor paragraph (found by spec-tester after 6.G).** In the last paragraph of the
+`csr_kick!` docstring (`src/kick.jl`), replace "(error otherwise; test particles are checked only when the kick is
+TPS, by `csr_apply_test_kicks!`)" with "(error otherwise; test particles are checked only when the kick is TPS, before
+the kick tables are built)". Docstring only; no code or test change.
+
 ## 7. Data formats
 
 No change.
@@ -652,6 +657,9 @@ kick at the edges `rtol = 1e-13` (plus `atol = 1e-13·max|kick|`); 6.G.7: `pz_sc
    (6.A version), 6.G.6's non-finite loop must fail; with `check_test_particles` removed from `csr_kick!`
    (6.G.4), 6.G.7.2's `occursin("csr_kick!: pz_t", msg)` must fail. Report the new suite total and run times on
    `-t 1` and `-t 4`; if `-t 1` again takes much longer than `-t 4` beyond the added tests, report per-file times.
+9. 6.G.9: the `csr_kick!` docstring has the new sentence and no other source line changed since 6.G; docs build as
+   in criterion 6; `tps_test.jl` and `tps_collective_test.jl` pass on `-t 4` (a full-suite rerun is not required for a
+   docstring change).
 
 ## 10. Build and run
 
@@ -663,7 +671,7 @@ ChainRulesCore, ChainRulesTestUtils, GTPSA, AtomicAndPhysicalConstants, KernelAb
 (scripts and logs in the same scratchpad).
 
 - Full suite, from `test/`: `julia --project=<env> -t 4 -e 'include("runtests.jl")'` and the same with `-t 1`
-  (after 6.A–6.F: 7m23s on `-t 4`, 11m03s on `-t 1`).
+  (after 6.G: 7m22s on `-t 4`, 7m40s on `-t 1`).
 - One file, from `test/`: `julia --project=<env> -e 'using CSR, Test, StaticArrays, AbstractFFTs, BeamTracking,
   Beamlines, ChainRulesCore, ForwardDiff, GTPSA; include("utils.jl"); include("kernels_test.jl");
   include("tps_collective_test.jl")'` (`kernel_test_bunch` is in `kernels_test.jl:6`; same for `tps_test.jl`).
@@ -672,7 +680,8 @@ ChainRulesCore, ChainRulesTestUtils, GTPSA, AtomicAndPhysicalConstants, KernelAb
 ## 11. Implementation order
 
 One stage: 6.A–6.C (kernels, `count_outside`, `csr_apply_test_kicks!`, `csr_kick!` order), 6.E (docstrings, docs),
-then the tests 6.F.1–6.F.6. Done. Amendment: 6.G.1–6.G.5 (code, docstrings), then the tests 6.G.6, 6.G.7.
+then the tests 6.F.1–6.F.6. Done. Amendment: 6.G.1–6.G.5 (code, docstrings), then the tests 6.G.6, 6.G.7. Done.
+Then 6.G.9 (docstring).
 
 ## 12. Open items
 
@@ -690,6 +699,7 @@ None affecting implementation. Later: Stage 2c (`track_csr!` with a TPS bunch; d
 | Knobs in tests | GTPSA variables (`Descriptor(9, 2)`), plus one testset with GTPSA parameters (`Descriptor(6, 2, 3, 2)`). |
 | Test setup | Knobs g (element 2), γ, bunch knob; 50 test particles; images ∈ {0, 2} × `bmad_compat` ∈ {false, true}. |
 | Review findings | Act on 1, 2, 3, 5, 6, 9, 10, 11 (6.G); 4, 12 deferred to Phase 8; 7, 8 declined. |
+| Docstring | Fix the `csr_kick!` descriptor-paragraph sentence before the final stage commit (6.G.9). |
 
 ## Spec changes
 
@@ -700,3 +710,4 @@ None affecting implementation. Later: Stage 2c (`track_csr!` with a TPS bunch; d
 | 2026-10-17 | Review finding 7 (no test for the one-workgroup guard in `count_outside`). | Guard is conservative; a failing test would need GTPSA thread corruption on reads. | Declined by the user |
 | 2026-10-17 | Review finding 8 (descriptor check keyed on the kick type, not `pz_scale`). | User's rule is "the kick is TPS"; `csr_kick!` checks `pz_scale`. | Declined by the user |
 | 2026-10-17 | 6.G.3: "replace its first four statements (the `Tt = …` line through the `eltype(kick) <: Real || check_descriptors(…)` line)" changed to "first three statements". | Editorial: the block is three statements (the `error(…)` of the second spans three lines); found when implementing 6.G.3 (spec-implementer) and confirmed by reading `csr_apply_test_kicks!`. No behavior change. | Applied |
+| 2026-10-17 | 6.G.9 added (`csr_kick!` docstring: test particles checked "before the kick tables are built", not "by `csr_apply_test_kicks!`"); criterion 9; Sections 10, 11, 13 updated; 6.G intro says 6.G.1–6.G.7 and 6.G.9. | spec-tester observation after 6.G: the sentence predates 6.G.4's early check. | Approved by the user |
