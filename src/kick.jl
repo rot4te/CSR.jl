@@ -52,6 +52,7 @@ end
 Launch `csr_apply_kicks_kernel!` on the backend of `pz`; returns the number of live particles outside the table.
 """
 function apply_kicks_outside!(pz, z, alive, z_center, kick, dz, pz_scale)
+  length(pz) == 0 && return 0
   backend = get_backend(pz)
   n_outside = KernelAbstractions.zeros(backend, Int32, 1)   # Int32: no 64-bit atomics on some GPUs
   n = length(pz)
@@ -67,12 +68,33 @@ end
 Number of live particles outside the kick table (`csr_count_outside_kernel!` on `backend`), without kicking.
 """
 function count_outside(backend, z, alive, z_center, dz)
+  length(z) == 0 && return 0
   n_outside = KernelAbstractions.zeros(backend, Int32, 1)   # Int32: no 64-bit atomics on some GPUs
   n = length(z)
   wg = cpu_workgroupsize(n, eltype(z), typeof(dz))
   csr_count_outside_kernel!(backend)(n_outside, z, alive, z_center, dz; ndrange = n, workgroupsize = wg)
   KernelAbstractions.synchronize(backend)
   return Int(Array(n_outside)[1])
+end
+
+"""
+    check_test_particles(fname, pz_t, z_t, alive_t, Tkick, pz_scale)
+
+Checks on test particles that need only their types and lengths, for a kick of number type `Tkick` (errors name
+function `fname`): equal lengths of `pz_t`, `z_t`, `alive_t`; a `pz_t` that can hold the kick (an `AbstractFloat`
+`pz_t` needs an `AbstractFloat` kick, `z_t` and `pz_scale`); and, for a non-`Real` `Tkick` (TPS), `check_descriptors`
+on `pz_t` and `z_t`.
+"""
+function check_test_particles(fname, pz_t, z_t, alive_t, Tkick, pz_scale)
+  length(pz_t) == length(z_t) == length(alive_t) ||
+    error("$fname: test particle arrays pz_t, z_t, alive_t have lengths $(length(pz_t)), $(length(z_t)), " *
+          "$(length(alive_t)); they must be equal.")
+  Tt = promote_type(Tkick, eltype(z_t), typeof(pz_scale))
+  eltype(pz_t) <: AbstractFloat && !(Tt <: AbstractFloat) &&
+    error("$fname: pz_t has element type $(eltype(pz_t)), which cannot hold the kick in number type " *
+          "$Tt; use a pz_t with element type $(promote_type(eltype(pz_t), Tt)).")
+  Tkick <: Real || check_descriptors(fname; pz_t, z_t)
+  return nothing
 end
 
 """
@@ -87,17 +109,17 @@ backend than the bunch (e.g. TPS on the CPU); `bins` and `kick` are copied there
 Errors, raised before any test particle is kicked (`pz_t` is then unchanged):
 - a live test particle outside the bunch's bin range, `z_center[1] - dz/100 ≤ z < z_center[end]` (the range
   `csr_apply_kicks_kernel!` interpolates over; counted first by `count_outside`);
-- `pz_t` of a hardware float type that cannot hold the kick (TPS or `Dual` kick or `z_t`);
+- `pz_t`, `z_t`, `alive_t` of different lengths;
+- `pz_t` with an `AbstractFloat` element type that cannot hold the kick (TPS or `Dual` kick, `z_t` or `pz_scale`);
 - with a TPS kick, a dynamic-descriptor TPS in `pz_t` or `z_t` that is not in GTPSA's current Descriptor
   (`check_descriptors`). With a `Real` kick the test particles are not checked.
+
+Other element-type combinations that cannot hold the kick (e.g. a `Dual` `pz_t` with a TPS kick, a TPS `pz_t` with a
+`Dual` kick) are not checked and fail inside the kick kernel, possibly after part of `pz_t` has been kicked.
 """
 function csr_apply_test_kicks!(pz_t::AbstractVector, z_t::AbstractVector, alive_t::AbstractVector{Bool}, bins::CSRBins,
                                kick::AbstractVector; pz_scale = 1)
-  Tt = promote_type(eltype(kick), eltype(z_t), typeof(pz_scale))
-  eltype(pz_t) <: AbstractFloat && !(Tt <: AbstractFloat) &&
-    error("csr_apply_test_kicks!: pz_t has element type $(eltype(pz_t)), which cannot hold the kick in number type " *
-          "$Tt; use a pz_t with element type $(promote_type(eltype(pz_t), Tt)).")
-  eltype(kick) <: Real || check_descriptors("csr_apply_test_kicks!"; pz_t, z_t)
+  check_test_particles("csr_apply_test_kicks!", pz_t, z_t, alive_t, eltype(kick), pz_scale)
   cpu(A) = A isa Array ? A : Array(A)
   backend = get_backend(pz_t)
   zc, k = backend isa CPU ? (cpu(bins.z_center), cpu(kick)) : (bins.z_center, kick)
@@ -127,8 +149,11 @@ Apply one 1D CSR kick at reference position `s_kick` [m] from the entrance of el
 - `test_particles`: `(pz_t, z_t, alive_t)` or `nothing`. Test particles get the same kick (`pz_t` modified) without
   contributing to it, e.g. a GTPSA TPS particle for the transfer map with the bunch's wake frozen
   (`csr_apply_test_kicks!`). They are kicked before the bunch, so an error from `csr_apply_test_kicks!` (a live test
-  particle outside the bin range, a `pz_t` that cannot hold the kick, a descriptor mismatch) leaves `pz` and `pz_t`
-  unchanged.
+  particle outside the bin range, arrays of different lengths, a `pz_t` that cannot hold the kick, a descriptor
+  mismatch; the last three are checked before the kick tables are built) leaves `pz` and `pz_t` unchanged. Other
+  element-type combinations that cannot hold the kick (e.g. a `Dual` `pz` or `pz_t` with a TPS kick, a TPS `pz` or
+  `pz_t` with a `Dual` kick) are not checked and fail inside the kick kernel, possibly after part of `pz` or `pz_t`
+  has been kicked.
 
 The kick covers one step, `ds = L / n_step` (see `csr_n_step`) scaled by `L_chord / L`, as in Bmad.
 
@@ -154,6 +179,7 @@ function csr_kick!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, ali
   eltype(pz) <: AbstractFloat && !(Tk <: AbstractFloat) &&
     error("csr_kick!: pz has element type $(eltype(pz)), which cannot hold the kick in number type $Tk; " *
           "use csr_kick_pz, or a pz with element type $(promote_type(eltype(pz), Tk)).")
+  test_particles === nothing || check_test_particles("csr_kick!", test_particles..., Tk, pz_scale)
   st = csr_binned_kick(z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor)
   test_particles === nothing || csr_apply_test_kicks!(test_particles..., st.bins, st.kick; pz_scale)
   csr_apply_kicks!(pz, z, alive, st.bins, st.kick; pz_scale = device_scalar(get_backend(pz), pz_scale))
