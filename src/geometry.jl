@@ -7,9 +7,12 @@ Build the centroid geometry for elements of length `L[i]` and reference curvatur
 
 `centroid` is an `(n+1) × 6` matrix of centroid phase-space coordinates `[x px y py z pz]`: row 1 at the
 start of the lattice, row `i+1` at the exit of element `i` (Bmad's `centroid(0:n)`).
+
+Dynamic-descriptor TPS arguments must be in GTPSA's current Descriptor.
 """
 function CSRGeometry(L::AbstractVector, g::AbstractVector, centroid::AbstractMatrix;
                      ref_start::FloorPosition = FloorPosition(), bmad_compat::Bool = false)
+  check_descriptors("CSRGeometry"; L, g, centroid, ref_start)
   return CSRGeometry(L, g, planar_survey(L, g; start = ref_start), centroid; ref_start, bmad_compat)
 end
 
@@ -21,6 +24,7 @@ As above, with the reference floor positions `ref_exit[i]` at the exit of each e
 """
 function CSRGeometry(L::AbstractVector, g::AbstractVector, ref_exit::AbstractVector{<:FloorPosition},
                      centroid::AbstractMatrix; ref_start::FloorPosition = FloorPosition(), bmad_compat::Bool = false)
+  check_descriptors("CSRGeometry"; L, g, ref_exit, centroid, ref_start)
   n = length(L)
   length(g) == n && length(ref_exit) == n || error("CSRGeometry: L, g and ref_exit must have the same length")
   size(centroid) == (n + 1, 6) || error("CSRGeometry: centroid must be an (n+1) × 6 matrix with n = length(L)")
@@ -72,6 +76,7 @@ Kick point at reference position `s_kick` from the entrance of element `ix_ele_k
 kick computed with this point (half steps, image sign and weight).
 """
 function CSRKickPoint(geom::CSRGeometry, ix_ele_kick, s_kick, gamma; y_source = 0.0, kick_factor = 1.0)
+  check_descriptors("CSRKickPoint"; geom, s_kick, gamma, y_source, kick_factor)
   e = geom.ele[ix_ele_kick]
   s_chord_kick = s_ref_to_s_chord(s_kick, e; geom.bmad_compat)
   x = spline_val(e.spline, s_chord_kick)

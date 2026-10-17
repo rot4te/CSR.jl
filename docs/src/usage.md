@@ -173,6 +173,12 @@ its primal root (one order per step). The bin grid and the discrete choices are 
 arithmetic is not safe on several threads (GTPSA's C library shares scratch space between Julia threads), so kernels
 with TPS numbers run on the calling thread.
 
+CSR.jl creates TPS constants from the number type. Static-descriptor TPS (the `@vars(d)` default) carry their
+Descriptor in the type, so this is safe. Dynamic-descriptor TPS (`@vars(d, dynamic = true)`) get GTPSA's current
+Descriptor, the one created last: their arguments to `csr_kick!` and `csr_kick_pz` (and to `CSRGeometry`,
+`planar_survey`, `CSRKickPoint`, `csr_bin_particles`) must be in it, or these functions raise an error. Use one
+Descriptor for all knobs. Test particles are not checked.
+
 ```julia
 x = @vars(Descriptor(2, 2))
 g = [0.0, 1.5 + x[1], 0.0]   # bend curvature as a knob

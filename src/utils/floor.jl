@@ -52,8 +52,11 @@ end
 
 Reference floor positions at the exit of each element, for elements of length `L[i]` and
 reference curvature `g[i]` (zero for straight elements). Horizontal plane only.
+
+Dynamic-descriptor TPS arguments must be in GTPSA's current Descriptor.
 """
 function planar_survey(L::AbstractVector, g::AbstractVector; start::FloorPosition = FloorPosition())
+  check_descriptors("planar_survey"; L, g, start)
   length(L) == length(g) || error("planar_survey: L and g must have the same length")
   floors = Vector{FloorPosition{float(promote_type(eltype(L), eltype(g), number_type(start)))}}(undef, length(L))
   f = start

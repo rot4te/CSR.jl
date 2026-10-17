@@ -88,7 +88,8 @@ end
 
 Apply one 1D CSR kick at reference position `s_kick` [m] from the entrance of element `ix_ele_kick`.
 
-- `pz`, `z`: particle coordinates (`pz` is modified).
+- `pz`, `z`: particle coordinates (`pz` is modified). `pz` must hold the kick's number type: with `Dual` or TPS
+  inputs, a `pz` of that element type, or use `csr_kick_pz`.
 - `q`: macroparticle charges [C]. `alive`: live-particle mask.
 - `gamma`: Lorentz factor of the reference particle at the kick point.
 - `kick_factor`: `1/2` at the first and last step of an element, `1` otherwise.
@@ -109,10 +110,20 @@ Runs as KernelAbstractions kernels on the backend of `pz` (deposit, edge gradien
 image tables are always computed on the CPU in `Float64` and copied to a GPU backend in `csr_float_type(backend)`
 (`Float32` where the backend has no `Float64`, e.g. Metal); scalars passed to the kernels are converted likewise.
 `csr_kick_reference!` is the serial phase 1 version.
+
+Dynamic-descriptor TPS arguments (`@vars(d, dynamic = true)`) must all be in GTPSA's current Descriptor (error
+otherwise; test particles are not checked); static-descriptor TPS (the `@vars` default) carry their Descriptor in the
+type and are not checked.
 """
 function csr_kick!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool},
                    geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma, species::Species,
                    params::CSRParams; kick_factor = 1.0, pz_scale = 1.0, test_particles = nothing)
+  check_descriptors("csr_kick!"; pz, z, q, geom, s_kick, gamma, kick_factor, pz_scale)
+  Tk = promote_type(eltype(z), eltype(q), number_type(geom), typeof(s_kick), typeof(gamma), typeof(kick_factor),
+                    typeof(pz_scale))
+  eltype(pz) <: AbstractFloat && !(Tk <: AbstractFloat) &&
+    error("csr_kick!: pz has element type $(eltype(pz)), which cannot hold the kick in number type $Tk; " *
+          "use csr_kick_pz, or a pz with element type $(promote_type(eltype(pz), Tk)).")
   st = csr_binned_kick(z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor)
   csr_apply_kicks!(pz, z, alive, st.bins, st.kick; pz_scale = device_scalar(get_backend(pz), pz_scale))
   test_particles === nothing || csr_apply_test_kicks!(test_particles..., st.bins, st.kick; pz_scale)
@@ -134,10 +145,15 @@ constant: the bin grid (it depends on the extreme live particles) and the discre
 `csr_n_step`, the element a source lies in, the adaptive quadrature's subdivision). GTPSA TPS in the same arguments
 give the kick's expansion (one Newton step per order; computed on the calling thread). With ChainRulesCore loaded an
 `rrule` gives the pullback with respect to `pz`, `z`, `q`, `geom`, `s_kick` and `gamma` (not the keywords).
+
+Dynamic-descriptor TPS arguments (`@vars(d, dynamic = true)`) must all be in GTPSA's current Descriptor (error
+otherwise; test particles are not checked); static-descriptor TPS (the `@vars` default) carry their Descriptor in the
+type and are not checked.
 """
 function csr_kick_pz(pz::AbstractVector, z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool},
                      geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma, species::Species,
                      params::CSRParams; kick_factor = 1.0, pz_scale = 1.0)
+  check_descriptors("csr_kick_pz"; pz, z, q, geom, s_kick, gamma, kick_factor, pz_scale)
   pz_new = similar(pz, promote_type(eltype(pz), eltype(z), eltype(q), number_type(geom), typeof(s_kick),
                                     typeof(gamma), typeof(kick_factor), typeof(pz_scale)))
   copyto!(pz_new, pz)

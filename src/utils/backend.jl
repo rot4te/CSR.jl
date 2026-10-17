@@ -42,6 +42,36 @@ calling thread.
 cpu_workgroupsize(n, T::Type...) = thread_safe_number(T...) ? nothing : n
 
 """
+    descriptor_mismatch(x) -> Bool
+
+`true` if `x` (a number, an array, or a `FloorPosition`, `CSRElementInfo`, `CSRGeometry`, `CSRKickPoint`) holds a
+GTPSA TPS whose Descriptor is not GTPSA's current one. CSR.jl creates TPS constants from types (e.g. `zero(T)`),
+which GTPSA puts in the current Descriptor, so mixed Descriptors would reach GTPSA's C library. `false` for all
+other number types; CSRGTPSAExt adds the method for dynamic-descriptor TPS.
+"""
+descriptor_mismatch(x) = false
+descriptor_mismatch(A::AbstractArray) = eltype(A) <: Real ? false : any(descriptor_mismatch, A)
+descriptor_mismatch(f::FloorPosition) = !(number_type(f) <: Real) && (descriptor_mismatch(f.theta) || descriptor_mismatch(f.r))
+descriptor_mismatch(e::CSRElementInfo) =
+  !(number_type(e) <: Real) && any(i -> descriptor_mismatch(getfield(e, i)), 1:fieldcount(CSRElementInfo))
+descriptor_mismatch(g::CSRGeometry) = !(number_type(g) <: Real) && (descriptor_mismatch(g.start) || descriptor_mismatch(g.ele))
+descriptor_mismatch(kp::CSRKickPoint) =
+  !(number_type(kp) <: Real) && any(i -> descriptor_mismatch(getfield(kp, i)), 1:fieldcount(CSRKickPoint))
+
+"""
+    check_descriptors(fname; args...)
+
+Raise an error naming function `fname` and the first keyword argument `name = value` for which
+`descriptor_mismatch(value)` is `true`. No-op without GTPSA TPS inputs.
+"""
+function check_descriptors(fname; args...)
+  for (name, x) in pairs(args)
+    descriptor_mismatch(x) && error("$fname: TPS in argument `$name` is not in GTPSA's current Descriptor (GTPSA.desc_current). CSR.jl creates TPS constants in the current Descriptor; use one Descriptor for all TPS inputs and make it current (the last Descriptor created is current).")
+  end
+  return nothing
+end
+
+"""
     to_backend(backend, A)
 
 Copy a CPU table to `backend` in `csr_float_type(backend)`; no copy on the CPU.

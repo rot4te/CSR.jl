@@ -22,4 +22,7 @@ function CSR.cube_root(x::TPS)
   return s > 0 ? x^(1 / 3) : -(-x)^(1 / 3)
 end
 
+# CSR.jl creates TPS constants from types, which GTPSA puts in the current Descriptor; a TPS in another one is a mismatch.
+CSR.descriptor_mismatch(t::TPS{Float64,GTPSA.Dynamic}) = GTPSA.getdesc(t) != GTPSA.desc_current
+
 end

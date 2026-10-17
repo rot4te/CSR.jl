@@ -15,6 +15,7 @@ The grid (`dz`, `z0_edge`, `z_center`) and `n_particle` are built from primal va
 Duals only `charge` and `edge_dcharge_density_dz` carry derivatives, and the grid is held constant.
 """
 function csr_bin_particles(z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool}, params::CSRParams)
+  check_descriptors("csr_bin_particles"; z, q)
   n_bin = params.n_bin
   pbs = params.particle_bin_span
   n_bin_eff = n_bin - 2 - (pbs + 1)
