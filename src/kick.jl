@@ -62,23 +62,51 @@ function apply_kicks_outside!(pz, z, alive, z_center, kick, dz, pz_scale)
 end
 
 """
+    count_outside(backend, z, alive, z_center, dz) -> n_outside
+
+Number of live particles outside the kick table (`csr_count_outside_kernel!` on `backend`), without kicking.
+"""
+function count_outside(backend, z, alive, z_center, dz)
+  n_outside = KernelAbstractions.zeros(backend, Int32, 1)   # Int32: no 64-bit atomics on some GPUs
+  n = length(z)
+  wg = cpu_workgroupsize(n, eltype(z), typeof(dz))
+  csr_count_outside_kernel!(backend)(n_outside, z, alive, z_center, dz; ndrange = n, workgroupsize = wg)
+  KernelAbstractions.synchronize(backend)
+  return Int(Array(n_outside)[1])
+end
+
+"""
     csr_apply_test_kicks!(pz_t, z_t, alive_t, bins, kick; pz_scale = 1)
 
 Frozen-wake kick on test particles: `csr_apply_kicks!` with the bins and kick of a bunch the test particles are not
 part of (they deposit no charge). For TPS (or `Dual`) test particles this gives the kick's expansion in their
-coordinates about the primal `z`, with the bunch's wake held fixed. The test particles' arrays may live on another
-backend than the bunch (e.g. TPS on the CPU); `bins` and `kick` are copied there. Live test particles must lie within
-the bunch's bin range, `z_center[1] - dz/100 ≤ z < z_center[end]` (the range `csr_apply_kicks_kernel!` interpolates
-over).
+coordinates about the primal `z`, with the bunch's wake held fixed; with a TPS kick (a collective TPS bunch,
+geometry, `gamma`, ...) the expansion is also in the bunch's knobs. The test particles' arrays may live on another
+backend than the bunch (e.g. TPS on the CPU); `bins` and `kick` are copied there.
+
+Errors, raised before any test particle is kicked (`pz_t` is then unchanged):
+- a live test particle outside the bunch's bin range, `z_center[1] - dz/100 ≤ z < z_center[end]` (the range
+  `csr_apply_kicks_kernel!` interpolates over; counted first by `count_outside`);
+- `pz_t` of a hardware float type that cannot hold the kick (TPS or `Dual` kick or `z_t`);
+- with a TPS kick, a dynamic-descriptor TPS in `pz_t` or `z_t` that is not in GTPSA's current Descriptor
+  (`check_descriptors`). With a `Real` kick the test particles are not checked.
 """
 function csr_apply_test_kicks!(pz_t::AbstractVector, z_t::AbstractVector, alive_t::AbstractVector{Bool}, bins::CSRBins,
                                kick::AbstractVector; pz_scale = 1)
+  Tt = promote_type(eltype(kick), eltype(z_t), typeof(pz_scale))
+  eltype(pz_t) <: AbstractFloat && !(Tt <: AbstractFloat) &&
+    error("csr_apply_test_kicks!: pz_t has element type $(eltype(pz_t)), which cannot hold the kick in number type " *
+          "$Tt; use a pz_t with element type $(promote_type(eltype(pz_t), Tt)).")
+  eltype(kick) <: Real || check_descriptors("csr_apply_test_kicks!"; pz_t, z_t)
   cpu(A) = A isa Array ? A : Array(A)
-  on_cpu = get_backend(pz_t) isa CPU
-  zc, k = on_cpu ? (cpu(bins.z_center), cpu(kick)) : (bins.z_center, kick)
-  n = apply_kicks_outside!(pz_t, z_t, alive_t, zc, k, primal(bins.dz), pz_scale)
+  backend = get_backend(pz_t)
+  zc, k = backend isa CPU ? (cpu(bins.z_center), cpu(kick)) : (bins.z_center, kick)
+  dz = primal(bins.dz)
+  n = count_outside(backend, z_t, alive_t, zc, dz)
   n == 0 || error("csr_apply_test_kicks!: $n test particle(s) outside the bunch's bin range " *
                   "[$(primal(first(zc)) - primal(bins.dz) / 100), $(primal(last(zc))))")
+  apply_kicks_outside!(pz_t, z_t, alive_t, zc, k, dz, pz_scale) == 0 ||
+    error("csr_apply_test_kicks!: test particle outside the bin range (internal error)")
   return pz_t
 end
 
@@ -98,7 +126,9 @@ Apply one 1D CSR kick at reference position `s_kick` [m] from the entrance of el
   steps at each cell while γ ramps linearly).
 - `test_particles`: `(pz_t, z_t, alive_t)` or `nothing`. Test particles get the same kick (`pz_t` modified) without
   contributing to it, e.g. a GTPSA TPS particle for the transfer map with the bunch's wake frozen
-  (`csr_apply_test_kicks!`).
+  (`csr_apply_test_kicks!`). They are kicked before the bunch, so an error from `csr_apply_test_kicks!` (a live test
+  particle outside the bin range, a `pz_t` that cannot hold the kick, a descriptor mismatch) leaves `pz` and `pz_t`
+  unchanged.
 
 The kick covers one step, `ds = L / n_step` (see `csr_n_step`) scaled by `L_chord / L`, as in Bmad.
 
@@ -112,8 +142,8 @@ image tables are always computed on the CPU in `Float64` and copied to a GPU bac
 `csr_kick_reference!` is the serial phase 1 version.
 
 Dynamic-descriptor TPS arguments (`@vars(d, dynamic = true)`) must all be in GTPSA's current Descriptor (error
-otherwise; test particles are not checked); static-descriptor TPS (the `@vars` default) carry their Descriptor in the
-type and are not checked.
+otherwise; test particles are checked only when the kick is TPS, by `csr_apply_test_kicks!`); static-descriptor TPS (the
+`@vars` default) carry their Descriptor in the type and are not checked.
 """
 function csr_kick!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool},
                    geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma, species::Species,
@@ -125,8 +155,8 @@ function csr_kick!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, ali
     error("csr_kick!: pz has element type $(eltype(pz)), which cannot hold the kick in number type $Tk; " *
           "use csr_kick_pz, or a pz with element type $(promote_type(eltype(pz), Tk)).")
   st = csr_binned_kick(z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor)
-  csr_apply_kicks!(pz, z, alive, st.bins, st.kick; pz_scale = device_scalar(get_backend(pz), pz_scale))
   test_particles === nothing || csr_apply_test_kicks!(test_particles..., st.bins, st.kick; pz_scale)
+  csr_apply_kicks!(pz, z, alive, st.bins, st.kick; pz_scale = device_scalar(get_backend(pz), pz_scale))
   return csr_step_result(st)
 end
 
@@ -147,8 +177,7 @@ give the kick's expansion (one Newton step per order; computed on the calling th
 `rrule` gives the pullback with respect to `pz`, `z`, `q`, `geom`, `s_kick` and `gamma` (not the keywords).
 
 Dynamic-descriptor TPS arguments (`@vars(d, dynamic = true)`) must all be in GTPSA's current Descriptor (error
-otherwise; test particles are not checked); static-descriptor TPS (the `@vars` default) carry their Descriptor in the
-type and are not checked.
+otherwise); static-descriptor TPS (the `@vars` default) carry their Descriptor in the type and are not checked.
 """
 function csr_kick_pz(pz::AbstractVector, z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool},
                      geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma, species::Species,

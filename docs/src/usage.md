@@ -177,11 +177,27 @@ CSR.jl creates TPS constants from the number type. Static-descriptor TPS (the `@
 Descriptor in the type, so this is safe. Dynamic-descriptor TPS (`@vars(d, dynamic = true)`) get GTPSA's current
 Descriptor, the one created last: their arguments to `csr_kick!` and `csr_kick_pz` (and to `CSRGeometry`,
 `planar_survey`, `CSRKickPoint`, `csr_bin_particles`) must be in it, or these functions raise an error. Use one
-Descriptor for all knobs. Test particles are not checked.
+Descriptor for all knobs. Test particles are checked only when the kick is TPS; their `pz_t` and `z_t`
+must then be in the same Descriptor.
 
 ```julia
 x = @vars(Descriptor(2, 2))
 g = [0.0, 1.5 + x[1], 0.0]   # bend curvature as a knob
 pz_new = csr_kick_pz(pz, z, q .* (1 + x[2]), alive, CSRGeometry(L, g, centroid), 2, 0.17, 200.0, e, params)
 GTPSA.jacobian(pz_new)   # ∂Δpz/∂g₂ and ∂Δpz/∂(charge scale) for each particle
+```
+
+Test particles and a collective TPS kick combine: with the bunch, geometry or `gamma` in TPS knobs and the test
+particles in the 6 phase-space variables of the same Descriptor, the test particles' kick is expanded in both, with
+the wake frozen in phase space and collective in the knobs. If any live test particle is outside the bunch's bin
+range, `csr_kick!` raises an error before kicking anything.
+
+```julia
+x = @vars(Descriptor(8, 2))   # 6 phase-space variables, then 2 knobs
+g = [0.0, 1.5 + x[7], 0.0]
+pz_b = [zero(x[1]) for _ in eachindex(pz)]
+pz_t, z_t = [x[6]], [0.2e-3 + x[5]]
+csr_kick!(pz_b, z, q .* (1 + x[8]), alive, CSRGeometry(L, g, centroid), 2, 0.17, 200.0, e, params;
+          test_particles = (pz_t, z_t, [true]))
+GTPSA.hessian(pz_t[1])[5, 7]   # ∂²Δpz/∂z∂g₂
 ```

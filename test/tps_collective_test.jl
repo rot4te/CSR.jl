@@ -1,6 +1,7 @@
 # Phase 7 Stage 2 (D37): collective TPS. The bunch's z and q, the geometry (element L, g, centroid), s_kick and gamma
 # are TPS in shared knobs; deposit and kick tables in TPS. Checked against ForwardDiff Jacobians and nested-Dual
 # second (and third) derivatives of the same function of Float64 knobs.
+# Stage 2b: test particles in 6D + knobs with the collective TPS kick; range, element-type and descriptor checks.
 
 @testset "Collective TPS" begin
   electron = Species("electron")
@@ -114,6 +115,112 @@
     @test csr_kick!(zeros(n), z, q, alive, geom0, 2, 0.17, 200.0, electron, p) isa CSRStepResult
   end
 
+  # Stage 2b (D37): test particles in 6D + knobs with a collective TPS kick (frozen in phase space, collective in knobs)
+  m = 50
+  z0t = range(-2.5e-3, 2.5e-3; length = m)
+  w0 = [zeros(6); 1.5; 200.0; 0.0]
+  function G(w, p)
+    geom = CSRGeometry(L3, [g3[1], w[7], g3[3]], c3; bmad_compat = p.bmad_compat)
+    zt = [z0t[j] + w[5] * (1 + 0.1j / m) + 0.3 * w[1]^2 - 0.2 * w[5] * w[6] for j in 1:m]
+    pzt = [w[6] + 1e-4j / m for j in 1:m]
+    pzb = [zero(w[1]) for _ in 1:n]
+    csr_kick!(pzb, z .* (1 + 0.2w[9]), q .* (1 + w[9]), alive, geom, 2, 0.17, w[8], electron, p;
+              test_particles = (pzt, zt, fill(true, m)))
+    return pzt
+  end
+  pzt0 = [1e-4j / m for j in 1:m]
+
+  @testset "Test particles in 6D + knobs (images = $n_img, bmad_compat = $bc)" for n_img in (0, 2), bc in (false, true)
+    p = CSRParams(n_bin = 40, ds_step = 0.1, n_shield_images = n_img, beam_chamber_height = n_img > 0 ? 3e-3 : 0.0,
+                  bmad_compat = bc)
+    d = Descriptor(9, 2)
+    x = @vars(d)
+    t = G(w0 .+ x, p)
+    y0 = G(w0, p)
+    @test maximum(abs, y0 .- pzt0) > 0
+    @test maximum(abs, scalar.(t) .- y0) <= 1e-13 * maximum(abs, y0 .- pzt0)
+    Jt, Jf = GTPSA.jacobian(t), ForwardDiff.jacobian(w -> G(w, p), w0)
+    for c in 1:4
+      @test all(iszero, Jt[:, c]) && all(iszero, Jf[:, c])
+    end
+    for c in 5:9
+      @test any(!iszero, Jf[:, c])
+      @test Jt[:, c] ≈ Jf[:, c] rtol = 1e-11
+    end
+    Hf = reshape(ForwardDiff.jacobian(u -> ForwardDiff.jacobian(w -> G(w, p), u), w0), m, 9, 9)
+    Ht = permutedims(cat((GTPSA.hessian(ti) for ti in t)...; dims = 3), (3, 1, 2))
+    Hmax = maximum(abs, Hf)
+    for (a, b) in ((1, 1), (5, 6), (5, 7), (5, 8), (5, 9), (7, 7), (7, 8), (7, 9), (8, 8), (8, 9), (9, 9))
+      @test any(!iszero, Hf[:, a, b])   # phase space × knob and knob × knob blocks are exercised
+    end
+    for a in 1:9, b in a:9
+      ref = maximum(abs, Hf[:, a, b])
+      err = maximum(abs, Ht[:, a, b] .- Hf[:, a, b])
+      @test err <= 1e-10 * ref + 1e-14 * Hmax
+    end
+    # Test particles at bunch particles' positions (same TPS z) get the bunch particles' kicks, every coefficient
+    w = w0 .+ x
+    geom = CSRGeometry(L3, [g3[1], w[7], g3[3]], c3; bmad_compat = bc)
+    zb, qb = z .* (1 + 0.2w[9]), q .* (1 + w[9])
+    idx = findall(alive)[1:37:end]
+    pzb = [zero(x[1]) for _ in 1:n]
+    pzt = [zero(x[1]) for _ in idx]
+    csr_kick!(pzb, zb, qb, alive, geom, 2, 0.17, w[8], electron, p; test_particles = (pzt, zb[idx], fill(true, length(idx))))
+    @test all(i -> isequal(pzt[i], pzb[idx[i]]), eachindex(idx))
+    @test any(!iszero, GTPSA.jacobian(pzt))
+  end
+
+  @testset "Test particles in 6D, knobs as GTPSA parameters" begin
+    p = CSRParams(n_bin = 40, ds_step = 0.1, n_shield_images = 2, beam_chamber_height = 3e-3)
+    d = Descriptor(6, 2, 3, 2)
+    x, k = @vars(d), @params(d)
+    t = G(vcat(w0[1:6] .+ x, w0[7:9] .+ k), p)
+    Jt = GTPSA.jacobian(t; include_params = true)
+    Jf = ForwardDiff.jacobian(w -> G(w, p), w0)
+    @test size(Jt) == (m, 9)
+    for c in 5:9
+      @test Jt[:, c] ≈ Jf[:, c] rtol = 1e-11
+    end
+    Hf = reshape(ForwardDiff.jacobian(u -> ForwardDiff.jacobian(w -> G(w, p), u), w0), m, 9, 9)
+    Ht = permutedims(cat((GTPSA.hessian(ti; include_params = true) for ti in t)...; dims = 3), (3, 1, 2))
+    Hmax = maximum(abs, Hf)
+    for a in 1:9, b in a:9
+      ref = maximum(abs, Hf[:, a, b])
+      err = maximum(abs, Ht[:, a, b] .- Hf[:, a, b])
+      @test err <= 1e-10 * ref + 1e-14 * Hmax
+    end
+  end
+
+  @testset "Test particles: pz_t element type" begin
+    p = CSRParams(n_bin = 40, ds_step = 0.1)
+    geom0 = CSRGeometry(L3, g3, c3)
+    d = Descriptor(2, 2)
+    x = @vars(d)
+    geom1 = CSRGeometry(L3, [g3[1], 1.5 + x[1], g3[3]], c3)
+    errmsg(f) = try f(); "" catch err; sprint(showerror, err) end
+    zt3 = [0.0, 1e-3, -1e-3]
+    # TPS kick, Float64 pz_t: error, nothing kicked
+    pzb, pzt = [zero(x[1]) for _ in 1:n], zeros(3)
+    f1 = () -> csr_kick!(pzb, z, q, alive, geom1, 2, 0.17, 200.0, electron, p; test_particles = (pzt, zt3, fill(true, 3)))
+    @test_throws ErrorException f1()
+    msg = errmsg(f1)
+    @test occursin("cannot hold the kick", msg) && occursin("pz_t", msg)
+    @test all(t -> isequal(t, zero(x[1])), pzb) && pzt == zeros(3)
+    # Dual kick (gamma), Float64 pz_t
+    γd = ForwardDiff.Dual{Nothing}(200.0, 1.0)
+    pzbd = fill(zero(γd), n)
+    f2 = () -> csr_kick!(pzbd, z, q, alive, geom0, 2, 0.17, γd, electron, p; test_particles = (zeros(3), zt3, fill(true, 3)))
+    @test_throws ErrorException f2()
+    @test occursin("cannot hold the kick", errmsg(f2))
+    # Float64 kick, TPS z_t, Float64 pz_t
+    st = CSR.csr_binned_kick(z, q, alive, geom0, 2, 0.17, 200.0, electron, p)
+    f3 = () -> CSR.csr_apply_test_kicks!(zeros(1), [0.0 + x[2]], [true], st.bins, st.kick)
+    @test_throws ErrorException f3()
+    @test occursin("cannot hold the kick", errmsg(f3))
+    # Float32 pz_t with a Float64 kick still runs
+    @test CSR.csr_apply_test_kicks!(zeros(Float32, 3), zt3, fill(true, 3), st.bins, st.kick) isa Vector{Float32}
+  end
+
   # Last: leaves GTPSA.desc_current at a descriptor no later code uses.
   @testset "Descriptor check" begin
     errmsg(f) = try f(); "" catch err; sprint(showerror, err) end
@@ -154,5 +261,19 @@
     @test CSR.descriptor_mismatch(geom1)
     @test !CSR.descriptor_mismatch(y[1])
     @test !CSR.descriptor_mismatch(xs[1])
+    # Stage 2b: with a TPS kick, test particles are checked (pz_t first, then z_t); nothing is kicked on error
+    qy = q .* (1 + y[1])
+    pzb = [zero(y[1]) for _ in 1:n]
+    pzt1 = [x[1] + 0.0]
+    f1 = () -> csr_kick!(pzb, z, qy, alive, geom0, 2, 0.17, 200.0, electron, p; test_particles = (pzt1, [0.0 + x[2]], [true]))
+    @test_throws ErrorException f1()
+    msg = errmsg(f1)
+    @test occursin("GTPSA's current Descriptor", msg) && occursin("`pz_t`", msg)
+    @test all(t -> isequal(t, zero(y[1])), pzb) && isequal(pzt1[1], x[1] + 0.0)
+    f2 = () -> csr_kick!(pzb, z, qy, alive, geom0, 2, 0.17, 200.0, electron, p; test_particles = ([y[2] + 0.0], [0.0 + x[2]], [true]))
+    @test occursin("`z_t`", errmsg(f2))
+    pzt2 = [y[2] + 0.0]
+    csr_kick!(pzb, z, qy, alive, geom0, 2, 0.17, 200.0, electron, p; test_particles = (pzt2, [0.0 + y[3]], [true]))
+    @test pzt2[1][[1 => 1]] != 0
   end
 end

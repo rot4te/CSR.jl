@@ -73,5 +73,15 @@
     pzt = [x[6]]
     CSR.csr_apply_test_kicks!(pzt, [0.05 + x[5]], [false], st.bins, st.kick)
     @test isequal(pzt[1], x[6])   # every coefficient (TPS == compares the scalar parts only)
+    # Nothing is kicked when any live test particle is outside (finding 4)
+    k0 = CSR.csr_apply_test_kicks!([0.0], [0.0], [true], st.bins, st.kick)[1]
+    @test k0 != 0
+    pzt = [0.0, 0.0]
+    @test_throws ErrorException CSR.csr_apply_test_kicks!(pzt, [0.0, 0.05], [true, true], st.bins, st.kick)
+    @test pzt == [0.0, 0.0]
+    pzb, pzt = zeros(n), [0.0, 0.0]
+    @test_throws ErrorException csr_kick!(pzb, z, q, alive, geom, 2, 0.17, 200.0, electron, p;
+                                          test_particles = (pzt, [0.0, 0.05], [true, true]))
+    @test all(iszero, pzb) && pzt == [0.0, 0.0]
   end
 end
