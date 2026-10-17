@@ -1,0 +1,7 @@
+┌ Warning: Straight multipoles are being used in a curved reference system. Maxwell's equations in free space are not satisfied.
+└ @ BeamTrackingBeamlinesExt ~/.julia/dev/BeamTracking.jl/ext/BeamTrackingBeamlinesExt/symplectic_bl.jl:444
+Test Summary: | Pass  Total     Time
+CSR.jl        | 1812   1812  5m33.3s
+real 335.22
+user 332.07
+sys 3.38

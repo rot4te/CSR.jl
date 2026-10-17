@@ -1,0 +1,19 @@
+[deps]
+AbstractFFTs = "621f4979-c628-5d54-868e-fcf4e3e8185c"
+AtomicAndPhysicalConstants = "5c0d271c-5419-4163-b387-496237733d8b"
+Atomix = "a9b6321e-bd34-4604-b9c9-b65b8de01458"
+BeamTracking = "8ef5c10a-4ca3-437f-8af5-b84d8af36df0"
+Beamlines = "5bb90b03-0719-46b8-8ce4-1ef3afd3cd4b"
+CSR = "1eba2385-4d7d-4910-a062-10b0fcd3038c"
+ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+ChainRulesTestUtils = "cdddcdb0-9152-4a09-a978-84456f9df70a"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+GTPSA = "b27dd330-f138-47c5-815b-40db9dd9b6e8"
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[sources]
+BeamTracking = {path = "/Users/alexcoxe/.julia/dev/BeamTracking.jl"}
+Beamlines = {path = "/Users/alexcoxe/.julia/dev/Beamlines.jl"}
+CSR = {path = "/private/tmp/claude-501/-Users-alexcoxe--julia-dev-CSR-jl/527ad108-7ac8-4e74-b71d-2ccf3df02e7b/scratchpad/diag/head"}

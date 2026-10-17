@@ -1,0 +1,17 @@
+[ Info: SetupBuildDirectory: setting up build directory.
+[ Info: Doctest: running doctests.
+[ Info: ExpandTemplates: expanding markdown templates.
+[ Info: CrossReferences: building cross-references.
+[ Info: CheckDocument: running document checks.
+[ Info: Populate: populating indices.
+[ Info: RenderDocument: rendering document.
+[ Info: HTMLWriter: rendering HTML pages.
+┌ Warning: Generated HTML over size_threshold_warn limit: internals.md
+│     Generated file size: 173.67 (KiB)
+│     size_threshold_warn: 100.0 (KiB)
+│     size_threshold:      (no limit)
+│     HTML file:           internals/index.html
+└ @ Documenter.HTMLWriter ~/.julia/packages/Documenter/13nbQ/src/html/HTMLWriter.jl:2015
+[ Info: Automatic `version="0.1.0"` for inventory from ../Project.toml
+┌ Warning: Documenter could not auto-detect the building environment. Skipping deployment.
+└ @ Documenter ~/.julia/packages/Documenter/13nbQ/src/deployconfig.jl:95

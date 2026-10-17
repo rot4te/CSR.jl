@@ -1,0 +1,11 @@
+mutate = true  root_order(TPS)=1
+== Order 2
+images=0 bc=false: worst err/bound=4.092e9 at (3, 3), min nonzero ref/Hmax=1.0611658861325453e-8, zero-ref blocks=0, failing blocks=15/21
+images=0 bc=true: worst err/bound=3.054e8 at (2, 3), min nonzero ref/Hmax=7.42169665102891e-10, zero-ref blocks=0, failing blocks=15/21
+images=2 bc=false: worst err/bound=5.661e11 at (4, 4), min nonzero ref/Hmax=1.4202813838237134e-9, zero-ref blocks=0, failing blocks=15/21
+images=2 bc=true: worst err/bound=1.885e9 at (4, 4), min nonzero ref/Hmax=3.7082258296117355e-10, zero-ref blocks=0, failing blocks=15/21
+== Order 3
+images=0: worst err/bound=1.631e8 at (1, 1, 2), min nonzero ref/Tmax=5.251722431551026e-9, failing blocks=4/4
+   (1,1,1): err/bound=7.11e7 ref/Tmax=1.0; (1,1,2): err/bound=1.63e8 ref/Tmax=0.000249; (1,2,2): err/bound=70100.0 ref/Tmax=5.1e-7; (2,2,2): err/bound=3.36 ref/Tmax=5.25e-9
+images=2: worst err/bound=8.875e8 at (1, 1, 2), min nonzero ref/Tmax=1.1304876521348268e-9, failing blocks=4/4
+   (1,1,1): err/bound=4.25e8 ref/Tmax=1.0; (1,1,2): err/bound=8.87e8 ref/Tmax=0.000103; (1,2,2): err/bound=763000.0 ref/Tmax=4.15e-7; (2,2,2): err/bound=98.8 ref/Tmax=1.13e-9
