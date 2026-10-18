@@ -36,7 +36,7 @@ Changes:
 
 ## 2. Out of scope
 
-- No change under `src/` (core) except 6.F (`src/geometry.jl`) and 6.G (`src/kernels/source_point.jl`), and none in `ext/CSRGTPSAExt/`, `ext/CSRChainRulesCoreExt/`, `ext/CSRAbstractFFTsExt/`.
+- No change under `src/` (core) except 6.F (`src/geometry.jl`) and 6.G and 6.J.1 (`src/kernels/source_point.jl`), and none in `ext/CSRGTPSAExt/`, `ext/CSRChainRulesCoreExt/`, `ext/CSRAbstractFFTsExt/`.
 - No change to physics, kick formula, tables, deposit, root finding.
 - No upstream changes (BeamTracking, Beamlines, GTPSA). Known upstream limitation, documented only (6.D): BeamTracking's
   `rf_step_calc` (`ext/BeamTrackingBeamlinesExt/utils_bl.jl:257`) calls `round` on `rf_omega * L_act` when a
@@ -70,13 +70,13 @@ Versions checked 2026-10-17 against the local General registry (updated 2026-10-
 
 ## 5. Project layout (files to change or add)
 
-- `src/geometry.jl`: 6.F.1; `test/tps_collective_test.jl`: 6.F.2 (one new testset).
-- `src/kernels/source_point.jl`: 6.G.
+- `src/geometry.jl`: 6.F.1; `test/tps_collective_test.jl`: 6.F.2 (one new testset) and 6.K.1 (assertions of its W1 testset).
+- `src/kernels/source_point.jl`: 6.G and 6.J.1 (`ddz_calc_csr`).
 - `ext/CSRBeamTrackingBeamlinesExt/slicing.jl`: 6.A.
 - `ext/CSRBeamTrackingBeamlinesExt/sagan.jl`: 6.B.
 - `ext/CSRBeamTrackingBeamlinesExt/track.jl`: 6.C, docstring 6.D.1.
 - `docs/src/usage.md`: 6.D.2.
-- New `test/track_tps_collective_test.jl`: 6.E. `test/runtests.jl`: add `include("track_tps_collective_test.jl")` as
+- New `test/track_tps_collective_test.jl`: 6.E, 6.I, 6.K.5–6.K.7. `test/runtests.jl`: add `include("track_tps_collective_test.jl")` as
   the last line inside `@testset "CSR.jl"` (after `include("track_tps_test.jl")`).
 
 ## 6. Components
@@ -587,6 +587,9 @@ first in the lattice: no hazard.
    `Jt = GTPSA.jacobian(vt)` vs `Jf = ForwardDiff.jacobian(ft, zeros(KT_NK))` per column as E.2 (`1e-10`); and
    `maximum(abs, Jt .- GTPSA.jacobian(KnobTrack(kt_build_a)(k1))) > 0` (the knob dependence of the default TPS
    centroid is gone with a Float64 `centroid_start`).
+   **PROPOSED — needs user approval** (2026-10-18, re-test): this last assertion passes at round-off only (difference
+   1.7e-21; the default TPS centroid's knob derivatives are ≤ 3.6e-20, because the initial bunch's z-mean is zero and
+   lattice A has no centroid-moving knob). See the Spec changes table.
 6. **W4 test** (same file, new testset "Images with bmad_compat", before "Descriptor check"):
    `pc = CSRParams(n_bin = 40, ds_step = 0.1, n_shield_images = 2, beam_chamber_height = 0.01, bmad_compat = true)`,
    `fc = KnobTrack(p -> kt_build_a(p; params = pc))`: E.1-style scalar check of `fc(k1)` vs `fc(zeros(KT_NK))`; E.2-style
@@ -753,3 +756,5 @@ None affecting implementation.
 | 2026-10-17 | Section 9, criterion 4 (Float64 ramp reference): bound `1e-15` relative, unchanged. Proposed: `1e-14` relative for coordinates (t_ref row unchanged at `1e-15`), because 6.G changes Float64 results at round-off by design. | Criterion 4 measured 2.487e-15 relative (`ramp_new_claude.txt` vs `stage2c_ramp_dE0_reference.txt`); with the `sqrt` line restored in `upstream_drift_source` the difference is 0.0, so the change is from 6.G. 6.G's text says "Float64 results change only at round-off", which the 1e-15 bound does not allow. Needs the user's decision (bound or 6.G form). | Approved by the user (2026-10-18); criterion 4 updated |
 | 2026-10-17 | Section 9, criterion 5a and 12 ("the 'dE_ref knob at 0' testset must fail" under the old ramp rule). Proposed: 5a is detected by the new unit testset above, and the lattice testset is not expected to fail at its bound (1e-5). | The lattice testset passes under the old rule (see the row above: 2.3e-6 change against a 1e-5 bound); no bound in 6.H separates them, since FD noise at this step is about 3e-6. Tightening the bound would fail the new code at its own measured 3.0e-6. | Approved by the user (2026-10-18) |
 | 2026-10-17 | Section 9, criterion 5b (raw `sagan_in_window`/`sagan_overlap`): report only, per criterion text. Proposed: record that no test detects it. | Sensitivity run: the redefinition is active (a `Dual` tie differs), but the lattice A and lattice B Jacobians are bitwise identical (max relative difference 0.0), and the full file passes 253/253. No test can detect the raw comparisons with these lattices. | Superseded: the user chose a unit test (6.I, 2026-10-18) |
+| 2026-10-18 | Sections 2 and 5 (file lists, editorial): Section 2 "except 6.F (`src/geometry.jl`) and 6.G (`src/kernels/source_point.jl`)" → "except 6.F (`src/geometry.jl`) and 6.G and 6.J.1 (`src/kernels/source_point.jl`)"; Section 5 "`test/tps_collective_test.jl`: 6.F.2 (one new testset)" → "... 6.F.2 (one new testset) and 6.K.1 (assertions of its W1 testset)"; "`src/kernels/source_point.jl`: 6.G." → "6.G and 6.J.1 (`ddz_calc_csr`)"; "New `test/track_tps_collective_test.jl`: 6.E." → "6.E, 6.I, 6.K.5–6.K.7". | Re-test 2026-10-18 (criterion 14): the file lists did not name the 6.I, 6.J.1 and 6.K.1 changes or the 6.K tests; no behavior change. | Applied (editorial) |
+| 2026-10-18 | Section 6.K.5 (testset "Float64 centroid_start with a TPS bunch"), last assertion `maximum(abs, Jt .- GTPSA.jacobian(KnobTrack(kt_build_a)(k1))) > 0`. Proposed: a bunch whose centroid moves with a knob (e.g. z offset of all particles, `v[:, 5] .+= 1e-4 .* k1[6]`, as `kt_build_b`'s `p6`), with the bound `> c * maximum(abs, J_default)`, `c` to be measured (not yet set). | Re-test 2026-10-18 (criterion 14; testset "Float64 centroid_start with a TPS bunch"): the difference is 1.69e-21 (round-off). The default TPS centroid's knob derivatives are ≤ 3.6e-20: the initial bunch's z-mean is zero and lattice A has no centroid-moving knob, so the assertion does not show that the knob dependence is removed. The test as written passes. | PROPOSED — needs user approval |
