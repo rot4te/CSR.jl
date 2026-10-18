@@ -68,7 +68,7 @@ GTPSA TPS).
 - **`stage2a-fixes`** (created by the user from `stage2-tps` `2ad0ca8`, 2026-10-16; name as proposed in the session,
   verify): fixes from the Stage 2a review (D46, D47; Section 9), committed by the user.
 - **`stage/csr/01-stage2b`** (from `stage2a-fixes` `2ddb2b8`, 2026-10-17; branch and commits by Claude under the session's git rules, not pushed): Stage 2b (D48) and its review fixes, spec `specs/stage2b.md`.
-- **`stage/csr/02-stage2c`** (from `stage/csr/01-stage2b` `2fdbe77`, 2026-10-17, by Claude, not pushed): Stage 2c (D49), spec `specs/stage2c.md`. **Latest state.**
+- **`stage/csr/02-stage2c`** (from `stage/csr/01-stage2b` `2fdbe77`, 2026-10-17/18, by Claude, not pushed): Stage 2c (D49), spec `specs/stage2c.md`. **Latest state.**
 
 | Commit | Branch | Content |
 |---|---|---|
@@ -102,7 +102,7 @@ keep testing on Julia 1.13.1.
 3. Stage 1: frozen-wake kick on TPS test particles (`csr_apply_test_kicks!`, `csr_kick!(...; test_particles)`). **Done.**
 4. Stage 2: full collective TPS (TPS deposit, TPS tables). Variables decided: D37 (knobs + 6D on test particles). Needs `<:Real` relaxed to `<:Number` in the types (TPS is a
    `Number`), a TPS `modulo2`, and a TPS deposit (serial path). Also review findings 4 and 8 (Section 4).
-   **2a done** (D45), reviewed and fixed (D46, D47); **2b done** (D48, 2026-10-17); 2c not started.
+   **2a done** (D45), reviewed and fixed (D46, D47); **2b done** (D48, 2026-10-17); **2c done** (D49, 2026-10-18).
 5. `track_csr!` with a TPS test bunch tracked alongside the bunch (BeamTracking per slice). **Done 2026-10-15**
    (keyword `test_bunch`; Section 9).
 
@@ -184,7 +184,10 @@ keep testing on Julia 1.13.1.
     deferred to Phase 8; 7, 8 declined) → 6.G implemented and tested (pass) → 6.G.9 docstring sentence. Results in
     Section 9.
 
-13. **Session 2026-10-17 (later), branch `stage/csr/02-stage2c`. In progress.** User: Stage 2c next. Probe (`diagnostics/stage2c_tps_params_probe.jl`) then design D49; spec `specs/stage2c.md` (user approved, incl. the coordinator's additions: coordinate type check, SaganCavity RF parameters in the type/descriptor checks). Float64 ramp reference `diagnostics/stage2c_ramp_dE0_reference.txt` made at `2fdbe77`. Next: spec-implementer → spec-tester → code review.
+13. **Session 2026-10-17/18, branch `stage/csr/02-stage2c`. Done.** Stage 2c (D49): `track_csr!` with a TPS/`Dual`
+    bunch in knobs; spec `specs/stage2c.md` with amendments 6.F–6.M (all approved by the user; results in Section 9).
+    Next (user decides): Stage 03, CSR-side workaround for the BeamTracking double `pz` shift after a SaganCavity
+    (user chose a separate stage); the whole-codebase review after the final stage; open items in Section 4.
 
 **Handoff 2026-10-17.** Latest state: branch `stage/csr/01-stage2b` (committed by Claude), not pushed. Suite
 2215/2215 on 1 and 4 threads (7m40s, 7m22s); docs build clean (existing warnings). Next (user decides): Stage 2c
@@ -949,6 +952,29 @@ Hat costs ~5× the source solves of point sampling.
   to ~1e-4 and ~5e-6 relative, not 1e-6.
 - `ad_rrule_test.jl` 208/208 on 1 and 4 threads; suite 1622/1622 on 4 threads (3m59s) and 1 thread (4m03s).
 
+### Phase 7 Stage 2c, D49 (10-17/18, branch `stage/csr/02-stage2c`)
+- **What.** `track_csr!` tracks a bunch whose coordinates, weights, `t_ref`, `p_over_q_ref` are TPS/`Dual` in knobs in
+  element parameters (L, g_ref, Kn1, patch, SaganCavity voltage/dE_ref/rate/phi0), charge, reference energy, initial
+  coordinates. Extension made generic (primal branches in slicing and SaganCavity slices; `SaganSlice{…,TE,T}` with a
+  separate energy type, type-stable `P0c`); entry checks (descriptors; reference/coordinate types with a clear error);
+  lcavity ramp for every SaganCavity. Spec `specs/stage2c.md` (6.A–6.M).
+- **Core aborts fixed** (GTPSA aborts the process on sqrt/atan/div of a zero scalar part; latent since Stage 2a):
+  zero-length chord in `CSRGeometry` (6.F), `L0²` at a kick on the lattice start in `upstream_drift_source` (6.G),
+  zero horizontal distance in `ddz_calc_csr` with images + compat (6.J). Hazard scan
+  `diagnostics/stage2c_tps_zero_hazards.jl` (overwrites GTPSA's in-place functions in a scratch process): clean for
+  default, images, compat, images + compat, `sliced_centroid = false`, cavity first.
+- **Tests** (`test/track_tps_collective_test.jl`, 310 assertions, ~4–5 min CPU): TPS order 1 vs ForwardDiff
+  (≤ 0.15 of 1e-10), order 2 vs nested Duals (rtol 1e-9; ≈ 4e-10 round-off between the two AD types), coarse FD with
+  ghost particles pinning the bin grid (AD holds the grid fixed by design, FD moves it), entry checks, descriptor
+  checks, unit tests of `csr_ref_energies`, `sagan_in_window`/`sagan_overlap` (Dual ties), type-stable
+  `sagan_exit_P0c` (`@inferred`). Full suite 2536/2536 on `-t 1` (16m41s) and `-t 4` (20m41s; machine loaded);
+  later −1 assertion (6.M). Float64 ramp reference: 2.49e-15 (6.G round-off; bound 1e-14).
+- **Findings.** BeamTracking 0.8.7 shifts `pz` twice after a SaganCavity (`bunch.p_over_q_ref` not updated;
+  `diagnostics/stage2c_sagan_pq_check.jl`; report drafted, upstream_reports.md); the 2026-10-15 "not reproducible"
+  was most likely a misreading. Map-level FD cannot check knobs that move kick points with images (kinks of the image
+  kick in `s_kick` within ~1e-5 m; AD verified per kick to ≤ 1.5e-7). Compat Float64 jitter ~1e-9 (Section 4).
+- **Review** (code-reviewer): W1, W2, W4, W5, W6, S4 fixed; S1, S2, S3, S6, S7 declined; S5 deferred; W3 dismissed.
+
 ### Phase 7 Stage 2b, D48 (10-17, branch `stage/csr/01-stage2b`)
 - **Spec** `specs/stage2b.md` (6.A–6.F, amendment 6.G after review, 6.G.9 docstring). Changes: `src/kernels/kick.jl`
   (`kick_cell`, `csr_count_outside_kernel!`), `src/kick.jl` (`count_outside`, `check_test_particles`,
@@ -1181,7 +1207,7 @@ Hat costs ~5× the source solves of point sampling.
 | 4 | KernelAbstractions kernels | done (GPU: particle side + CPU tables, Stage C) |
 | 5 | Shielding (image charges) | done (+ D20, D24, V9) |
 | 6 | AD: steps 0–2 particles (done); step 3 geometry/γ via implicit differentiation of the source root | done (3a forward, 3b rrules, D30 cheaper pullback) |
-| 7 | TPS: generic root (done), frozen-wake test particles (done), `track_csr!` with a TPS test bunch (done), full collective TPS (Stage 2, D37: 2a done + review fixes D46, D47; 2b done (D48); 2c open) (D33–D38); tests: first order = Jacobian, second = ForwardDiff Hessian | in progress |
+| 7 | TPS: generic root (done), frozen-wake test particles (done), `track_csr!` with a TPS test bunch (done), full collective TPS (Stage 2, D37: 2a done + review fixes D46, D47; 2b done (D48); 2c done (D49)) (D33–D38); tests: first order = Jacobian, second = ForwardDiff Hessian | done (Stage 03: lcavity `pz` workaround pending) |
 | 8 | FFT convolution (`CSRAbstractFFTsExt`) for large n_bin; benchmarks; GPU wake table (isbits geometry via Adapt; work struct immutable since D29; errors/recursion in the source search); issue for a BeamTracking collective-step hook (route b); test-particle backend handling (review finding 2; Stage 2b review findings 4, 12; Section 4) | not started |
 
 Follow-ups not requested: per-element `ds_step` (Bmad `csr_ds_step`); caching slices per element (rebuilt every step);
