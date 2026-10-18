@@ -26,10 +26,12 @@ Changes:
   every SaganCavity (D49); entry checks (descriptors, reference/coordinate types).
 - **D. Docs**: `track_csr!` docstring, `docs/src/usage.md`.
 - **E. Tests**: new `test/track_tps_collective_test.jl`.
+- **F. Zero-length chord in `CSRGeometry`** (amendment, 2026-10-17): a TPS geometry with a zero-length element
+  (marker, zero-length patch) aborted the process in GTPSA (`atan(0, 0)`, `sqrt(0)`); guard in the core.
 
 ## 2. Out of scope
 
-- No change under `src/` (core), `ext/CSRGTPSAExt/`, `ext/CSRChainRulesCoreExt/`, `ext/CSRAbstractFFTsExt/`.
+- No change under `src/` (core) except 6.F (`src/geometry.jl`), and none in `ext/CSRGTPSAExt/`, `ext/CSRChainRulesCoreExt/`, `ext/CSRAbstractFFTsExt/`.
 - No change to physics, kick formula, tables, deposit, root finding.
 - No upstream changes (BeamTracking, Beamlines, GTPSA). Known upstream limitation, documented only (6.D): BeamTracking's
   `rf_step_calc` (`ext/BeamTrackingBeamlinesExt/utils_bl.jl:257`) calls `round` on `rf_omega * L_act` when a
@@ -63,6 +65,7 @@ Versions checked 2026-10-17 against the local General registry (updated 2026-10-
 
 ## 5. Project layout (files to change or add)
 
+- `src/geometry.jl`: 6.F.1; `test/tps_collective_test.jl`: 6.F.2 (one new testset).
 - `ext/CSRBeamTrackingBeamlinesExt/slicing.jl`: 6.A.
 - `ext/CSRBeamTrackingBeamlinesExt/sagan.jl`: 6.B.
 - `ext/CSRBeamTrackingBeamlinesExt/track.jl`: 6.C, docstring 6.D.1.
@@ -401,6 +404,46 @@ Capture messages with `try ... catch err; err; end` and test `err isa ErrorExcep
    `p_over_q_ref = KT_PQ + zero(kb)`, `t_ref = zero(kb)`, same weights: `track_csr!(b2, bl2; params = KT_PARAMS_A)` raises
    an `ErrorException` whose message contains ``"track_csr!: TPS in argument `L`"``.
 
+### 6.F Zero-length chord in `CSRGeometry` (amendment, 2026-10-17)
+
+Found by spec-implementer: lattice A's zero-length `Patch` gives a centroid chord `dr` whose scalar part is exactly
+`(0, 0, 0)`; `CSRGeometry` (`src/geometry.jl:46-47`) then calls `atan(dr[1], dr[3])` and `sqrt(dr[1]^2 + dr[3]^2)` on
+TPS zeros, and GTPSA aborts the Julia process (`mad_tpsa_div.c:267: invalid domain div(.,+0.0000E+00)`; `sqrt` of a TPS
+zero: `mad_tpsa_fun.c:214: invalid domain sqrt(+0.0000E+00)`, checked by the coordinator). Any zero-length element
+(e.g. the `Marker` of lattice B) does the same. A chord below Bmad's 1e-8 threshold is not used for the spline or
+path excess (the `if abs(primal(L_chord)) >= 1e-8` block), so its direction needs no derivatives.
+
+1. **`src/geometry.jl`, `CSRGeometry(L, g, ref_exit, centroid; ...)`**: replace the two lines
+   `theta_chord = atan(dr[1], dr[3])` and `L_chord = sqrt(dr[1]^2 + dr[3]^2)` by
+   ```julia
+       if primal(dr[1]) == 0 && primal(dr[3]) == 0
+         # Zero-length chord (e.g. a marker): TPS atan/sqrt abort at 0 and Dual derivatives are not finite there. The
+         # chord is below the 1e-8 threshold below, so its primal direction is enough.
+         theta_chord = convert(T, atan(primal(dr[1]), primal(dr[3])))
+         L_chord = zero(T)
+       else
+         theta_chord = atan(dr[1], dr[3])
+         L_chord = sqrt(dr[1]^2 + dr[3]^2)
+       end
+   ```
+   Nothing else changes. For Float64 the values are bitwise the same as before (`atan` of the same zeros;
+   `sqrt(0.0) == 0.0`).
+2. **Test** in `test/tps_collective_test.jl`: a new testset "Zero-length element in a TPS geometry", placed before the
+   testset "Descriptor check" (which must stay last). With `k = @vars(Descriptor(2, 2))` (static),
+   `L = [0.3, 0.0, 0.3]`, `g64 = [1.0, 0.0, 1.0]`, `gk = [1.0 + k[1], zero(k[1]), 1.0 + k[2]]`,
+   `c64 = zeros(4, 6)`, `c64[:, 1] .= [1e-4, 2e-4, 2e-4, 3e-4]` (rows 2 and 3 equal, so element 2's chord is exactly
+   zero), `ck = map(x -> x + zero(k[1]), c64)`:
+   - `gt = CSRGeometry(L, gk, ck)` runs (no abort); `g0 = CSRGeometry(L, g64, c64)`.
+   - For every element `i in 1:3`: `scalar(gt.ele[i].theta_chord) == g0.ele[i].theta_chord` and
+     `scalar(gt.ele[i].L_chord) == g0.ele[i].L_chord` (bitwise; the TPS geometry has the Float64 values as scalar
+     parts); `g0.ele[2].L_chord == 0`.
+   - `gt.ele[2].L_chord` and `gt.ele[2].theta_chord` have all coefficients zero beyond the scalar part:
+     `all(iszero, GTPSA.jacobian([gt.ele[2].L_chord, gt.ele[2].theta_chord]))`.
+   - Dual: `gd = CSRGeometry(L, [1.0 + ForwardDiff.Dual(0.0, 1.0), 0.0, 1.0], c64)`:
+     `all(isfinite, ForwardDiff.partials(gd.ele[2].theta_chord))` and `ForwardDiff.value(gd.ele[2].L_chord) == 0`.
+   (Check the field names `theta_chord`, `L_chord` of `CSRElementInfo` in `src/types.jl`; `CSRGeometry(L, g,
+   centroid)` is the method at `src/geometry.jl:13`.)
+
 ## 7. Data formats
 
 No change. `track_csr!` inputs may now carry TPS/`Dual` numbers as described in 6.D.1.
@@ -445,6 +488,10 @@ scalar 1e-15; frozen 6D block `rtol = 1e-10`. Float64 ramp reference (criterion 
    `v0 = b0.coords.v`, `w0 = b0.coords.weight` (definitions from `test/track_csr_test.jl:7-19` and `test/utils.jl`
    copied into the script); report that `GTPSA.jacobian(bunch.coords.v[1, :])[:, 2]` is nonzero.
 
+10. **6.F (amendment):** the 6.F.2 testset passes; criteria 1–3 hold with it (the full suite then also runs the 6.E
+    lattices). Sensitivity: with the 6.F.1 guard removed (in a separate scratch process, since GTPSA aborts the
+    process), `CSRGeometry(L, gk, ck)` from 6.F.2 must abort or error; report which.
+
 ## 10. Build and run
 
 Test environment (scratch; this session's is already built):
@@ -480,8 +527,11 @@ None affecting implementation.
 | Descriptors | Entry check on bunch coords, weight, t_ref, p_over_q_ref, `centroid_start`, test bunch, and the element parameters CSR reads (L, g_ref, patch, dE_ref, p_over_q_ref; SaganCavity RF parameters added by the coordinator, since `slice_sagan` reads them). |
 | Ramp | For every SaganCavity (not `E_start != E_end`); Float64 results with `dE_ref = 0` unchanged to ≤ 1e-15 relative. |
 | `g = 0` series | Order ≥ 3 truncation documented, deferred. |
+| Zero-length chord | Guard in core `CSRGeometry` (6.F): primal direction, zero length, no derivatives, when the chord is exactly zero in primal. |
 
 ## Spec changes
 
 | Date | Change | Reason | Status |
 |---|---|---|---|
+| 2026-10-17 | Section 6.F added (guard for a zero-length chord in `CSRGeometry`, `src/geometry.jl`; test in `tps_collective_test.jl`); Sections 1, 2, 5, 9 (criterion 10), 13 updated. | spec-implementer stopped (Section 11): lattice A's zero-length patch aborts GTPSA in `atan(0, 0)`; the coordinator confirmed `sqrt` of a TPS zero aborts too. Latent since Stage 2a for any zero-length element. | Approved by the user |
+| 2026-10-17 | 6.B.3 "three places" for `L_active > 0` in `sagan_slice_kernel!`: the file has five; all five changed. 6.E Descriptor-check item 2: the coordinates built as `reshape([...], size(v))`. | Editorial (spec-implementer's notes); no behavior change. | Applied |
