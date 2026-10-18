@@ -396,6 +396,13 @@ weakdeps, or new extensions silently do not load.
   one-workgroup guard in `count_outside`; (8, declined) the test-particle descriptor check is keyed on the kick type,
   not `pz_scale` (`csr_kick!` checks `pz_scale`). Also: element-type combinations other than a float `pz`/`pz_t` (e.g.
   `Dual` `pz_t` with a TPS kick) are not checked and can leave a partial kick (documented in the docstrings).
+- **Open (Stage 2c, 2026-10-18):** in `bmad_compat` mode the Float64 map of `track_csr!` (lattice A of
+  `specs/stage2c.md`) jitters at ~1e-9 under knob changes of 1e-6–1e-4 (central-FD error × 2h ≈ 2.7e-8, constant in
+  h, for a quadrupole Kn1 knob); default mode does not show it at that level. Cause unverified (candidates: source-root
+  tolerance, compat's round-off branches V4). `diagnostics/stage2c_compat_fd.jl`.
+- Image kick vs `s_kick` has kinks within ~1e-5 m (first kick in a bend, y = 1 cm; `diagnostics/stage2c_images_dL.jl`):
+  map-level FD cannot check knobs that move kick points with images. AD verified against FD at small h (≤ 1.5e-7).
+  Attribution to hard-edge source acceleration is an inference.
 - Float32 on GPUs limits strongly shielded kicks to ~3e-4 relative (cancellation); a mixed-precision table/convolve
   path would be needed for better.
 

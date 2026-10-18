@@ -602,6 +602,22 @@ first in the lattice: no hazard.
 8. Not done (user, 2026-10-18): S1, S2, S3, S7 declined; S5 deferred (unverified, field-map elements); S6 declined;
    W3 dismissed (TPS `atan(1e-4, 0)` runs with correct derivatives, checked by the coordinator).
 
+### 6.L 6.K.6 finalized (amendment, 2026-10-18)
+
+spec-implementer: 6.K.6 failed E.1 (scalar 7.3e-11 vs 1e-12) and the coarse FD for knobs 2 (0.39) and 3 (0.29).
+Coordinator's diagnosis (`diagnostics/stage2c_compat_fd.jl`, `stage2c_images_dL.jl`):
+- Compat mode: the Float64 map jitters at ~1e-9 under tiny knob changes (FD error × 2h constant ≈ 2.7e-8 for Kn1);
+  cause unverified. The TPS scalar parts differ from Float64 by 3e-12 (compat) to 7e-11 (compat + images), within
+  that jitter.
+- Images (default mode too): the TPS image-table derivative at the first kick in bend 1 matches central FD to
+  ≤ 1.5e-7 at h ≤ 1e-5 (knob on L and s_kick together, L only, s_kick only); at h ≥ 1e-4 FD is off by 24–28%: the
+  image kick has a kink in `s_kick` within ~1e-5 m (inference: a retarded source crossing a hard bend edge). Map-level
+  FD therefore cannot check knobs that move kick points (L) with images, and smaller h drowns in the Float64 jitter.
+
+Changes to 6.K.6 (the rest stays): remove the coarse FD check; the E.1-style scalar check uses `1e-9` (relative to max
+|coordinate|) instead of `1e-12`; t_ref unchanged. Comment in the test: why FD is not used here (cite the two
+diagnostics) and that the testset guards the 6.J abort.
+
 ## 7. Data formats
 
 No change. `track_csr!` inputs may now carry TPS/`Dual` numbers as described in 6.D.1.
@@ -716,6 +732,7 @@ None affecting implementation.
 
 | Date | Change | Reason | Status |
 |---|---|---|---|
+| 2026-10-18 | Section 6.L: 6.K.6 without the coarse FD check, scalar bound 1e-9. | spec-implementer: 6.K.6 failed 3 assertions; coordinator's diagnosis: image kick kinks in s_kick (AD verified ≤ 1.5e-7 against FD at small h), compat Float64 jitter ~1e-9 (cause unverified, open item). | Approved by the user |
 | 2026-10-18 | Sections 6.J (zero horizontal distance guard in `ddz_calc_csr`) and 6.K (W1, W2, W5, S4 type-stable `P0c` with a `SaganSlice` energy type, W6 and W4 tests, type-stability test) added; criterion 14. | Code review of Stage 2c; W4 confirmed by the coordinator's extended hazard scan (images + compat abort). User selected W1, W2, W4, W5, W6 and asked for S4 (type stability is a primary requirement). | Approved by the user |
 | 2026-10-18 | Review S1, S2, S3, S7 (read parameters once; long line; `primal` in error messages; "first bend" wording), S6 (promote error without prefix). | Not selected by the user. | Declined by the user |
 | 2026-10-18 | Review S5 (`ShiftedPotential` with TPS on field-map elements). | Unverified; outside 2c's knob set. | Deferred |
