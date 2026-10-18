@@ -28,10 +28,12 @@ Changes:
 - **E. Tests**: new `test/track_tps_collective_test.jl`.
 - **F. Zero-length chord in `CSRGeometry`** (amendment, 2026-10-17): a TPS geometry with a zero-length element
   (marker, zero-length patch) aborted the process in GTPSA (`atan(0, 0)`, `sqrt(0)`); guard in the core.
+- **G. `L0²` in `upstream_drift_source`** (amendment, 2026-10-17): a kick on the lattice start aborted GTPSA in
+  `sqrt(0)`; use the squared distance directly.
 
 ## 2. Out of scope
 
-- No change under `src/` (core) except 6.F (`src/geometry.jl`), and none in `ext/CSRGTPSAExt/`, `ext/CSRChainRulesCoreExt/`, `ext/CSRAbstractFFTsExt/`.
+- No change under `src/` (core) except 6.F (`src/geometry.jl`) and 6.G (`src/kernels/source_point.jl`), and none in `ext/CSRGTPSAExt/`, `ext/CSRChainRulesCoreExt/`, `ext/CSRAbstractFFTsExt/`.
 - No change to physics, kick formula, tables, deposit, root finding.
 - No upstream changes (BeamTracking, Beamlines, GTPSA). Known upstream limitation, documented only (6.D): BeamTracking's
   `rf_step_calc` (`ext/BeamTrackingBeamlinesExt/utils_bl.jl:257`) calls `round` on `rf_omega * L_act` when a
@@ -66,6 +68,7 @@ Versions checked 2026-10-17 against the local General registry (updated 2026-10-
 ## 5. Project layout (files to change or add)
 
 - `src/geometry.jl`: 6.F.1; `test/tps_collective_test.jl`: 6.F.2 (one new testset).
+- `src/kernels/source_point.jl`: 6.G.
 - `ext/CSRBeamTrackingBeamlinesExt/slicing.jl`: 6.A.
 - `ext/CSRBeamTrackingBeamlinesExt/sagan.jl`: 6.B.
 - `ext/CSRBeamTrackingBeamlinesExt/track.jl`: 6.C, docstring 6.D.1.
@@ -78,7 +81,7 @@ Versions checked 2026-10-17 against the local General registry (updated 2026-10-
 Throughout, `primal`, `primal_max`, `primal_min` mean `CSR.primal`, `CSR.primal_max`, `CSR.primal_min` (qualify them
 as `CSR.` in the extension, as the extension already does for `CSR.advance_floor`). For plain floats `primal` is the
 identity, so every Float64 code path must produce bitwise the same results as before this stage (except 6.C.6 for
-SaganCavity elements with `dE_ref = 0`, criterion 9.4).
+SaganCavity elements with `dE_ref = 0`, criterion 9.4, and 6.G, which changes upstream-drift sources at round-off).
 
 ### 6.A Slicing (`slicing.jl`)
 
@@ -444,6 +447,21 @@ path excess (the `if abs(primal(L_chord)) >= 1e-8` block), so its direction need
    (Check the field names `theta_chord`, `L_chord` of `CSRElementInfo` in `src/types.jl`; `CSRGeometry(L, g,
    centroid)` is the method at `src/geometry.jl:13`.)
 
+### 6.G `L0²` in `upstream_drift_source` (amendment, 2026-10-17)
+
+Found by spec-implementer after 6.F: every 6.E lattice aborts GTPSA in `upstream_drift_source`
+(`src/kernels/source_point.jl:216`, `L0 = sqrt(...)`) at the kick on the lattice start (`s_kick = 0` in element 1, the
+first half kick of `track_csr!`), where the kick point and the lattice start coincide (`L0 = 0`). The coordinator's
+scan (`diagnostics/stage2c_tps_zero_hazards.jl`: GTPSA's `sqrt!`, `log!`, `atan!`, `div!`, `inv!` overwritten to log
+zero arguments) found this as the only remaining site for lattices A, B and B with `dE_ref` at 0 (391 calls each).
+`L0` is used only as `L0^2` (line 228).
+
+1. In `upstream_drift_source`, replace `L0 = sqrt((fk.r[1] - f0.r[1])^2 + (fk.r[3] - f0.r[3])^2 + kp.y_source^2)` by
+   `L0sq = (fk.r[1] - f0.r[1])^2 + (fk.r[3] - f0.r[3])^2 + kp.y_source^2   # squared distance (no sqrt: TPS abort at 0)`
+   and `c = (Lsz0 - dz)^2 - beta2 * L0^2` by `c = (Lsz0 - dz)^2 - beta2 * L0sq`. Nothing else changes (both modes).
+   Float64 results change only at round-off (`sqrt(x)^2` vs `x`).
+2. No new test: 6.E's lattices kick on the lattice start (first half kick). Sensitivity: criterion 11.
+
 ## 7. Data formats
 
 No change. `track_csr!` inputs may now carry TPS/`Dual` numbers as described in 6.D.1.
@@ -492,6 +510,10 @@ scalar 1e-15; frozen 6D block `rtol = 1e-10`. Float64 ramp reference (criterion 
     lattices). Sensitivity: with the 6.F.1 guard removed (in a separate scratch process, since GTPSA aborts the
     process), `CSRGeometry(L, gk, ck)` from 6.F.2 must abort or error; report which.
 
+11. **6.G (amendment):** criteria 1–4 and 10 with 6.G in place (criterion 4's bound unchanged; report the measured
+    difference). Sensitivity, in a separate scratch process: with the old `L0 = sqrt(...)` line restored, lattice A's
+    `track_csr!` with TPS knobs must abort (report).
+
 ## 10. Build and run
 
 Test environment (scratch; this session's is already built):
@@ -528,10 +550,12 @@ None affecting implementation.
 | Ramp | For every SaganCavity (not `E_start != E_end`); Float64 results with `dE_ref = 0` unchanged to ≤ 1e-15 relative. |
 | `g = 0` series | Order ≥ 3 truncation documented, deferred. |
 | Zero-length chord | Guard in core `CSRGeometry` (6.F): primal direction, zero length, no derivatives, when the chord is exactly zero in primal. |
+| `L0` at the lattice start | Use `L0²` directly in `upstream_drift_source` (6.G), both modes; Float64 changes at round-off accepted. |
 
 ## Spec changes
 
 | Date | Change | Reason | Status |
 |---|---|---|---|
 | 2026-10-17 | Section 6.F added (guard for a zero-length chord in `CSRGeometry`, `src/geometry.jl`; test in `tps_collective_test.jl`); Sections 1, 2, 5, 9 (criterion 10), 13 updated. | spec-implementer stopped (Section 11): lattice A's zero-length patch aborts GTPSA in `atan(0, 0)`; the coordinator confirmed `sqrt` of a TPS zero aborts too. Latent since Stage 2a for any zero-length element. | Approved by the user |
+| 2026-10-17 | Section 6.G added (`L0²` without `sqrt` in `upstream_drift_source`, `src/kernels/source_point.jl`); Sections 1, 2, 5, 6 (intro), 9 (criterion 11), 13 updated. | spec-implementer stopped again (Section 11): TPS `sqrt(0)` abort at the kick on the lattice start; the coordinator's hazard scan found no other site. | Approved by the user |
 | 2026-10-17 | 6.B.3 "three places" for `L_active > 0` in `sagan_slice_kernel!`: the file has five; all five changed. 6.E Descriptor-check item 2: the coordinates built as `reshape([...], size(v))`. | Editorial (spec-implementer's notes); no behavior change. | Applied |
