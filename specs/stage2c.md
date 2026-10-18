@@ -584,12 +584,9 @@ first in the lattice: no hazard.
    `c0 = [sum(CSR.primal.(b.coords.v[:, j]) .* w) / sum(w) for j in 1:6]` (Float64), and
    `ft = KnobTrack(p -> ((bb, bl, kw) = kt_build_a(p); (bb, bl, merge(kw, (; centroid_start = c0)))))`:
    `vt = ft(k1)`, `v0 = ft(zeros(KT_NK))`: E.1-style scalar check (coordinates `1e-12` of max, t_ref `1e-14`);
-   `Jt = GTPSA.jacobian(vt)` vs `Jf = ForwardDiff.jacobian(ft, zeros(KT_NK))` per column as E.2 (`1e-10`); and
-   `maximum(abs, Jt .- GTPSA.jacobian(KnobTrack(kt_build_a)(k1))) > 0` (the knob dependence of the default TPS
-   centroid is gone with a Float64 `centroid_start`).
-   **PROPOSED — needs user approval** (2026-10-18, re-test): this last assertion passes at round-off only (difference
-   1.7e-21; the default TPS centroid's knob derivatives are ≤ 3.6e-20, because the initial bunch's z-mean is zero and
-   lattice A has no centroid-moving knob). See the Spec changes table.
+   `Jt = GTPSA.jacobian(vt)` vs `Jf = ForwardDiff.jacobian(ft, zeros(KT_NK))` per column as E.2 (`1e-10`). (A former
+   last assertion, `maximum(abs, Jt .- GTPSA.jacobian(KnobTrack(kt_build_a)(k1))) > 0`, is removed: it held only at
+   round-off, 1.7e-21, since lattice A has no centroid-moving knob; user, 2026-10-18.)
 6. **W4 test** (same file, new testset "Images with bmad_compat", before "Descriptor check"):
    `pc = CSRParams(n_bin = 40, ds_step = 0.1, n_shield_images = 2, beam_chamber_height = 0.01, bmad_compat = true)`,
    `fc = KnobTrack(p -> kt_build_a(p; params = pc))`: E.1-style scalar check of `fc(k1)` vs `fc(zeros(KT_NK))`; E.2-style
@@ -626,6 +623,15 @@ comment as the first lines inside the testset:
   # cannot check these knobs (diagnostics/stage2c_images_dL.jl, stage2c_compat_fd.jl). Scalar parts: 1e-9 (compat
   # jitter; measured 7.3e-11).
 ```
+
+### 6.M Final fixes (amendment, 2026-10-18)
+
+1. `ext/CSRBeamTrackingBeamlinesExt/sagan.jl`, docstring of `sagan_segment!`: in the signature line, replace
+   `val_rad_fluctuations_on, , , , m_order` by
+   `val_rad_fluctuations_on, ::Val{traveling_wave}, ::Val{has_mult}, ::Val{has_sol}, m_order` (the method's own
+   argument list). Nothing else.
+2. `test/track_tps_collective_test.jl`, testset "Float64 centroid_start with a TPS bunch": delete the last assertion
+   (`maximum(abs, Jt .- GTPSA.jacobian(KnobTrack(kt_build_a)(k1))) > 0`) and its comment, if any. Nothing else.
 
 ## 7. Data formats
 
@@ -741,6 +747,7 @@ None affecting implementation.
 
 | Date | Change | Reason | Status |
 |---|---|---|---|
+| 2026-10-18 | 6.M: fix the `sagan_segment!` docstring signature (`sagan.jl`, three empty argument slots → `::Val{traveling_wave}, ::Val{has_mult}, ::Val{has_sol}`; predates Stage 2c, present at `2fdbe77`); remove the 6.K.5 last assertion. | spec-tester re-test (2026-10-18). | Approved by the user |
 | 2026-10-18 | Section 6.L: 6.K.6 without the coarse FD check, scalar bound 1e-9. | spec-implementer: 6.K.6 failed 3 assertions; coordinator's diagnosis: image kick kinks in s_kick (AD verified ≤ 1.5e-7 against FD at small h), compat Float64 jitter ~1e-9 (cause unverified, open item). | Approved by the user |
 | 2026-10-18 | Sections 6.J (zero horizontal distance guard in `ddz_calc_csr`) and 6.K (W1, W2, W5, S4 type-stable `P0c` with a `SaganSlice` energy type, W6 and W4 tests, type-stability test) added; criterion 14. | Code review of Stage 2c; W4 confirmed by the coordinator's extended hazard scan (images + compat abort). User selected W1, W2, W4, W5, W6 and asked for S4 (type stability is a primary requirement). | Approved by the user |
 | 2026-10-18 | Review S1, S2, S3, S7 (read parameters once; long line; `primal` in error messages; "first bend" wording), S6 (promote error without prefix). | Not selected by the user. | Declined by the user |
@@ -757,4 +764,4 @@ None affecting implementation.
 | 2026-10-17 | Section 9, criterion 5a and 12 ("the 'dE_ref knob at 0' testset must fail" under the old ramp rule). Proposed: 5a is detected by the new unit testset above, and the lattice testset is not expected to fail at its bound (1e-5). | The lattice testset passes under the old rule (see the row above: 2.3e-6 change against a 1e-5 bound); no bound in 6.H separates them, since FD noise at this step is about 3e-6. Tightening the bound would fail the new code at its own measured 3.0e-6. | Approved by the user (2026-10-18) |
 | 2026-10-17 | Section 9, criterion 5b (raw `sagan_in_window`/`sagan_overlap`): report only, per criterion text. Proposed: record that no test detects it. | Sensitivity run: the redefinition is active (a `Dual` tie differs), but the lattice A and lattice B Jacobians are bitwise identical (max relative difference 0.0), and the full file passes 253/253. No test can detect the raw comparisons with these lattices. | Superseded: the user chose a unit test (6.I, 2026-10-18) |
 | 2026-10-18 | Sections 2 and 5 (file lists, editorial): Section 2 "except 6.F (`src/geometry.jl`) and 6.G (`src/kernels/source_point.jl`)" → "except 6.F (`src/geometry.jl`) and 6.G and 6.J.1 (`src/kernels/source_point.jl`)"; Section 5 "`test/tps_collective_test.jl`: 6.F.2 (one new testset)" → "... 6.F.2 (one new testset) and 6.K.1 (assertions of its W1 testset)"; "`src/kernels/source_point.jl`: 6.G." → "6.G and 6.J.1 (`ddz_calc_csr`)"; "New `test/track_tps_collective_test.jl`: 6.E." → "6.E, 6.I, 6.K.5–6.K.7". | Re-test 2026-10-18 (criterion 14): the file lists did not name the 6.I, 6.J.1 and 6.K.1 changes or the 6.K tests; no behavior change. | Applied (editorial) |
-| 2026-10-18 | Section 6.K.5 (testset "Float64 centroid_start with a TPS bunch"), last assertion `maximum(abs, Jt .- GTPSA.jacobian(KnobTrack(kt_build_a)(k1))) > 0`. Proposed: a bunch whose centroid moves with a knob (e.g. z offset of all particles, `v[:, 5] .+= 1e-4 .* k1[6]`, as `kt_build_b`'s `p6`), with the bound `> c * maximum(abs, J_default)`, `c` to be measured (not yet set). | Re-test 2026-10-18 (criterion 14; testset "Float64 centroid_start with a TPS bunch"): the difference is 1.69e-21 (round-off). The default TPS centroid's knob derivatives are ≤ 3.6e-20: the initial bunch's z-mean is zero and lattice A has no centroid-moving knob, so the assertion does not show that the knob dependence is removed. The test as written passes. | PROPOSED — needs user approval |
+| 2026-10-18 | Section 6.K.5 (testset "Float64 centroid_start with a TPS bunch"), last assertion `maximum(abs, Jt .- GTPSA.jacobian(KnobTrack(kt_build_a)(k1))) > 0`. Proposed: a bunch whose centroid moves with a knob (e.g. z offset of all particles, `v[:, 5] .+= 1e-4 .* k1[6]`, as `kt_build_b`'s `p6`), with the bound `> c * maximum(abs, J_default)`, `c` to be measured (not yet set). | Re-test 2026-10-18 (criterion 14; testset "Float64 centroid_start with a TPS bunch"): the difference is 1.69e-21 (round-off). The default TPS centroid's knob derivatives are ≤ 3.6e-20: the initial bunch's z-mean is zero and lattice A has no centroid-moving knob, so the assertion does not show that the knob dependence is removed. The test as written passes. | Approved by the user (2026-10-18): assertion removed |
