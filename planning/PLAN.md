@@ -227,6 +227,8 @@ Pages (`gh-pages`) after pushing. Action versions in `.github/workflows/Document
   tracked in git and authoritative; the Google Drive copy (`~/Library/CloudStorage/GoogleDrive-rot4te@gmail.com/My Drive/code/Bmad+/CSR`)
   is no longer kept in sync.
 - Physics-model and upstream choices are the user's: ask with options and a recommendation.
+- Type stability is a primary requirement of the package (user, 2026-10-18): new code must be type-stable for Float64,
+  Float32, `Dual` and TPS; flag type instabilities in reviews as defects, not style.
 - Style: 2-space indent, `@kwdef`, docstrings with `## Properties` (BeamTracking style), sparse comments.
 - Paths below written `planning/...` or `diagnostics/...` are relative to the repo root.
 

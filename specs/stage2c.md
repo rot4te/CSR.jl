@@ -522,6 +522,86 @@ tests decide on primal values" (anywhere before "Descriptor check", which stays 
 item.)
 (Item 3's `len` partial is −2, not −1, so the raw fallback `b − a`, partial −1, differs; spec-tester, 2026-10-18.)
 
+### 6.J Zero horizontal distance in `ddz_calc_csr` (amendment, 2026-10-18; code review W4)
+
+Coordinator's scan (`diagnostics/stage2c_tps_zero_hazards.jl`, extended 2026-10-18): lattice A with image charges
+**and** `bmad_compat = true` reaches `atan(0, 0)` (`src/kernels/source_point.jl:21`) and `sqrt(0)` (line 76) in
+`ddz_calc_csr`, 11 calls per run (GTPSA would abort the process). Compat places those image sources exactly above the
+kick point, so `L_vec`'s horizontal part is zero. Default mode with images, `sliced_centroid = false`, a SaganCavity
+first in the lattice: no hazard.
+
+1. In `ddz_calc_csr`, replace `L = sqrt(L_vec[1]^2 + L_vec[2]^2 + L_vec[3]^2)` and `theta_L = atan(L_vec[1], L_vec[3])` by
+   ```julia
+     L2 = L_vec[1]^2 + L_vec[2]^2 + L_vec[3]^2
+     Lp2 = L_vec[1]^2 + L_vec[3]^2
+     if primal(Lp2) == 0
+       # Source exactly above or below the kick point (image charges in compat mode): TPS atan/sqrt abort at 0 and
+       # Dual derivatives are not finite there; take the primal direction and a zero horizontal length.
+       theta_L = convert(typeof(Lp2), atan(primal(L_vec[1]), primal(L_vec[3])))
+       Lp = zero(Lp2)
+     else
+       theta_L = atan(L_vec[1], L_vec[3])
+       Lp = sqrt(Lp2)
+     end
+     L = primal(L2) == 0 ? zero(L2) : sqrt(L2)
+   ```
+   and replace each remaining `sqrt(L_vec[1]^2 + L_vec[3]^2)` in `ddz_calc_csr` (three places: the default-mode
+   source-ahead branch, the downstream branch, the `y_source` correction) by `Lp`. Nothing else changes. Float64 values
+   are bitwise the same (same expressions; `sqrt(0.0) == 0.0`).
+   Note (coordinator's inference, not verified): at these lags the compat source is the kick point itself, computed
+   by the same expressions, so the horizontal vector is zero for all knob values and dropping its derivatives is
+   exact. The coarse FD check of 6.K.6 is the independent check.
+2. Test: see 6.K.6.
+
+### 6.K Review fixes (amendment, 2026-10-18; user selected W1, W2, W5, W6 and S4)
+
+1. **W1** (`test/tps_collective_test.jl`, testset "Zero-length element in a TPS geometry"): for elements 1 and 3,
+   `scalar(gt.ele[i].theta_chord) ≈ g0.ele[i].theta_chord` and the same for `L_chord`, with `rtol = 4eps()` (GTPSA's C
+   libm vs Julia's may differ in the last bit); element 2 keeps exact `==`.
+2. **W2** (`track.jl`): replace the splats by reductions:
+   `Tg = promote_type(mapreduce(typeof, promote_type, Lv; init = Float64), mapreduce(typeof, promote_type, gv; init = Float64))`,
+   `Tf = mapreduce(CSR.number_type, promote_type, fv; init = Tg)`, and in `ref_param_type`
+   `mapreduce(typeof, promote_type, vcat(r.L, r.patch, r.dE_ref, r.sagan_rf, r.p_over_q_ref); init = Float64)`.
+3. **W5** (`track_csr!` docstring, the "When `L`, …" item): add "Knobs in other parameters (e.g. `g_ref`, `Kn1`,
+   alignment) are not part of this check; they also need TPS/`Dual` bunch coordinates (otherwise BeamTracking or
+   `csr_kick!` raises an error)."
+4. **S4, type-stable reference momentum** (user: type stability is a primary requirement of the package):
+   - `SaganSlice` gets a separate energy number type: `struct SaganSlice{E,TM,M,K,TE<:Number,T<:Number}`; fields
+     `E0, dE_ref, P0c0, p_over_q_ref` have type `TE`; the other eight former `T` fields stay `T`. Docstring: "`TE`:
+     number type of the energy fields (`E0`, `dE_ref`, `P0c0`, `p_over_q_ref`); `T`: RF and length fields".
+   - `slice_sagan`: `ve = (float(E0), dE_ref, sqrt(E0^2 - mass^2), float(p_over_q_ref))`,
+     `TE = float(promote_type(map(typeof, ve)...))`; `vt` = the other eight values in field order (`float(rf_omega),
+     float(t_phi0), q_gradient, float(q * rp.voltage), float(L_active), L, float(s0), float(s0 + L_slice)`),
+     `T = float(promote_type(map(typeof, vt)...))`; pass `convert(TE, ·)` / `convert(T, ·)` in the field positions.
+     Then `sagan_P0c_at` and `sagan_exit_P0c` return `TE` (a voltage knob alone no longer makes them TPS).
+   - `track_csr_element!`: `TP = float(promote_type(typeof(E_start), typeof(E_end)))`;
+     `P0c = convert(TP, sqrt(E_start^2 - mass^2))::TP`; in the loop `ramp && (P0c = convert(TP, csr_slice_P0c(s))::TP)`;
+     `pz_scale = ramp ? sqrt(E_kick^2 - mass^2) / P0c : one(E_kick) / one(P0c)` (both branches have the type of
+     `E_kick / P0c`; Float64 value `1.0` as before). Float64 results bitwise unchanged.
+5. **W6 test** (`test/track_tps_collective_test.jl`, new testset "Float64 centroid_start with a TPS bunch", before
+   "Descriptor check"): `kt_build_a` gets a keyword `params = KT_PARAMS_A` (used in its returned NamedTuple).
+   With `b, _, _ = kt_build_a(k1)`, `w = CSR.primal.(b.coords.weight)`,
+   `c0 = [sum(CSR.primal.(b.coords.v[:, j]) .* w) / sum(w) for j in 1:6]` (Float64), and
+   `ft = KnobTrack(p -> ((bb, bl, kw) = kt_build_a(p); (bb, bl, merge(kw, (; centroid_start = c0)))))`:
+   `vt = ft(k1)`, `v0 = ft(zeros(KT_NK))`: E.1-style scalar check (coordinates `1e-12` of max, t_ref `1e-14`);
+   `Jt = GTPSA.jacobian(vt)` vs `Jf = ForwardDiff.jacobian(ft, zeros(KT_NK))` per column as E.2 (`1e-10`); and
+   `maximum(abs, Jt .- GTPSA.jacobian(KnobTrack(kt_build_a)(k1))) > 0` (the knob dependence of the default TPS
+   centroid is gone with a Float64 `centroid_start`).
+6. **W4 test** (same file, new testset "Images with bmad_compat", before "Descriptor check"):
+   `pc = CSRParams(n_bin = 40, ds_step = 0.1, n_shield_images = 2, beam_chamber_height = 0.01, bmad_compat = true)`,
+   `fc = KnobTrack(p -> kt_build_a(p; params = pc))`: E.1-style scalar check of `fc(k1)` vs `fc(zeros(KT_NK))`; E.2-style
+   columns vs `ForwardDiff.jacobian(fc, zeros(KT_NK))` (`1e-10`); and a 6.H.2-style coarse FD check with ghosts
+   (`kt_build_a(p; params = pc, ghosts = 1e-2)`, `h = 1e-4`, bound `0.15`, t_ref `1e-6`). If a bound fails, report the
+   numbers (do not loosen).
+7. **Type-stability test** (same file, new testset "Type-stable SaganCavity reference momentum", before "Descriptor
+   check"): `cav = RFCavity(L = 1.0, voltage = 2e8 + k1[2], rf_frequency = 1.3e9, dE_ref = 1e8, phi0 = 0.0,
+   zero_phase = PhaseRef.Accelerating, tracking_method = SaganCavity(n_cells = 4), traveling_wave = true)`,
+   `ele = Branch([Marker(E_ref = LC_E0, species_ref = LC_E), cav]).beamlines[2].line[1]`,
+   `sl = CSR.slice_element(ele, 0.0, 0.25, true, false)`: `sl isa TC_EXT.SaganSlice`, `sl.q_voltage isa GTPSA.TPS`,
+   `(@inferred TC_EXT.sagan_exit_P0c(sl)) isa Float64`.
+8. Not done (user, 2026-10-18): S1, S2, S3, S7 declined; S5 deferred (unverified, field-map elements); S6 declined;
+   W3 dismissed (TPS `atan(1e-4, 0)` runs with correct derivatives, checked by the coordinator).
+
 ## 7. Data formats
 
 No change. `track_csr!` inputs may now carry TPS/`Dual` numbers as described in 6.D.1.
@@ -583,6 +663,12 @@ scalar 1e-15; frozen 6D block `rtol = 1e-10`. Float64 ramp reference (criterion 
     `sagan_in_window` and `sagan_overlap` (criterion 5b), it fails. Re-run criterion 4 with the 1e-14 bound and the
     new file alone (`-t 4`). A full-suite rerun is not required (only a testset is added).
 
+14. **6.J, 6.K (amendment):** full suite on `-t 1` and `-t 4` passes; docs build as criterion 6; criterion 4 (≤ 1e-14)
+    still holds; all new 6.K tests pass (report the 6.K.6 ratios). Sensitivity: (a) 6.J guard removed → the 6.K.6
+    testset aborts the process (separate process; report); (b) `track_csr_element!` with the old `P0c` lines and
+    `SaganSlice` with one type `T` → the 6.K.7 testset fails; (c) Float64: the existing tests pass unchanged (report
+    any exact comparison that changed).
+
 ## 10. Build and run
 
 Test environment (scratch; this session's is already built):
@@ -630,6 +716,10 @@ None affecting implementation.
 
 | Date | Change | Reason | Status |
 |---|---|---|---|
+| 2026-10-18 | Sections 6.J (zero horizontal distance guard in `ddz_calc_csr`) and 6.K (W1, W2, W5, S4 type-stable `P0c` with a `SaganSlice` energy type, W6 and W4 tests, type-stability test) added; criterion 14. | Code review of Stage 2c; W4 confirmed by the coordinator's extended hazard scan (images + compat abort). User selected W1, W2, W4, W5, W6 and asked for S4 (type stability is a primary requirement). | Approved by the user |
+| 2026-10-18 | Review S1, S2, S3, S7 (read parameters once; long line; `primal` in error messages; "first bend" wording), S6 (promote error without prefix). | Not selected by the user. | Declined by the user |
+| 2026-10-18 | Review S5 (`ShiftedPotential` with TPS on field-map elements). | Unverified; outside 2c's knob set. | Deferred |
+| 2026-10-18 | Review W3 (`atan(x, 0)` abort). | Coordinator checked: TPS `atan(1e-4, 0)` runs, derivatives correct. | Dismissed |
 | 2026-10-18 | Section 6.I item 3 (proposed): `len` partial −1.0 → −2.0 (`ForwardDiff.Dual(0.25, -2.0)`, expected partial `-2.0`). | spec-tester (criterion 13): with raw comparisons in `sagan_overlap` only, item 3 passes (fallback partial −1 equals `len` partial −1), so the sagan_overlap comparison is undetected; the 6.I testset fails overall via items 1–2 (sagan_in_window). Scratch runs 2026-10-18. | Approved by the user (2026-10-18) |
 | 2026-10-18 | Section 6.I added (unit test of `sagan_in_window`/`sagan_overlap` with `Dual` ties); criterion 13; Section 13 rows. | spec-tester: criterion 5b undetected by the lattices. | Approved by the user |
 | 2026-10-17 | Section 6.F added (guard for a zero-length chord in `CSRGeometry`, `src/geometry.jl`; test in `tps_collective_test.jl`); Sections 1, 2, 5, 9 (criterion 10), 13 updated. | spec-implementer stopped (Section 11): lattice A's zero-length patch aborts GTPSA in `atan(0, 0)`; the coordinator confirmed `sqrt` of a TPS zero aborts too. Latent since Stage 2a for any zero-length element. | Approved by the user |
