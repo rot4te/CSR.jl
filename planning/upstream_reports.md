@@ -18,6 +18,8 @@ REL 20261014-0). Item 5 added 2026-10-14, items 6–8 2026-10-15.
   v0.8.7, not in `fe92aac`, which the draft was checked against). Former item 3 (`p_over_q_ref` not updated after
   a SaganCavity) does not occur with v0.8.7 (`diagnostics/sagan_tref_check.jl`: −0.33356 → −0.66713 after an
   lcavity with dE_ref = 1e8 eV). They are removed below; the two ion items remain.
+  **Correction 2026-10-17:** former item 3 does occur with v0.8.7 (the −0.33356 → −0.66713 doubling above was most
+  likely this bug, misread; inference). Re-drafted as a separate issue below ("BeamTracking.jl: second issue").
 - Existing issues (GitHub issue search via WebFetch, titles only, summarized by a model: moderately reliable): none
   matching in bmad-ecosystem ("csr", 36 results) or BeamTracking.jl (`R_to_gamma`, `R_to_v`, `SaganCavity`: 0).
 
@@ -163,6 +165,41 @@ Checked: He²⁺ at R = 1 T·m gives 1.00323 vs `R_to_E/massof` = 1.01286.
 be `C_LIGHT / sqrt(1 + (m/(R c chargeof))^2)`. Correct for |Z| = 1 only; for |Z| > 1 it can exceed c. Checked: He²⁺ at
 R = 1 gives v/c = 0.16034 vs 0.15882 from `beta_gamma_to_v(R_to_beta_gamma)`; ¹²C⁶⁺ 0.16091 vs 0.15892. Used by
 `rf_omega_calc` (`utils_bl.jl:205`), so RF frequencies set by harmonic number are wrong for multiply charged ions.
+
+---
+
+## BeamTracking.jl: second issue (drafted 2026-10-17)
+
+**Title:** `pz` shifted twice after a SaganCavity (`bunch.p_over_q_ref` not updated for constant reference energy)
+
+Version: v0.8.7 `65e343f` (= `main` on 2026-10-17 per the GitHub commit list; no matching issue found by a
+GitHub search for "SaganCavity", WebFetch summary, moderately reliable).
+
+**What happens.** `universal!` for `SaganCavity` (`ext/BeamTrackingBeamlinesExt/unpack_bl.jl:357` ff.) sets
+`bunch.p_over_q_ref` only in the `TimeDependentParam` branch (`unpack_bl.jl:421`); at the end it sets only
+`bunch.t_ref` (`unpack_bl.jl:465`). The cavity kernel already renormalizes the coordinates to the exit reference
+momentum cell by cell (`reference_momentum_shift!` in the Sagan kernels). So after the cavity the coordinates refer to
+the exit reference, but `bunch.p_over_q_ref` still holds the entrance value, and the next element's `universal!`
+(`unpack_bl.jl:133`) sees different reference energies and applies `reference_momentum_shift!` a second time.
+
+**Reproduction** (`diagnostics/stage2c_sagan_pq_check.jl` in CSR.jl): `Branch([Marker(E_ref = 1e8, species_ref = e),
+RFCavity(L = 1.0, voltage = 1e8, rf_frequency = 1.3e9, dE_ref = 1e8, phi0 = 0.0, zero_phase = PhaseRef.Accelerating,
+tracking_method = SaganCavity(n_cells = 4), traveling_wave = true), Drift(L = 0.5), Drift(L = 0.5)])`, electron
+`Bunch(zeros(1, 6))` at 1e8 eV, `track!` element by element:
+
+| after | `pz` | `bunch` E_ref | element E_ref |
+|---|---|---|---|
+| RFCavity | 0.0 | 1.0e8 | 2.0e8 |
+| Drift | −0.500004896 | 2.0e8 | 2.0e8 |
+| Drift | −0.500004896 | 2.0e8 | 2.0e8 |
+
+The on-crest reference particle gains exactly `dE_ref`, so `pz` must stay ≈ 0; a drift cannot change it. Same with
+`n_cells = 0`. Expected fix (suggestion): set `bunch.p_over_q_ref = p_over_q_ref` (the cavity's exit value) at the end
+of the SaganCavity `universal!` for constant `p_over_q_ref`.
+
+Side effect seen with GTPSA/ForwardDiff: with a `dE_ref` knob of primal value 0, the `≈` test at `unpack_bl.jl:133`
+compares equal values and skips the second shift for the derivatives only, so derivatives and finite differences
+disagree by a factor 2 there (`diagnostics/stage2c_dE0_bt.jl`).
 
 ---
 

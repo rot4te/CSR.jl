@@ -30,6 +30,9 @@ Changes:
   (marker, zero-length patch) aborted the process in GTPSA (`atan(0, 0)`, `sqrt(0)`); guard in the core.
 - **G. `L0²` in `upstream_drift_source`** (amendment, 2026-10-17): a kick on the lattice start aborted GTPSA in
   `sqrt(0)`; use the squared distance directly.
+- **H. Test redesign** (amendment, 2026-10-17, 6.H): the FD check E.3 becomes a coarse check with the bin grid pinned
+  by zero-weight ghost particles (AD holds the grid fixed by design, FD moved it); E.4 `rtol = 1e-9`; the
+  "dE_ref knob at 0" lattice ends with the cavity (BeamTracking 0.8.7 bug after a SaganCavity, see 6.H.3).
 
 ## 2. Out of scope
 
@@ -240,7 +243,11 @@ SaganCavity elements with `dE_ref = 0`, criterion 9.4, and 6.G, which changes up
      TPS in the bunch, `centroid_start`, the test bunch or those element parameters (and `g_ref`) must be in GTPSA's
      current Descriptor (error otherwise)."
    - "Limits: a SaganCavity with automatic `n_cells` and a knob in its length or RF frequency fails in BeamTracking
-     (`round` of a TPS); derivatives of order ≥ 3 in a curvature knob of an element with `g = 0` are truncated."
+     (`round` of a TPS); derivatives of order ≥ 3 in a curvature knob of an element with `g = 0` are truncated.
+     BeamTracking 0.8.7 leaves `bunch.p_over_q_ref` at the entrance value after a SaganCavity (the coordinates are
+     already normalized to the exit reference), so the next element shifts `pz` a second time; CSR.jl's lcavity
+     slices follow BeamTracking. With a `dE_ref` knob of primal value 0 that second shift is skipped for the
+     derivatives (equal reference energies in value)."
    - In the "Reference energy" paragraph, "except SaganCavity elements with `dE_ref` (lcavity)" →
      "except SaganCavity elements (lcavity; with `dE_ref = 0` the ramp is flat)".
 2. **`docs/src/usage.md`**, section "Truncated power series (GTPSA)": after the `track_csr!` test-bunch example block
@@ -462,6 +469,42 @@ zero arguments) found this as the only remaining site for lattices A, B and B wi
    Float64 results change only at round-off (`sqrt(x)^2` vs `x`).
 2. No new test: 6.E's lattices kick on the lattice start (first half kick). Sensitivity: criterion 11.
 
+### 6.H Test redesign (amendment, 2026-10-17)
+
+Found by spec-implementer after 6.G (33 of 239 assertions failed: E.3 for both lattices, E.4 for lattice A, "dE_ref
+knob at 0") and diagnosed by the coordinator (`diagnostics/stage2c_fd_grid.jl`, `stage2c_dE0_bt.jl`,
+`stage2c_sagan_pq_check.jl`):
+- `csr_bin_particles` builds the bin grid from primal min/max `z` (`src/binning.jl:25-26`), so TPS and `Dual`
+  derivatives hold the grid fixed (Stage 2a design); central FD moves it with the extreme particles. Chirp (A, p₇)
+  and z-offset (B, p₆) knobs differ by 29% and 279% for any `h`; with two zero-weight ghost particles fixing the grid,
+  9e-9 and 0.25%. Knobs that move the ghosts too (g, L, Kn1, patch) stay at 0.1–10% (Kn1: small derivative, FD
+  noise). FD is therefore a coarse check only (it still catches missing or doubled derivative terms).
+- E.4 lattice A: TPS vs nested `Dual` second derivatives differ by up to ≈ 4e-10 relative (both AD; accumulated
+  round-off through tracking); the user approved `rtol = 1e-9`.
+- "dE_ref knob at 0": BeamTracking 0.8.7 bug (see the 6.D.1 limits sentence): the reference particle of an on-crest
+  1e8 → 2e8 eV cavity has `pz = 0` after the cavity and `pz = -0.5` after a following drift. With the cavity last,
+  TPS vs FD agree to 3.0e-6 (CSR on) and 1.2e-10 (CSR off). A CSR-side workaround is a later stage (Stage 03, user).
+
+Changes to 6.E (the rest of 6.E stays as written):
+1. **Ghost particles.** `kt_build_a(p; csr = true, ghosts = 0.0)` and `kt_build_b(p; dE0 = false, ghosts = 0.0)`:
+   if `ghosts > 0`, append two particles (rows 401, 402) with weight 0, `z = -ghosts` and `z = +ghosts`, `x = 1e-4`
+   (A) or `0.0` (B), all other coordinates 0, made TPS/`Dual` by the same `c(x)` as the other particles; the chirp
+   (A, p₇) and z-offset (B, p₆) knobs are applied to rows 1–400 only; the charge knob (p₅) multiplies all weights.
+   `KT_ROWS` is unchanged (rows ≤ 400).
+2. **E.3 (replaces the E.3 text above).** `k1 = collect(@vars(Descriptor(KT_NK, 1)))` (static, order 1; create it
+   once, before the outer testset's per-case loop, after `k`). Per case, with `ghosts = 1e-2` (A) or `1e-3` (B):
+   `fg = KnobTrack(p -> kt_build_a(p; ghosts = 1e-2))` (resp. `kt_build_b(p; ghosts = 1e-3)`), `Jg = GTPSA.jacobian(fg(k1))`,
+   `h = 1e-4`, `Jfd[:, j] = (fg(h .* e_j) .- fg(-h .* e_j)) ./ (2h)`. For every knob j:
+   `kt_norm(Jg[1:m-1, j] - Jfd[1:m-1, j]) <= 0.15 * kt_norm(Jfd[1:m-1, j])` and `kt_norm(Jfd[1:m-1, j]) > 0`; t_ref
+   row: `abs(Jg[m, j] - Jfd[m, j]) <= 1e-6 * maximum(abs, Jg[m, :])`. Comment in the test: AD holds the bin grid fixed,
+   FD would move it; the ghosts fix it, but knobs that move the ghosts (g, L, Kn1, patch) keep a 0.1–10% difference
+   (measured 2026-10-17, worst 0.097 for Kn1), so 0.15 only catches gross errors.
+3. **E.4:** `rtol = 1e-10` → `rtol = 1e-9` for the outputs `j in 1:m-1` (the t_ref output keeps `rtol = 1e-10`).
+4. **"dE_ref knob at 0":** with `dE0 = true`, `kt_build_b` builds the Branch without the final `Drift(L = 0.5)` (the
+   cavity is the last element). Bounds unchanged (`h = 1e-5`, `1e-5`). Comment: the drift is left out because of the
+   BeamTracking 0.8.7 double `pz` shift after a SaganCavity.
+5. Section 8's tolerance paragraph is superseded for E.3 and E.4 by items 2 and 3.
+
 ## 7. Data formats
 
 No change. `track_csr!` inputs may now carry TPS/`Dual` numbers as described in 6.D.1.
@@ -514,6 +557,10 @@ scalar 1e-15; frozen 6D block `rtol = 1e-10`. Float64 ramp reference (criterion 
     difference). Sensitivity, in a separate scratch process: with the old `L0 = sqrt(...)` line restored, lattice A's
     `track_csr!` with TPS knobs must abort (report).
 
+12. **6.H (amendment):** all 6.E assertions with 6.H pass; report per lattice the worst E.3 column ratio (value /
+    bound) and knob, the worst E.4 ratio, and the "dE_ref knob at 0" ratio. Criterion 5a (old ramp rule) must still
+    make the "dE_ref knob at 0" testset fail.
+
 ## 10. Build and run
 
 Test environment (scratch; this session's is already built):
@@ -550,6 +597,9 @@ None affecting implementation.
 | Ramp | For every SaganCavity (not `E_start != E_end`); Float64 results with `dE_ref = 0` unchanged to ≤ 1e-15 relative. |
 | `g = 0` series | Order ≥ 3 truncation documented, deferred. |
 | Zero-length chord | Guard in core `CSRGeometry` (6.F): primal direction, zero length, no derivatives, when the chord is exactly zero in primal. |
+| FD check | Coarse FD with the grid pinned by ghost particles, `h = 1e-4`, bound 0.15 per knob column (6.H). |
+| E.4 bound | `rtol = 1e-9` for coordinates (6.H). |
+| BeamTracking double `pz` shift after a SaganCavity | 2c: cavity last in the dE0 test, documented, upstream report drafted; CSR-side workaround in a separate Stage 03. |
 | `L0` at the lattice start | Use `L0²` directly in `upstream_drift_source` (6.G), both modes; Float64 changes at round-off accepted. |
 
 ## Spec changes
@@ -557,5 +607,6 @@ None affecting implementation.
 | Date | Change | Reason | Status |
 |---|---|---|---|
 | 2026-10-17 | Section 6.F added (guard for a zero-length chord in `CSRGeometry`, `src/geometry.jl`; test in `tps_collective_test.jl`); Sections 1, 2, 5, 9 (criterion 10), 13 updated. | spec-implementer stopped (Section 11): lattice A's zero-length patch aborts GTPSA in `atan(0, 0)`; the coordinator confirmed `sqrt` of a TPS zero aborts too. Latent since Stage 2a for any zero-length element. | Approved by the user |
+| 2026-10-17 | Section 6.H added (E.3 coarse FD with ghost particles, E.4 `rtol = 1e-9`, dE0 lattice without the final drift; docstring limits sentence on the BeamTracking bug); Sections 1, 6.D.1, 9 (criterion 12), 13 updated. | spec-implementer: 33 of 239 failed after 6.G; coordinator's diagnosis: AD holds the bin grid fixed (by design), FD moves it; E.4 round-off ≈ 4e-10; BeamTracking 0.8.7 double `pz` shift after a SaganCavity. | Approved by the user |
 | 2026-10-17 | Section 6.G added (`L0²` without `sqrt` in `upstream_drift_source`, `src/kernels/source_point.jl`); Sections 1, 2, 5, 6 (intro), 9 (criterion 11), 13 updated. | spec-implementer stopped again (Section 11): TPS `sqrt(0)` abort at the kick on the lattice start; the coordinator's hazard scan found no other site. | Approved by the user |
 | 2026-10-17 | 6.B.3 "three places" for `L_active > 0` in `sagan_slice_kernel!`: the file has five; all five changed. 6.E Descriptor-check item 2: the coordinates built as `reshape([...], size(v))`. | Editorial (spec-implementer's notes); no behavior change. | Applied |
