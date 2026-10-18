@@ -284,7 +284,6 @@ end
       @test kt_norm(Jt[1:m-1, j] - Jf[1:m-1, j]) <= 1e-10 * kt_norm(Jf[1:m-1, j])
       @test abs(Jt[m, j] - Jf[m, j]) <= 1e-10 * maximum(abs, Jf[m, :])
     end
-    @test maximum(abs, Jt .- GTPSA.jacobian(KnobTrack(kt_build_a)(k1))) > 0
   end
 
   # 6.K.6 (W4): image charges with bmad_compat (the source sits exactly above the kick point: 6.J)

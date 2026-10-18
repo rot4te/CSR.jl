@@ -122,7 +122,7 @@ function sagan_dt_ref(c::SaganSlice, s)
 end
 
 """
-    sagan_segment!(i, coords, val_rad_damping_on, val_rad_fluctuations_on, , , , m_order, Kn, Ks, q, q_gradient, a_spin, mass, P0c, a, b, len, s0, s1, last, inside)
+    sagan_segment!(i, coords, val_rad_damping_on, val_rad_fluctuations_on, ::Val{traveling_wave}, ::Val{has_mult}, ::Val{has_sol}, m_order, Kn, Ks, q, q_gradient, a_spin, mass, P0c, a, b, len, s0, s1, last, inside)
 
 Drift segment [a, b] (nominal length len) of the whole cavity, as BeamTracking's sagan_cavity_inside_drift!
 (inside = true: half ponderomotive kicks, standing wave only) or sagan_cavity_outside_drift!: half kicks of strength
