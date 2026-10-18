@@ -213,7 +213,7 @@ function upstream_drift_source(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint,
   beta2 = kp.beta^2
   fk = kp.floor_k
   f0 = geom.start
-  L0 = sqrt((fk.r[1] - f0.r[1])^2 + (fk.r[3] - f0.r[3])^2 + kp.y_source^2)
+  L0sq = (fk.r[1] - f0.r[1])^2 + (fk.r[3] - f0.r[3])^2 + kp.y_source^2   # squared distance (no sqrt: TPS abort at 0)
   # Lz is the z-component from the lattice start to the kick point
   Lz = (fk.r[1] - f0.r[1]) * sin(f0.theta) + (fk.r[3] - f0.r[3]) * cos(f0.theta)
   # Lsz0 is Ls from the lattice start to the kick point
@@ -225,7 +225,7 @@ function upstream_drift_source(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint,
   Lsz0 = add_mid(Lsz0, dmid)
   a = 1 / kp.gamma2
   b = 2 * (Lsz0 - dz - beta2 * Lz)
-  c = (Lsz0 - dz)^2 - beta2 * L0^2
+  c = (Lsz0 - dz)^2 - beta2 * L0sq
   ds_source = -(-b + sqrt(b^2 - 4a * c)) / (2a)
 
   rs = SVector(f0.r[1] + ds_source * sin(f0.theta), kp.y_source, f0.r[3] + ds_source * cos(f0.theta))
