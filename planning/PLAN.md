@@ -206,11 +206,11 @@ keep testing on Julia 1.13.1.
       the Stage 2c "dE_ref knob at 0" test with the final drift restored (`specs/stage2c.md` 6.H.4), update the
       `track_csr!` docstring "Limits" sentence and the compat entry for the BeamTracking release with the fix.
 
-**Handoff 2026-10-17.** Latest state: branch `stage/csr/01-stage2b` (committed by Claude), not pushed. Suite
-2215/2215 on 1 and 4 threads (7m40s, 7m22s); docs build clean (existing warnings). Next (user decides): Stage 2c
-(`track_csr!` with a TPS bunch; check that Beamlines/BeamTracking accept TPS element parameters; descriptor checks
-there), deferred review findings (Section 4), Phase 8 items (Section 10). The test environment is a scratch env
-(Section 2), rebuilt each session.
+**Handoff 2026-10-18.** Latest state: branch `stage/csr/02-stage2c` (from `stage/csr/01-stage2b`; committed by Claude,
+not pushed). Suite 2536/2536 on 1 and 4 threads at the end of Stage 2c (then one assertion removed); docs build clean
+(existing warnings). Next session: the BeamTracking.jl fix and PR (item 14, D50). A whole-codebase code review was
+started at the end of the 2026-10-18 session; its findings are in Section 9 if it finished, otherwise rerun it. The
+test environment is a scratch env (Section 2), rebuilt each session.
 
 Original notes for step 3 (from the reorg handoff, 2026-10-14): Goal: derivatives of a kick w.r.t. the geometry and the reference speed/energy (γ), and `s_kick`.
 Starting points (suggestions, not decided):
