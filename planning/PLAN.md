@@ -206,10 +206,16 @@ keep testing on Julia 1.13.1.
       the Stage 2c "dE_ref knob at 0" test with the final drift restored (`specs/stage2c.md` 6.H.4), update the
       `track_csr!` docstring "Limits" sentence and the compat entry for the BeamTracking release with the fix.
 
+15. **Later session (user, 2026-10-18): Stage 03, fixes from the whole-codebase review** (findings in Section 9,
+    "Whole-codebase review 2026-10-18"; all groups selected by the user; spec not written yet, branch
+    `stage/csr/03-<desc>` from the latest branch). After the BeamTracking PR (item 14). Groups: type stability (W1, W2,
+    W6), correctness (W3, W5), docs and checks (W4, S1, S2), cleanup and small items (S3–S10, incl. S6: the user
+    decides on removing the tracked `diagnostics/base/`, `diagnostics/head/` snapshots and the unused `Adapt`).
+
 **Handoff 2026-10-18.** Latest state: branch `stage/csr/02-stage2c` (from `stage/csr/01-stage2b`; committed by Claude,
 not pushed). Suite 2536/2536 on 1 and 4 threads at the end of Stage 2c (then one assertion removed); docs build clean
-(existing warnings). Next session: the BeamTracking.jl fix and PR (item 14, D50). A whole-codebase code review was
-started at the end of the 2026-10-18 session; its findings are in Section 9 if it finished, otherwise rerun it. The
+(existing warnings). Next session: the BeamTracking.jl fix and PR (item 14, D50). The whole-codebase review finished
+(Section 9); its fixes are Stage 03 (item 15), after the BeamTracking PR. The
 test environment is a scratch env (Section 2), rebuilt each session.
 
 Original notes for step 3 (from the reorg handoff, 2026-10-14): Goal: derivatives of a kick w.r.t. the geometry and the reference speed/energy (γ), and `s_kick`.
@@ -969,6 +975,32 @@ Hat costs ~5× the source solves of point sampling.
   comparisons (element 2 `g`, `L_chord`: 0.2% each), max 0.19. So in free space the two small cotangents are checked
   to ~1e-4 and ~5e-6 relative, not 1e-6.
 - `ad_rrule_test.jl` 208/208 on 1 and 4 threads; suite 1622/1622 on 4 threads (3m59s) and 1 thread (4m03s).
+
+### Whole-codebase review 2026-10-18 (code-reviewer, read-only, after Stage 2c)
+No critical findings. Checked without defects: primal branching everywhere; GTPSA zero-argument hazards (guarded or
+unreachable); thread safety (D45); kernels vs `reference.jl`; memory safety of `@inbounds` kernels; no type piracy.
+Coordinator verified by reading: W1, W2, W3; S6 (96 tracked files). Not run. User selected all groups for a later
+Stage 03 (Section 1, item 15).
+- **W1** `path_excess` (`src/utils/spline.jl:88`): `acc = 0.0` then `+=` Dual/TPS → `Union` (hot path of every source
+  evaluation). Fix: zero of the promoted number type.
+- **W2** `image_charge_kick` (`src/kernels/image_charges.jl:19`): `g_bend = 0.0` in the infinite-drift branch vs `T`.
+- **W3** `shifted_to_slice` (`ext/CSRBeamTrackingBeamlinesExt/slicing.jl:182`): `ShiftedPotential{F,T}` needs one `T`
+  for `s0` and `t0`; a TPS/`Dual` `p_over_q_ref` with a Float64 `s0` → `MethodError` on FourPotential/EMField
+  elements (was review S5 of Stage 2c). Fix: `promote`.
+- **W4** `csr_kick_pz` and its rrule allocate with Float64 (`number_type(geom)`, `1.0` defaults) and pass `pz_scale`
+  without `device_scalar` → fail on backends without Float64 (Metal). Document or fix (Phase 8).
+- **W5** γ ≤ 1 not checked (lcavity from rest): NaN in Float64, GTPSA abort for TPS. Fix: clear error.
+- **W6** no `@inferred` tests of the core with Dual/nested Dual/TPS (only `sagan_exit_P0c`); add a testset
+  (`path_excess`, `ddz_calc_csr`, `image_charge_kick`, `s_source_calc`, `I_csr_calc`, `with_fields`).
+- **S1** stale `slice_element` docstring (`src/interface.jl:25-26`, "SaganCavity not supported"); `docs/src/validation.md`
+  test list/count stale. **S2** `track_csr!` entry: check `params.ds_step > 0`, `length(centroid_start) == 6`.
+  **S3** two functions `kick_cell` (rename the adjoint one). **S4** "8 nodes" is 8 intervals/9 nodes (`types.jl:208`,
+  `tables.jl:22`); `hat_nodes` returns `Vector{Pair}`, documented `Vector{Tuple}`. **S5** compat `GTPSA = "~1.5.6"`
+  (internals used). **S6** tracked snapshots `diagnostics/base/`, `diagnostics/head/` (96 files, package copies with
+  the same UUID); `Adapt` in `[deps]` unused in `src/`. **S7** `SaganSlice` with 28 positional arguments (`@kwdef`).
+  **S8** `track_csr!` CPU-only, undocumented. **S9** boxed closure state in `geometry_active_indices`. **S10** last
+  SaganCavity slice passes `s1 = n_step*ds` (ulp vs `L`) to the kernel; `csr_apply_kicks_reference!` indexes before its
+  range test.
 
 ### Phase 7 Stage 2c, D49 (10-17/18, branch `stage/csr/02-stage2c`)
 - **What.** `track_csr!` tracks a bunch whose coordinates, weights, `t_ref`, `p_over_q_ref` are TPS/`Dual` in knobs in
