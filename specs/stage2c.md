@@ -614,9 +614,15 @@ Coordinator's diagnosis (`diagnostics/stage2c_compat_fd.jl`, `stage2c_images_dL.
   image kick has a kink in `s_kick` within ~1e-5 m (inference: a retarded source crossing a hard bend edge). Map-level
   FD therefore cannot check knobs that move kick points (L) with images, and smaller h drowns in the Float64 jitter.
 
-Changes to 6.K.6 (the rest stays): remove the coarse FD check; the E.1-style scalar check uses `1e-9` (relative to max
-|coordinate|) instead of `1e-12`; t_ref unchanged. Comment in the test: why FD is not used here (cite the two
-diagnostics) and that the testset guards the 6.J abort.
+Changes to 6.K.6 (the rest stays): remove the coarse FD check and the `fg = KnobTrack(...)` line it alone uses; the
+E.1-style scalar check uses `1e-9` (relative to max |coordinate|) instead of `1e-12`; t_ref unchanged. Put this
+comment as the first lines inside the testset:
+```julia
+  # Guards the 6.J zero-horizontal-distance guard (images + compat aborted GTPSA before). No finite-difference check:
+  # the image kick has kinks in s_kick within ~1e-5 m and the compat Float64 map jitters at ~1e-9, so map-level FD
+  # cannot check these knobs (diagnostics/stage2c_images_dL.jl, stage2c_compat_fd.jl). Scalar parts: 1e-9 (compat
+  # jitter; measured 7.3e-11).
+```
 
 ## 7. Data formats
 
