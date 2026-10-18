@@ -248,6 +248,19 @@ end
                                  Float64) === nothing
   end
 
+  @testset "SaganCavity window tests decide on primal values" begin
+    D(v, d) = ForwardDiff.Dual(v, d)
+    X = TC_EXT
+    # Point event at the slice start belongs to the slice (raw comparison orders Dual(0.25, 1) below Dual(0.25, 2))
+    @test X.sagan_in_window(D(0.25, 1.0), D(0.25, 2.0), D(0.5, 0.0), false) == X.sagan_in_window(0.25, 0.25, 0.5, false)
+    # Point event at the slice end belongs to the next slice
+    @test X.sagan_in_window(D(0.5, 0.0), D(0.25, 0.0), D(0.5, 1.0), false) == X.sagan_in_window(0.5, 0.25, 0.5, false)
+    # Segment fully inside [s0, s1]: the nominal length is returned with its own partials
+    r = X.sagan_overlap(D(0.25, 1.0), D(0.5, 0.0), D(0.25, -1.0), D(0.25, 2.0), D(0.75, 0.0))
+    @test ForwardDiff.value(r) == 0.25
+    @test ForwardDiff.partials(r)[1] == -1.0
+  end
+
   @testset "Descriptor check" begin
     # Last testset of the file: leaves another Descriptor current
     d1 = Descriptor(7, 1)
