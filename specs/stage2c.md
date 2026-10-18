@@ -505,6 +505,22 @@ Changes to 6.E (the rest of 6.E stays as written):
    BeamTracking 0.8.7 double `pz` shift after a SaganCavity.
 5. Section 8's tolerance paragraph is superseded for E.3 and E.4 by items 2 and 3.
 
+### 6.I Unit test of the SaganCavity window tests (amendment, 2026-10-18)
+
+spec-tester: with raw comparisons in `sagan_in_window`/`sagan_overlap` (criterion 5b) no test fails; the 6.E
+lattices never put `Dual`s at an exact tie. Add to `test/track_tps_collective_test.jl` a testset "SaganCavity window
+tests decide on primal values" (anywhere before "Descriptor check", which stays last), with
+`D(v, d) = ForwardDiff.Dual(v, d)` and `X = TC_EXT` (the `CSRBeamTrackingBeamlinesExt` module):
+1. `X.sagan_in_window(D(0.25, 1.0), D(0.25, 2.0), D(0.5, 0.0), false) == X.sagan_in_window(0.25, 0.25, 0.5, false)`
+   (both `true`: the event at the slice start belongs to the slice).
+2. `X.sagan_in_window(D(0.5, 0.0), D(0.25, 0.0), D(0.5, 1.0), false) == X.sagan_in_window(0.5, 0.25, 0.5, false)`
+   (both `false`: the event at the slice end belongs to the next slice).
+3. `r = X.sagan_overlap(D(0.25, 1.0), D(0.5, 0.0), D(0.25, -1.0), D(0.25, 2.0), D(0.75, 0.0))`:
+   `ForwardDiff.value(r) == 0.25` and `ForwardDiff.partials(r)[1] == -1.0` (segment fully inside: the nominal length
+   `len` is returned with its own partials).
+(ForwardDiff orders `Dual`s with equal values by their partials, PLAN.md Section 6, so raw comparisons fail each
+item.)
+
 ## 7. Data formats
 
 No change. `track_csr!` inputs may now carry TPS/`Dual` numbers as described in 6.D.1.
@@ -532,7 +548,8 @@ scalar 1e-15; frozen 6D block `rtol = 1e-10`. Float64 ramp reference (criterion 
 3. All pre-existing tests pass unmodified (only `runtests.jl` gains one `include`).
 4. **Float64 ramp reference.** Run `diagnostics/stage2c_ramp_reference.jl <scratchpad>/ramp_new.txt` on 1 thread
    (`-t 1`) with the new code and compare with `diagnostics/stage2c_ramp_dE0_reference.txt` (made with the code at
-   `2fdbe77`): `maximum(abs, new[1:400, :] .- ref[1:400, :]) <= 1e-15 * maximum(abs, ref[1:400, :])`, and the t_ref row
+   `2fdbe77`): `maximum(abs, new[1:400, :] .- ref[1:400, :]) <= 1e-14 * maximum(abs, ref[1:400, :])` (was 1e-15; 6.G
+   changes Float64 results at round-off, measured 2.49e-15, user 2026-10-18), and the t_ref row
    (row 401) equal within `1e-15` relative. Report both numbers. Do not modify the reference file or the script.
 5. **Sensitivity** (scratch session, `@eval` redefinitions; the repo is not modified):
    a. `csr_ref_energies` with the old rule (`ramp = E_start != E_end`, i.e. return `ramp = false` when `dE_ref` has
@@ -560,6 +577,10 @@ scalar 1e-15; frozen 6D block `rtol = 1e-10`. Float64 ramp reference (criterion 
 12. **6.H (amendment):** all 6.E assertions with 6.H pass; report per lattice the worst E.3 column ratio (value /
     bound) and knob, the worst E.4 ratio, and the "dE_ref knob at 0" ratio. Criterion 5a (old ramp rule) must still
     make the "dE_ref knob at 0" testset fail.
+
+13. **6.I (amendment):** the new testset passes; sensitivity (scratch, `@eval`): with raw comparisons in
+    `sagan_in_window` and `sagan_overlap` (criterion 5b), it fails. Re-run criterion 4 with the 1e-14 bound and the
+    new file alone (`-t 4`). A full-suite rerun is not required (only a testset is added).
 
 ## 10. Build and run
 
@@ -600,17 +621,20 @@ None affecting implementation.
 | FD check | Coarse FD with the grid pinned by ghost particles, `h = 1e-4`, bound 0.15 per knob column (6.H). |
 | E.4 bound | `rtol = 1e-9` for coordinates (6.H). |
 | BeamTracking double `pz` shift after a SaganCavity | 2c: cavity last in the dE0 test, documented, upstream report drafted; CSR-side workaround in a separate Stage 03. |
+| Sensitivity gaps | 5a by the `csr_ref_energies` unit testset (spec-tester), 5b by the 6.I unit testset; the lattice tests need not detect them (2026-10-18). |
+| Criterion 4 bound | 1e-14 relative for coordinates (t_ref 1e-15), 2026-10-18. |
 | `L0` at the lattice start | Use `L0²` directly in `upstream_drift_source` (6.G), both modes; Float64 changes at round-off accepted. |
 
 ## Spec changes
 
 | Date | Change | Reason | Status |
 |---|---|---|---|
+| 2026-10-18 | Section 6.I added (unit test of `sagan_in_window`/`sagan_overlap` with `Dual` ties); criterion 13; Section 13 rows. | spec-tester: criterion 5b undetected by the lattices. | Approved by the user |
 | 2026-10-17 | Section 6.F added (guard for a zero-length chord in `CSRGeometry`, `src/geometry.jl`; test in `tps_collective_test.jl`); Sections 1, 2, 5, 9 (criterion 10), 13 updated. | spec-implementer stopped (Section 11): lattice A's zero-length patch aborts GTPSA in `atan(0, 0)`; the coordinator confirmed `sqrt` of a TPS zero aborts too. Latent since Stage 2a for any zero-length element. | Approved by the user |
 | 2026-10-17 | Section 6.H added (E.3 coarse FD with ghost particles, E.4 `rtol = 1e-9`, dE0 lattice without the final drift; docstring limits sentence on the BeamTracking bug); Sections 1, 6.D.1, 9 (criterion 12), 13 updated. | spec-implementer: 33 of 239 failed after 6.G; coordinator's diagnosis: AD holds the bin grid fixed (by design), FD moves it; E.4 round-off ≈ 4e-10; BeamTracking 0.8.7 double `pz` shift after a SaganCavity. | Approved by the user |
 | 2026-10-17 | Section 6.G added (`L0²` without `sqrt` in `upstream_drift_source`, `src/kernels/source_point.jl`); Sections 1, 2, 5, 6 (intro), 9 (criterion 11), 13 updated. | spec-implementer stopped again (Section 11): TPS `sqrt(0)` abort at the kick on the lattice start; the coordinator's hazard scan found no other site. | Approved by the user |
 | 2026-10-17 | 6.B.3 "three places" for `L_active > 0` in `sagan_slice_kernel!`: the file has five; all five changed. 6.E Descriptor-check item 2: the coordinates built as `reshape([...], size(v))`. | Editorial (spec-implementer's notes); no behavior change. | Applied |
 | 2026-10-17 | 6.E: added testset "csr_ref_energies ramp with a dE_ref knob at 0" (before "Entry checks") in `test/track_tps_collective_test.jl`: `csr_ref_energies` returns `ramp = true` for a SaganCavity with a `dE_ref` knob at 0 (6.C.6), `E_start` equals `E_end` in value, and `E_start` is the entrance energy `LC_E0 * (1 + p4)` (independent of `p3`). Added as a unit check; the 6.E testset "dE_ref knob at 0 (lcavity ramp)" is unchanged. | Criterion 5a (sensitivity, `ramp = E_start != E_end`): the "dE_ref knob at 0" testset still passes under the old rule. Under the old rule the column-3 Jacobian moves by 2.3e-6 relative, inside its 1e-5 FD bound (AD-vs-FD ratio 0.51 old, 0.30 new), so the lattice testset cannot separate them. The unit testset fails under the old rule (`ramp` assertion). | Applied (test case following from 6.C.6 and D49) |
-| 2026-10-17 | Section 9, criterion 4 (Float64 ramp reference): bound `1e-15` relative, unchanged. Proposed: `1e-14` relative for coordinates (t_ref row unchanged at `1e-15`), because 6.G changes Float64 results at round-off by design. | Criterion 4 measured 2.487e-15 relative (`ramp_new_claude.txt` vs `stage2c_ramp_dE0_reference.txt`); with the `sqrt` line restored in `upstream_drift_source` the difference is 0.0, so the change is from 6.G. 6.G's text says "Float64 results change only at round-off", which the 1e-15 bound does not allow. Needs the user's decision (bound or 6.G form). | PROPOSED — needs user approval (not applied; criterion 4 reported as FAIL) |
-| 2026-10-17 | Section 9, criterion 5a and 12 ("the 'dE_ref knob at 0' testset must fail" under the old ramp rule). Proposed: 5a is detected by the new unit testset above, and the lattice testset is not expected to fail at its bound (1e-5). | The lattice testset passes under the old rule (see the row above: 2.3e-6 change against a 1e-5 bound); no bound in 6.H separates them, since FD noise at this step is about 3e-6. Tightening the bound would fail the new code at its own measured 3.0e-6. | PROPOSED — needs user approval |
-| 2026-10-17 | Section 9, criterion 5b (raw `sagan_in_window`/`sagan_overlap`): report only, per criterion text. Proposed: record that no test detects it. | Sensitivity run: the redefinition is active (a `Dual` tie differs), but the lattice A and lattice B Jacobians are bitwise identical (max relative difference 0.0), and the full file passes 253/253. No test can detect the raw comparisons with these lattices. | PROPOSED — coordinator decision (no change to tests) |
+| 2026-10-17 | Section 9, criterion 4 (Float64 ramp reference): bound `1e-15` relative, unchanged. Proposed: `1e-14` relative for coordinates (t_ref row unchanged at `1e-15`), because 6.G changes Float64 results at round-off by design. | Criterion 4 measured 2.487e-15 relative (`ramp_new_claude.txt` vs `stage2c_ramp_dE0_reference.txt`); with the `sqrt` line restored in `upstream_drift_source` the difference is 0.0, so the change is from 6.G. 6.G's text says "Float64 results change only at round-off", which the 1e-15 bound does not allow. Needs the user's decision (bound or 6.G form). Approved by the user (2026-10-18); criterion 4 updated |
+| 2026-10-17 | Section 9, criterion 5a and 12 ("the 'dE_ref knob at 0' testset must fail" under the old ramp rule). Proposed: 5a is detected by the new unit testset above, and the lattice testset is not expected to fail at its bound (1e-5). | The lattice testset passes under the old rule (see the row above: 2.3e-6 change against a 1e-5 bound); no bound in 6.H separates them, since FD noise at this step is about 3e-6. Tightening the bound would fail the new code at its own measured 3.0e-6. Approved by the user (2026-10-18) |
+| 2026-10-17 | Section 9, criterion 5b (raw `sagan_in_window`/`sagan_overlap`): report only, per criterion text. Proposed: record that no test detects it. | Sensitivity run: the redefinition is active (a `Dual` tie differs), but the lattice A and lattice B Jacobians are bitwise identical (max relative difference 0.0), and the full file passes 253/253. No test can detect the raw comparisons with these lattices. Superseded: the user chose a unit test (6.I, 2026-10-18) |

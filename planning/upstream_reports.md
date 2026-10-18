@@ -23,6 +23,15 @@ REL 20261014-0). Item 5 added 2026-10-14, items 6–8 2026-10-15.
 - Existing issues (GitHub issue search via WebFetch, titles only, summarized by a model: moderately reliable): none
   matching in bmad-ecosystem ("csr", 36 results) or BeamTracking.jl (`R_to_gamma`, `R_to_v`, `SaganCavity`: 0).
 
+**Refreshed 2026-10-17 (Bmad only):** `origin/main` is now `2b4db998d` (REL 20261018-0), after a fetch in
+`~/bmad-ecosystem`. `csr_and_space_charge_mod.f90` is byte-identical to `7c9df4059` (empty `git diff`; last change to
+the file is #2199, `7aac8dc48`). Lines 290, 339, 769, 907, 992, 1054, 1057, 1077, 1083, 1141, 1414–1426, 1469, 1609,
+1796 and 1817 were re-read: content matches the quotes above, so items 1–8 and the line numbers stand. The commits
+since `7c9df4059` (#2205, #2206, #2210, #2212, #2213) are FEL, openPMD and docs. PR #2085: still open, one commit
+`3dd783a67`, no reviews (GitHub page, WebFetch summary, moderately reliable), so the PR table is unchanged. Issue
+search "csr" (page 1 of 2 only, titles only): nothing matches items 1–8; #783 (no CSR in tilted SBends) is the only
+open one and unrelated. Page 2 not checked. No headers or items needed rewording.
+
 Already fixed upstream, no report needed: **V6** (swapped energy-interpolation weights), bmad-ecosystem PR #2199,
 merged 2026-10-06.
 
