@@ -67,7 +67,8 @@ GTPSA TPS).
   docstrings without references to planning files, `2ad0ca8`.
 - **`stage2a-fixes`** (created by the user from `stage2-tps` `2ad0ca8`, 2026-10-16; name as proposed in the session,
   verify): fixes from the Stage 2a review (D46, D47; Section 9), committed by the user.
-- **`stage/csr/01-stage2b`** (from `stage2a-fixes` `2ddb2b8`, 2026-10-17; branch and commits by Claude under the session's git rules, not pushed): Stage 2b (D48) and its review fixes, spec `specs/stage2b.md`. **Latest state.**
+- **`stage/csr/01-stage2b`** (from `stage2a-fixes` `2ddb2b8`, 2026-10-17; branch and commits by Claude under the session's git rules, not pushed): Stage 2b (D48) and its review fixes, spec `specs/stage2b.md`.
+- **`stage/csr/02-stage2c`** (from `stage/csr/01-stage2b` `2fdbe77`, 2026-10-17, by Claude, not pushed): Stage 2c (D49), spec `specs/stage2c.md`. **Latest state.**
 
 | Commit | Branch | Content |
 |---|---|---|
@@ -182,6 +183,8 @@ keep testing on Julia 1.13.1.
     spec-tester (pass) → code review (no critical; user approved findings 1, 2, 3, 5, 6, 9, 10, 11 as spec 6.G; 4, 12
     deferred to Phase 8; 7, 8 declined) → 6.G implemented and tested (pass) → 6.G.9 docstring sentence. Results in
     Section 9.
+
+13. **Session 2026-10-17 (later), branch `stage/csr/02-stage2c`. In progress.** User: Stage 2c next. Probe (`diagnostics/stage2c_tps_params_probe.jl`) then design D49; spec `specs/stage2c.md` (user approved, incl. the coordinator's additions: coordinate type check, SaganCavity RF parameters in the type/descriptor checks). Float64 ramp reference `diagnostics/stage2c_ramp_dE0_reference.txt` made at `2fdbe77`. Next: spec-implementer → spec-tester → code review.
 
 **Handoff 2026-10-17.** Latest state: branch `stage/csr/01-stage2b` (committed by Claude), not pushed. Suite
 2215/2215 on 1 and 4 threads (7m40s, 7m22s); docs build clean (existing warnings). Next (user decides): Stage 2c
@@ -320,6 +323,7 @@ weakdeps, or new extensions silently do not load.
 | D46 | 10-16 | Descriptor check (review finding 1, user chose "entry check" over switching `GTPSA.desc_current` temporarily or building every TPS from an input value): `planar_survey`, both `CSRGeometry(L, g, ...)` methods, `CSRKickPoint(geom, ...)`, `csr_bin_particles`, `csr_kick!`, `csr_kick_pz` first call `check_descriptors`, which raises an `ErrorException` naming the argument when a **dynamic-descriptor** TPS (`TPS{Float64,GTPSA.Dynamic}`) is not in `GTPSA.desc_current`. Static-descriptor TPS (the `@vars` default), complex TPS, and test particles are not checked. Uses GTPSA internals `getdesc`, `desc_current` (1.5.6). |
 | D47 | 10-16 | `csr_kick!` raises a clear `ErrorException` up front when `eltype(pz) <: AbstractFloat` but the kick's number type (promoted from z, q, geometry, s_kick, γ, kick_factor, pz_scale) is not (`Dual`, TPS): "use csr_kick_pz, or a pz with element type …". User chose this over docs only. Float `pz` with float inputs unchanged. |
 | D48 | 10-17 | Stage 2b (user's scope): test particles in 6D + knobs with a collective TPS kick. `csr_apply_test_kicks!` counts live test particles outside the bin range first (`count_outside`, `csr_count_outside_kernel!`; cell and range test in a shared primal helper `kick_cell`, so count and kick agree; NaN/Inf/far-off z counts as outside) and kicks none if any is outside (review finding 4). `check_test_particles` (equal lengths, a float `pz_t` cannot hold a TPS/`Dual` kick, descriptor check only when the kick is TPS) runs in `csr_kick!` before the tables and again in `csr_apply_test_kicks!`; `csr_kick!` kicks test particles before the bunch, so these errors leave `pz`, `pz_t` unchanged. Zero-length launches return early. ULP-level change of the TPS range test at cell edges accepted. Spec `specs/stage2b.md`. |
+| D49 | 10-17 | Stage 2c (`track_csr!` with a TPS bunch; in progress). Scope (user): knobs in element parameters (L, g_ref, patch, field knobs such as Kn1), bunch charge (TPS weights), reference energy (`p_over_q_ref`, `dE_ref`), initial coordinates. Probe `diagnostics/stage2c_tps_params_probe.jl`: BeamTracking 0.8.7/Beamlines 0.11.0 track TPS knobs correctly (vs FD) if the Bunch has TPS `t_ref`/`p_over_q_ref`; CSR.jl fails in `slice_tracking_method` (round), `SaganSlice` (Float64 fields), `track_csr_line!` (Float64 arrays). Tests: TPS order 1 vs ForwardDiff (Dual knobs through the same `track_csr!`, so Duals supported too) and central FD; order 2 vs nested Duals. A Bunch whose `t_ref`/`p_over_q_ref` cannot hold the promoted type of L, `p_over_q_ref`, `dE_ref`, patch parameters: clear error up front. Descriptor checks at entry: bunch coords, weight, t_ref, p_over_q_ref, `centroid_start`, test bunch, and the element parameters CSR reads (L, g_ref, patch, dE_ref, p_over_q_ref). lcavity ramp applies for every SaganCavity (not `E_start != E_end`), so a `dE_ref` knob at 0 keeps its derivative. A `g` knob on a straight element at TPS order ≥ 3 is truncated by `advance_floor`'s series (documented, deferred). |
 
 ---
 
