@@ -122,7 +122,9 @@ When `L`, `p_over_q_ref`, `dE_ref`, patch parameters or the RF parameters of a S
 reference time is too: the `Bunch` (and `test_bunch`) must be built with `t_ref`, `p_over_q_ref` and coordinates
 of a type that holds them (e.g. `t_ref = zero(k)` for a TPS knob `k`); otherwise `track_csr!` raises an error before
 tracking. Dynamic-descriptor TPS in the bunch, `centroid_start`, the test bunch or those element parameters (and
-`g_ref`) must be in GTPSA's current Descriptor (error otherwise).
+`g_ref`) must be in GTPSA's current Descriptor (error otherwise). Knobs in other parameters (e.g. `g_ref`, `Kn1`,
+alignment) are not part of this check; they also need TPS/`Dual` bunch coordinates (otherwise BeamTracking or
+`csr_kick!` raises an error).
 
 Limits: a SaganCavity with automatic `n_cells` and a knob in its length or RF frequency fails in BeamTracking
 (`round` of a TPS); derivatives of order ≥ 3 in a curvature knob of an element with `g = 0` are truncated.
@@ -232,7 +234,7 @@ SaganCavity RF parameters, which set the `SaganSlice` number type, and `p_over_q
 """
 function ref_param_type(line, context)
   r = csr_read_params(line, context)
-  return promote_type(Float64, map(typeof, vcat(r.L, r.patch, r.dE_ref, r.sagan_rf, r.p_over_q_ref))...)
+  return mapreduce(typeof, promote_type, vcat(r.L, r.patch, r.dE_ref, r.sagan_rf, r.p_over_q_ref); init = Float64)
 end
 
 """
@@ -294,10 +296,10 @@ function track_csr_line!(bunch::Bunch, line, context; params::CSRParams, csr_on 
     f = csr_ref_exit(f, Lv[i], gv[i], pp)
     fv[i] = f
   end
-  Tg = promote_type(Float64, map(typeof, Lv)..., map(typeof, gv)...)
+  Tg = promote_type(mapreduce(typeof, promote_type, Lv; init = Float64), mapreduce(typeof, promote_type, gv; init = Float64))
   L = convert(Vector{Tg}, Lv)
   g = convert(Vector{Tg}, gv)
-  Tf = promote_type(Tg, map(CSR.number_type, fv)...)
+  Tf = mapreduce(CSR.number_type, promote_type, fv; init = Tg)
   ref_exit = FloorPosition{Tf}[convert(FloorPosition{Tf}, f) for f in fv]
 
   # Centroid orbit (no CSR)
@@ -380,18 +382,19 @@ function track_csr_element!(bunch, ele, i, L, E_start, E_end, ramp, p_over_q_ref
   species = bunch.species
   mass = massof(species)
   n_step, ds = csr_n_step(L, params)
-  P0c = sqrt(E_start^2 - mass^2)   # Particles' reference momentum (used in an lcavity only)
+  TP = float(promote_type(typeof(E_start), typeof(E_end)))
+  P0c = convert(TP, sqrt(E_start^2 - mass^2))::TP   # Particles' reference momentum (used in an lcavity only)
   for i_step in 0:n_step
     if i_step != 0
       s = csr_slice(ele, i_step, n_step, ds, context)
       track_slice!(bunch, s, p_over_q_ref)
       isnothing(test_bunch) || track_slice!(test_bunch, s, p_over_q_ref)
-      ramp && (P0c = csr_slice_P0c(s))
+      ramp && (P0c = convert(TP, csr_slice_P0c(s))::TP)
     end
     s_kick = i_step * ds
     E_kick = CSR.csr_ref_energy(E_start, E_end, s_kick, L)
     gamma = E_kick / mass
-    pz_scale = ramp ? sqrt(E_kick^2 - mass^2) / P0c : one(P0c)
+    pz_scale = ramp ? sqrt(E_kick^2 - mass^2) / P0c : one(E_kick) / one(P0c)
     alive = bunch.coords.state .== BeamTracking.STATE_ALIVE
     kick_factor = (i_step == 0 || i_step == n_step) ? 0.5 : 1.0
     result = csr_kick!(pz, z, q, alive, geom, i, s_kick, gamma, species, params; kick_factor, pz_scale,

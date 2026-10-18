@@ -17,8 +17,18 @@ elements strictly between the source and kick elements (`add_mid`; used by `csr_
   rs = SVector(x * c + s_chord_source * s, kp.y_source, -x * s + s_chord_source * c) + es.floor0.r
 
   L_vec = kp.floor_k.r - rs
-  L = sqrt(L_vec[1]^2 + L_vec[2]^2 + L_vec[3]^2)
-  theta_L = atan(L_vec[1], L_vec[3])
+  L2 = L_vec[1]^2 + L_vec[2]^2 + L_vec[3]^2
+  Lp2 = L_vec[1]^2 + L_vec[3]^2
+  if primal(Lp2) == 0
+    # Source exactly above or below the kick point (image charges in compat mode): TPS atan/sqrt abort at 0 and
+    # Dual derivatives are not finite there; take the primal direction and a zero horizontal length.
+    theta_L = convert(typeof(Lp2), atan(primal(L_vec[1]), primal(L_vec[3])))
+    Lp = zero(Lp2)
+  else
+    theta_L = atan(L_vec[1], L_vec[3])
+    Lp = sqrt(Lp2)
+  end
+  L = primal(L2) == 0 ? zero(L2) : sqrt(L2)
 
   s0 = s_chord_source
   s1 = kp.s_chord_kick
@@ -44,7 +54,7 @@ elements strictly between the source and kick elements (`add_mid`; used by `csr_
       dL = path_excess(s0, s1, sp, dtheta_L)
       # Source ahead: Ls = -(excess + L_plane), so dL = Ls - L = -(excess + 2 L_plane) (as for downstream sources;
       # Bmad's 2ds is the chord-coordinate difference).
-      primal(ds) < 0 && (dL -= 2sqrt(L_vec[1]^2 + L_vec[3]^2))
+      primal(ds) < 0 && (dL -= 2Lp)
       theta_sl = spline_d1(sp, s0) - dtheta_L
       theta_lk = dtheta_L - spline_d1(sp, s1)
       theta_s = spline_d1(sp, s0) + es.theta_chord
@@ -56,7 +66,7 @@ elements strictly between the source and kick elements (`add_mid`; used by `csr_
     excess = path_excess(s1, ek.L_chord, ek.spline, modulo2(theta_L - ek.theta_chord, pi / 2); bmad_compat = bc)
     excess = add_mid(middle_excess(excess, geom, kp.ix_ele_kick+1:k.ix_ele_source-1, theta_L), dmid)
     excess += path_excess(0.0, s0, es.spline, modulo2(theta_L - es.theta_chord, pi / 2); bmad_compat = bc)
-    dL = -(excess + 2sqrt(L_vec[1]^2 + L_vec[3]^2))
+    dL = -(excess + 2Lp)
     theta_s = spline_d1(es.spline, s0) + es.theta_chord
     theta_sl = modulo2(theta_s - theta_L, pi / 2)
     theta_lk = modulo2(theta_L - (spline_d1(ek.spline, s1) + ek.theta_chord), pi / 2)
@@ -73,7 +83,7 @@ elements strictly between the source and kick elements (`add_mid`; used by `csr_
   end
 
   # The dL calculation above neglects y_source, so correct for it.
-  primal(kp.y_source) != 0 && (dL -= L - sqrt(L_vec[1]^2 + L_vec[3]^2))
+  primal(kp.y_source) != 0 && (dL -= L - Lp)
   k = with_fields(k; L_vec, L, theta_L, theta_sl, theta_lk, dL, s_chord_source, floor_s = FloorPosition(rs, theta_s))
   # Retardation Ls - βL = dL + L(1 - β). Bmad: L(1 - β) ≈ L/(2γ²) (error L/(8γ⁴)); the exact form matches the
   # infinite drifts outside the lattice, so ddz is continuous at the lattice ends.

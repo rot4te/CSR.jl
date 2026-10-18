@@ -244,8 +244,14 @@
     gt = CSRGeometry(L, gk, ck)
     g0 = CSRGeometry(L, g64, c64)
     for i in 1:3
-      @test scalar(gt.ele[i].theta_chord) == g0.ele[i].theta_chord
-      @test scalar(gt.ele[i].L_chord) == g0.ele[i].L_chord
+      if i == 2
+        @test scalar(gt.ele[i].theta_chord) == g0.ele[i].theta_chord
+        @test scalar(gt.ele[i].L_chord) == g0.ele[i].L_chord
+      else
+        # GTPSA's C libm and Julia's may differ in the last bit
+        @test scalar(gt.ele[i].theta_chord) ≈ g0.ele[i].theta_chord rtol = 4eps()
+        @test scalar(gt.ele[i].L_chord) ≈ g0.ele[i].L_chord rtol = 4eps()
+      end
     end
     @test g0.ele[2].L_chord == 0
     @test all(iszero, GTPSA.jacobian([gt.ele[2].L_chord, gt.ele[2].theta_chord]))

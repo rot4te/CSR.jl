@@ -27,7 +27,7 @@ end
 
 # Lattice A (Beamline), knobs p₁…p₇ (all with nominal value 0). ghosts > 0: two zero-weight ghost particles (rows 401,
 # 402) at z = ∓ghosts fix the bin grid for the FD check (E.3).
-function kt_build_a(p; csr = true, ghosts = 0.0)
+function kt_build_a(p; csr = true, ghosts = 0.0, params = KT_PARAMS_A)
   c(x) = x + zero(p[1])
   pq = KT_PQ * (1 + p[6])                                            # p6: reference energy
   line = [Drift(L = 0.2), SBend(L = 0.4 + p[2], g_ref = 1.5 + p[1], Kn0 = 1.5 + p[1]),   # p1: g, p2: L
@@ -47,7 +47,7 @@ function kt_build_a(p; csr = true, ghosts = 0.0)
   end
   w = w .* (1 + p[5])                                                # p5: bunch charge
   b = Bunch(v, nothing, w; species = TC_E, p_over_q_ref = c(pq), t_ref = c(0.0))
-  return b, bl, (; params = KT_PARAMS_A, csr_on = csr ? (ele -> true) : (ele -> false))
+  return b, bl, (; params, csr_on = csr ? (ele -> true) : (ele -> false))
 end
 
 # Lattice B (Branch with an lcavity). ghosts > 0: as in kt_build_a, with x = 0.
@@ -259,6 +259,82 @@ end
     r = X.sagan_overlap(D(0.25, 1.0), D(0.5, 0.0), D(0.25, -2.0), D(0.25, 2.0), D(0.75, 0.0))
     @test ForwardDiff.value(r) == 0.25
     @test ForwardDiff.partials(r)[1] == -2.0
+  end
+
+  # 6.K.5 (W6): a Float64 centroid_start removes the knob dependence of the default TPS centroid
+  @testset "Float64 centroid_start with a TPS bunch" begin
+    b, _, _ = kt_build_a(k1)
+    w = CSR.primal.(b.coords.weight)
+    c0 = [sum(CSR.primal.(b.coords.v[:, j]) .* w) / sum(w) for j in 1:6]
+    ft = KnobTrack(p -> ((bb, bl, kw) = kt_build_a(p); (bb, bl, merge(kw, (; centroid_start = c0)))))
+    vt = ft(k1)
+    v0 = ft(zeros(KT_NK))
+    m = length(v0)
+
+    # E.1 Scalar part
+    vs = scalar.(vt)
+    @test maximum(abs, vs[1:m-1] .- v0[1:m-1]) <= 1e-12 * maximum(abs, v0[1:m-1])
+    @test abs(vs[m] - v0[m]) <= 1e-14 * abs(v0[m])
+
+    # E.2 First order vs ForwardDiff
+    Jt = GTPSA.jacobian(vt)
+    Jf = ForwardDiff.jacobian(ft, zeros(KT_NK))
+    for j in 1:KT_NK
+      @test kt_norm(Jf[1:m-1, j]) > 0
+      @test kt_norm(Jt[1:m-1, j] - Jf[1:m-1, j]) <= 1e-10 * kt_norm(Jf[1:m-1, j])
+      @test abs(Jt[m, j] - Jf[m, j]) <= 1e-10 * maximum(abs, Jf[m, :])
+    end
+    @test maximum(abs, Jt .- GTPSA.jacobian(KnobTrack(kt_build_a)(k1))) > 0
+  end
+
+  # 6.K.6 (W4): image charges with bmad_compat (the source sits exactly above the kick point: 6.J)
+  @testset "Images with bmad_compat" begin
+    pc = CSRParams(n_bin = 40, ds_step = 0.1, n_shield_images = 2, beam_chamber_height = 0.01, bmad_compat = true)
+    fc = KnobTrack(p -> kt_build_a(p; params = pc))
+    fg = KnobTrack(p -> kt_build_a(p; params = pc, ghosts = 1e-2))
+
+    # E.1 Scalar part
+    v0 = fc(zeros(KT_NK))
+    vt = fc(k1)
+    m = length(v0)
+    vs = scalar.(vt)
+    @test maximum(abs, vs[1:m-1] .- v0[1:m-1]) <= 1e-12 * maximum(abs, v0[1:m-1])
+    @test abs(vs[m] - v0[m]) <= 1e-14 * abs(v0[m])
+
+    # E.2 First order vs ForwardDiff
+    Jt = GTPSA.jacobian(vt)
+    Jf = ForwardDiff.jacobian(fc, zeros(KT_NK))
+    for j in 1:KT_NK
+      @test kt_norm(Jf[1:m-1, j]) > 0
+      @test kt_norm(Jt[1:m-1, j] - Jf[1:m-1, j]) <= 1e-10 * kt_norm(Jf[1:m-1, j])
+      @test abs(Jt[m, j] - Jf[m, j]) <= 1e-10 * maximum(abs, Jf[m, :])
+    end
+
+    # Coarse FD check with the bin grid pinned by the ghosts (6.H.2 style)
+    Jg = GTPSA.jacobian(fg(k1))
+    h = 1e-4
+    Jfd = zeros(m, KT_NK)
+    for j in 1:KT_NK
+      ej = zeros(KT_NK)
+      ej[j] = 1.0
+      Jfd[:, j] = (fg(h .* ej) .- fg(-h .* ej)) ./ (2h)
+    end
+    for j in 1:KT_NK
+      @test kt_norm(Jg[1:m-1, j] - Jfd[1:m-1, j]) <= 0.15 * kt_norm(Jfd[1:m-1, j])
+      @test kt_norm(Jfd[1:m-1, j]) > 0
+      @test abs(Jg[m, j] - Jfd[m, j]) <= 1e-6 * maximum(abs, Jg[m, :])
+    end
+  end
+
+  # 6.K.7 (S4): the SaganCavity energy fields are Float64 for a voltage knob; sagan_exit_P0c is type-stable
+  @testset "Type-stable SaganCavity reference momentum" begin
+    cav = RFCavity(L = 1.0, voltage = 2e8 + k1[2], rf_frequency = 1.3e9, dE_ref = 1e8, phi0 = 0.0,
+                   zero_phase = PhaseRef.Accelerating, tracking_method = SaganCavity(n_cells = 4), traveling_wave = true)
+    ele = Branch([Marker(E_ref = LC_E0, species_ref = LC_E), cav]).beamlines[2].line[1]
+    sl = CSR.slice_element(ele, 0.0, 0.25, true, false)
+    @test sl isa TC_EXT.SaganSlice
+    @test sl.q_voltage isa GTPSA.TPS
+    @test (@inferred TC_EXT.sagan_exit_P0c(sl)) isa Float64
   end
 
   @testset "Descriptor check" begin

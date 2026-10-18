@@ -20,10 +20,10 @@ bt_ext() = Base.get_extension(BeamTracking, :BeamTrackingBeamlinesExt)
 
 Slice `[s0, s1]` of a SaganCavity element of length `L` (`csr_n_step` slicing), with the cavity constants
 BeamTracking computes for the whole element. `ele` holds the slice length, alignment, aperture and multipoles.
-`T`: number type of the energy, RF and length fields (promoted from the cavity's parameters; TPS or `Dual` with
-knobs).
+`TE`: number type of the energy fields (`E0`, `dE_ref`, `P0c0`, `p_over_q_ref`); `T`: RF and length fields
+(promoted from the cavity's parameters; TPS or `Dual` with knobs).
 """
-struct SaganSlice{E,TM,M,K,T<:Number}
+struct SaganSlice{E,TM,M,K,TE<:Number,T<:Number}
   ele::E
   tm::TM                  # The cavity's SaganCavity
   species::Species
@@ -31,10 +31,10 @@ struct SaganSlice{E,TM,M,K,T<:Number}
   q::Float64
   a::Float64              # Gyromagnetic anomaly
   traveling_wave::Bool
-  E0::T                   # Reference energy at the cavity entrance (E_ref - dE_ref)
-  dE_ref::T
-  P0c0::T                 # Reference momentum at the cavity entrance [eV]
-  p_over_q_ref::T         # Reference p_over_q of the cavity's beamline (exit energy)
+  E0::TE                  # Reference energy at the cavity entrance (E_ref - dE_ref)
+  dE_ref::TE
+  P0c0::TE                # Reference momentum at the cavity entrance [eV]
+  p_over_q_ref::TE        # Reference p_over_q of the cavity's beamline (exit energy)
   rf_omega::T
   t_phi0::T
   q_gradient::T
@@ -271,13 +271,16 @@ function slice_sagan(ele::LineElement, up, s0, L_slice, first, last, context)
   end
 
   q_gradient = CSR.primal(L_active) > 0 ? q * rp.voltage / L_active : 0.0
-  vals = (float(E0), dE_ref, sqrt(E0^2 - mass^2), float(p_over_q_ref), float(rf_omega), float(t_phi0),
-          q_gradient, float(q * rp.voltage), float(L_active), L, float(s0), float(s0 + L_slice))
-  T = float(promote_type(map(typeof, vals)...))
-  v = map(x -> convert(T, x), vals)
+  ve = (float(E0), dE_ref, sqrt(E0^2 - mass^2), float(p_over_q_ref))
+  TE = float(promote_type(map(typeof, ve)...))
+  vt = (float(rf_omega), float(t_phi0), q_gradient, float(q * rp.voltage), float(L_active), L, float(s0),
+        float(s0 + L_slice))
+  T = float(promote_type(map(typeof, vt)...))
   return SaganSlice(s, tm, species, float(mass), float(q), float(gyromagnetic_anomaly(species)), rp.traveling_wave,
-                    v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], float(n_cells), v[9], v[10], m_order, Bn, Bs,
-                    has_mult, has_sol, v[11], v[12], first, last)
+                    convert(TE, ve[1]), convert(TE, ve[2]), convert(TE, ve[3]), convert(TE, ve[4]),
+                    convert(T, vt[1]), convert(T, vt[2]), convert(T, vt[3]), convert(T, vt[4]), float(n_cells),
+                    convert(T, vt[5]), convert(T, vt[6]), m_order, Bn, Bs, has_mult, has_sol,
+                    convert(T, vt[7]), convert(T, vt[8]), first, last)
 end
 
 """
