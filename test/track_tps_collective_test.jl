@@ -256,9 +256,9 @@ end
     # Point event at the slice end belongs to the next slice
     @test X.sagan_in_window(D(0.5, 0.0), D(0.25, 0.0), D(0.5, 1.0), false) == X.sagan_in_window(0.5, 0.25, 0.5, false)
     # Segment fully inside [s0, s1]: the nominal length is returned with its own partials
-    r = X.sagan_overlap(D(0.25, 1.0), D(0.5, 0.0), D(0.25, -1.0), D(0.25, 2.0), D(0.75, 0.0))
+    r = X.sagan_overlap(D(0.25, 1.0), D(0.5, 0.0), D(0.25, -2.0), D(0.25, 2.0), D(0.75, 0.0))
     @test ForwardDiff.value(r) == 0.25
-    @test ForwardDiff.partials(r)[1] == -1.0
+    @test ForwardDiff.partials(r)[1] == -2.0
   end
 
   @testset "Descriptor check" begin
