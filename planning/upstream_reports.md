@@ -179,6 +179,10 @@ R = 1 gives v/c = 0.16034 vs 0.15882 from `beta_gamma_to_v(R_to_beta_gamma)`; ¹
 
 ## BeamTracking.jl: second issue (drafted 2026-10-17)
 
+**Filed 2026-10-18** as bmad-sim/BeamTracking.jl#367 (by the user). Fix: PR #369 (David Sagan,
+`fix-sagan-ref-momentum`, open on 2026-10-18); tested by us on 2026-10-18 and passes (PLAN.md Section 9, "BeamTracking
+PR #369 check"). Text below kept as drafted.
+
 **Title:** `pz` shifted twice after a SaganCavity (`bunch.p_over_q_ref` not updated for constant reference energy)
 
 Version: v0.8.7 `65e343f` (= `main` on 2026-10-17 per the GitHub commit list; no matching issue found by a

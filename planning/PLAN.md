@@ -188,35 +188,36 @@ keep testing on Julia 1.13.1.
     bunch in knobs; spec `specs/stage2c.md` with amendments 6.F–6.M (all approved by the user; results in Section 9).
     Next: the whole-codebase review (running at the end of the session); open items in Section 4.
 
-14. **Next session (user, 2026-10-18): fix the BeamTracking double `pz` shift upstream (D50).** Instead of a CSR-side
-    workaround (the planned Stage 03, dropped), fix the bug in a branch of `~/.julia/dev/BeamTracking.jl` and open a PR
-    to `bmad-sim/BeamTracking.jl`. Starting points:
-    - Bug: SaganCavity `universal!` (`ext/BeamTrackingBeamlinesExt/unpack_bl.jl:357` ff., v0.8.7 `65e343f`) sets
-      `bunch.p_over_q_ref` only for a `TimeDependentParam` (`:421`); the Sagan kernels already renormalize the
-      coordinates to the exit reference, so the next element shifts `pz` again (`:133`). Draft report with reproduction
-      in `planning/upstream_reports.md` ("BeamTracking.jl: second issue"); reproduction script
-      `diagnostics/stage2c_sagan_pq_check.jl` (reference particle `pz` −0.5 after a drift; expected 0).
-    - Suggested fix (from the draft, to be checked): set `bunch.p_over_q_ref` to the cavity's (exit) `p_over_q_ref` at
-      the end of the SaganCavity `universal!` for constant `p_over_q_ref`; check `TimeDependentParam`,
-      `ramp_update_each_particle`, and BeamTracking's own SaganCavity tests (`test/sagan_cavity_tracking_test.jl`).
-    - Git there: new branch in the BeamTracking checkout (do not commit to its existing branches); the PR is pushed
-      and opened by the user (Claude never pushes).
-    - CSR.jl side afterwards: `track_slice!(::SaganSlice)` (`ext/CSRBeamTrackingBeamlinesExt/sagan.jl`) copies the same
-      bookkeeping; update it to match the fixed BeamTracking (sliced == whole cavity, D22), rerun the lcavity tests and
-      the Stage 2c "dE_ref knob at 0" test with the final drift restored (`specs/stage2c.md` 6.H.4), update the
-      `track_csr!` docstring "Limits" sentence and the compat entry for the BeamTracking release with the fix.
+14. **BeamTracking double `pz` shift (D50). Upstream fix exists; checked 2026-10-18 (branch
+    `stage/csr/03-bt-pr369-check`, planning only).** The user filed issue bmad-sim/BeamTracking.jl#367; David Sagan
+    opened PR #369 "Fix SaganCavity reference momentum bookkeeping" (branch `fix-sagan-ref-momentum`, 1 commit, open,
+    needs 2 approvals; GitHub pages via WebFetch summary, 2026-10-18). User decision: test #369 instead of writing a
+    competing fix. Results (Section 9, "BeamTracking PR #369 check"): the reproduction and the `dE_ref`-knob-at-0
+    AD/FD mismatch are fixed; BeamTracking's suite and CSR.jl's full suite (2535/2535) pass on the PR.
+    - **Remaining, after #369 is merged and released (user: later session):** `track_slice!(::SaganSlice)`
+      (`ext/CSRBeamTrackingBeamlinesExt/sagan.jl:308`) still copies the 0.8.7 bookkeeping: no entrance shift from
+      `bunch.p_over_q_ref` to `E0_ref`, `bunch.p_over_q_ref` not set to the exit value, `RefState.beta_gamma_enter`
+      from the exit reference. Update it to match #369 (sliced == whole cavity, D22); add a test of sliced vs whole
+      cavity followed by an element (none exists, so the suite passes on #369 without the update); rerun the lcavity
+      tests and the Stage 2c "dE_ref knob at 0" test with the final drift restored (`specs/stage2c.md` 6.H.4); update
+      the `track_csr!` docstring "Limits" sentence and the compat entry for the BeamTracking release with the fix.
+      Spec not written yet; re-read the merged diff first (it may change before merging).
+    - User may post the results on #369 (not done by Claude).
 
 15. **Later session (user, 2026-10-18): Stage 03, fixes from the whole-codebase review** (findings in Section 9,
     "Whole-codebase review 2026-10-18"; all groups selected by the user; spec not written yet, branch
-    `stage/csr/03-<desc>` from the latest branch). After the BeamTracking PR (item 14). Groups: type stability (W1, W2,
+    `stage/csr/04-<desc>` from the latest branch; `03` is the #369 check branch). Not blocked by item 14. Groups: type stability (W1, W2,
     W6), correctness (W3, W5), docs and checks (W4, S1, S2), cleanup and small items (S3–S10, incl. S6: the user
     decides on removing the tracked `diagnostics/base/`, `diagnostics/head/` snapshots and the unused `Adapt`).
 
 **Handoff 2026-10-18.** Latest state: branch `stage/csr/02-stage2c` (from `stage/csr/01-stage2b`; committed by Claude,
 not pushed). Suite 2536/2536 on 1 and 4 threads at the end of Stage 2c (then one assertion removed); docs build clean
-(existing warnings). Next session: the BeamTracking.jl fix and PR (item 14, D50). The whole-codebase review finished
-(Section 9); its fixes are Stage 03 (item 15), after the BeamTracking PR. The
+(existing warnings). The whole-codebase review finished (Section 9); its fixes are item 15. The
 test environment is a scratch env (Section 2), rebuilt each session.
+
+**Update 2026-10-18 (later).** Branch `stage/csr/03-bt-pr369-check` (from `stage/csr/02-stage2c`; planning files
+only): BeamTracking PR #369 tested, passes (item 14). Next: item 15 (review fixes), and the CSR.jl `SaganSlice`
+follow-up once #369 is released (item 14).
 
 Original notes for step 3 (from the reorg handoff, 2026-10-14): Goal: derivatives of a kick w.r.t. the geometry and the reference speed/energy (γ), and `s_kick`.
 Starting points (suggestions, not decided):
@@ -352,7 +353,7 @@ weakdeps, or new extensions silently do not load.
 | D47 | 10-16 | `csr_kick!` raises a clear `ErrorException` up front when `eltype(pz) <: AbstractFloat` but the kick's number type (promoted from z, q, geometry, s_kick, γ, kick_factor, pz_scale) is not (`Dual`, TPS): "use csr_kick_pz, or a pz with element type …". User chose this over docs only. Float `pz` with float inputs unchanged. |
 | D48 | 10-17 | Stage 2b (user's scope): test particles in 6D + knobs with a collective TPS kick. `csr_apply_test_kicks!` counts live test particles outside the bin range first (`count_outside`, `csr_count_outside_kernel!`; cell and range test in a shared primal helper `kick_cell`, so count and kick agree; NaN/Inf/far-off z counts as outside) and kicks none if any is outside (review finding 4). `check_test_particles` (equal lengths, a float `pz_t` cannot hold a TPS/`Dual` kick, descriptor check only when the kick is TPS) runs in `csr_kick!` before the tables and again in `csr_apply_test_kicks!`; `csr_kick!` kicks test particles before the bunch, so these errors leave `pz`, `pz_t` unchanged. Zero-length launches return early. ULP-level change of the TPS range test at cell edges accepted. Spec `specs/stage2b.md`. |
 | D49 | 10-17 | Stage 2c (`track_csr!` with a TPS bunch; in progress). Scope (user): knobs in element parameters (L, g_ref, patch, field knobs such as Kn1), bunch charge (TPS weights), reference energy (`p_over_q_ref`, `dE_ref`), initial coordinates. Probe `diagnostics/stage2c_tps_params_probe.jl`: BeamTracking 0.8.7/Beamlines 0.11.0 track TPS knobs correctly (vs FD) if the Bunch has TPS `t_ref`/`p_over_q_ref`; CSR.jl fails in `slice_tracking_method` (round), `SaganSlice` (Float64 fields), `track_csr_line!` (Float64 arrays). Tests: TPS order 1 vs ForwardDiff (Dual knobs through the same `track_csr!`, so Duals supported too) and central FD; order 2 vs nested Duals. A Bunch whose `t_ref`/`p_over_q_ref` cannot hold the promoted type of L, `p_over_q_ref`, `dE_ref`, patch parameters: clear error up front. Descriptor checks at entry: bunch coords, weight, t_ref, p_over_q_ref, `centroid_start`, test bunch, and the element parameters CSR reads (L, g_ref, patch, dE_ref, p_over_q_ref). lcavity ramp applies for every SaganCavity (not `E_start != E_end`), so a `dE_ref` knob at 0 keeps its derivative. A `g` knob on a straight element at TPS order ≥ 3 is truncated by `advance_floor`'s series (documented, deferred). |
-| D50 | 10-18 | BeamTracking double `pz` shift after a SaganCavity (found in Stage 2c): fix upstream in a BeamTracking.jl branch and open a PR (user, next session), not a CSR-side workaround (the planned Stage 03 is dropped). CSR.jl's SaganCavity slices then follow the fixed BeamTracking. Section 1, item 14. |
+| D50 | 10-18 | BeamTracking double `pz` shift after a SaganCavity (found in Stage 2c): fix upstream in a BeamTracking.jl branch and open a PR (user, next session), not a CSR-side workaround (the planned Stage 03 is dropped). CSR.jl's SaganCavity slices then follow the fixed BeamTracking. Section 1, item 14. **Update 10-18:** upstream PR #369 (David Sagan, fixes issue #367) already does this; the user chose to test it rather than write a competing fix. It passes (Section 9); CSR.jl follow-up after its release. |
 
 ---
 
@@ -976,6 +977,28 @@ Hat costs ~5× the source solves of point sampling.
   to ~1e-4 and ~5e-6 relative, not 1e-6.
 - `ad_rrule_test.jl` 208/208 on 1 and 4 threads; suite 1622/1622 on 4 threads (3m59s) and 1 thread (4m03s).
 
+### BeamTracking PR #369 check, D50 (10-18, branch `stage/csr/03-bt-pr369-check`)
+- **Upstream state** (GitHub pages via WebFetch, model summaries, 2026-10-18): issue #367 (filed by the user, the
+  `upstream_reports.md` draft); PR #369 by David Sagan, "Fixes #367", 1 commit, open, ready for review, needs 2
+  approvals (mattsignorelli requested). `main` unchanged since v0.8.7 `65e343f`.
+- **Diff read** (PR branch installed with `Pkg.add(url, rev = "fix-sagan-ref-momentum")`, git-tree-sha1
+  `118d48cf4ee27390a602a20441389c5c953c7c80`; diffed against `~/.julia/dev/BeamTracking.jl` at `65e343f`): changes
+  only the SaganCavity `universal!` (`unpack_bl.jl`) and `sagan_cavity` (`sagan_cavity_bl.jl`, now takes the exit
+  `p1_over_q_ref` as an argument), plus a testset "SaganCavity reference momentum" in
+  `test/BeamlinesExt/beamlines_sagan_cavity_test.jl`. A time-dependent reference is evaluated once at `t_enter`;
+  `RefState.beta_gamma_enter` uses `E0_ref = E1_ref - dE_ref` (was the exit reference); particles are shifted from
+  `bunch.p_over_q_ref` to `E0_ref` at entry when they differ (`≈` on `num_lower` values, as the generic
+  `universal!`); after `launch!`, `bunch.p_over_q_ref = p1_over_q_ref` (exit). Alignment/aperture get `p1_over_q_ref`.
+- **Results on the PR** (scratch envs built by `diagnostics/bt_pr369_env.jl`: PR and local 0.8.7, both with dev CSR.jl
+  and Beamlines 0.11.0):
+  `diagnostics/stage2c_sagan_pq_check.jl`: `pz` after the drifts −0.500005 (0.8.7) → 0 (`n_cells = 4`) and
+  −2.2e-16 (`n_cells = 0`); `bunch` E_ref = exit E_ref after the cavity. `diagnostics/stage2c_dE0_bt.jl`: TPS/FD
+  ratio 0.5 → 1.0 for `dE_ref` = 0 + knob followed by a drift; 1.0 in all four cases; per-coordinate TPS = FD after
+  the drift. BeamTracking `Pkg.test` on `-t 4`: passed (Beamlines set 142/142). CSR.jl full suite on `-t 4`:
+  2535/2535 (12m51s). Not done: running the PR's new tests against 0.8.7 (author reports 7 failures, 1 error).
+- **CSR.jl impact.** None now: no test compares a sliced cavity followed by another element with whole-cavity
+  tracking. After the release, `track_slice!(::SaganSlice)` must follow #369 (Section 1, item 14).
+
 ### Whole-codebase review 2026-10-18 (code-reviewer, read-only, after Stage 2c)
 No critical findings. Checked without defects: primal branching everywhere; GTPSA zero-argument hazards (guarded or
 unreachable); thread safety (D45); kernels vs `reference.jl`; memory safety of `@inbounds` kernels; no type piracy.
@@ -1257,7 +1280,7 @@ Stage 03 (Section 1, item 15).
 | 4 | KernelAbstractions kernels | done (GPU: particle side + CPU tables, Stage C) |
 | 5 | Shielding (image charges) | done (+ D20, D24, V9) |
 | 6 | AD: steps 0–2 particles (done); step 3 geometry/γ via implicit differentiation of the source root | done (3a forward, 3b rrules, D30 cheaper pullback) |
-| 7 | TPS: generic root (done), frozen-wake test particles (done), `track_csr!` with a TPS test bunch (done), full collective TPS (Stage 2, D37: 2a done + review fixes D46, D47; 2b done (D48); 2c done (D49)) (D33–D38); tests: first order = Jacobian, second = ForwardDiff Hessian | done (BeamTracking SaganCavity `pz` fix upstream pending, D50) |
+| 7 | TPS: generic root (done), frozen-wake test particles (done), `track_csr!` with a TPS test bunch (done), full collective TPS (Stage 2, D37: 2a done + review fixes D46, D47; 2b done (D48); 2c done (D49)) (D33–D38); tests: first order = Jacobian, second = ForwardDiff Hessian | done (BeamTracking SaganCavity `pz` fix: PR #369 open, tested 10-18; CSR.jl `SaganSlice` follow-up after its release, D50) |
 | 8 | FFT convolution (`CSRAbstractFFTsExt`) for large n_bin; benchmarks; GPU wake table (isbits geometry via Adapt; work struct immutable since D29; errors/recursion in the source search); issue for a BeamTracking collective-step hook (route b); test-particle backend handling (review finding 2; Stage 2b review findings 4, 12; Section 4) | not started |
 
 Follow-ups not requested: per-element `ds_step` (Bmad `csr_ds_step`); caching slices per element (rebuilt every step);
