@@ -43,8 +43,15 @@ function CSRGeometry(L::AbstractVector, g::AbstractVector, ref_exit::AbstractVec
     floor1 = cfloor(ref_floor1, i + 1)
 
     dr = floor1.r - floor0.r
-    theta_chord = atan(dr[1], dr[3])
-    L_chord = sqrt(dr[1]^2 + dr[3]^2)
+    if primal(dr[1]) == 0 && primal(dr[3]) == 0
+      # Zero-length chord (e.g. a marker): TPS atan/sqrt abort at 0 and Dual derivatives are not finite there. The
+      # chord is below the 1e-8 threshold below, so its primal direction is enough.
+      theta_chord = convert(T, atan(primal(dr[1]), primal(dr[3])))
+      L_chord = zero(T)
+    else
+      theta_chord = atan(dr[1], dr[3])
+      L_chord = sqrt(dr[1]^2 + dr[3]^2)
+    end
     spline = zero(SVector{4,T})
     dL_s = zero(T)
 

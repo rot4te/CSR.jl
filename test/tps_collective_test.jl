@@ -233,6 +233,27 @@
     @test any(!iszero, pz32)
   end
 
+  @testset "Zero-length element in a TPS geometry" begin
+    k = @vars(Descriptor(2, 2))
+    L = [0.3, 0.0, 0.3]
+    g64 = [1.0, 0.0, 1.0]
+    gk = [1.0 + k[1], zero(k[1]), 1.0 + k[2]]
+    c64 = zeros(4, 6)
+    c64[:, 1] .= [1e-4, 2e-4, 2e-4, 3e-4]     # rows 2 and 3 equal: element 2's chord is exactly zero
+    ck = map(x -> x + zero(k[1]), c64)
+    gt = CSRGeometry(L, gk, ck)
+    g0 = CSRGeometry(L, g64, c64)
+    for i in 1:3
+      @test scalar(gt.ele[i].theta_chord) == g0.ele[i].theta_chord
+      @test scalar(gt.ele[i].L_chord) == g0.ele[i].L_chord
+    end
+    @test g0.ele[2].L_chord == 0
+    @test all(iszero, GTPSA.jacobian([gt.ele[2].L_chord, gt.ele[2].theta_chord]))
+    gd = CSRGeometry(L, [1.0 + ForwardDiff.Dual(0.0, 1.0), 0.0, 1.0], c64)
+    @test all(isfinite, ForwardDiff.partials(gd.ele[2].theta_chord))
+    @test ForwardDiff.value(gd.ele[2].L_chord) == 0
+  end
+
   # Last: leaves GTPSA.desc_current at a descriptor no later code uses.
   @testset "Descriptor check" begin
     errmsg(f) = try f(); "" catch err; sprint(showerror, err) end
