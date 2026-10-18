@@ -1,7 +1,8 @@
 # Stage 2c (2026-10-17): find every place where track_csr! with a TPS bunch in knobs calls a GTPSA function that aborts
 # the process at a zero scalar part (sqrt, log, atan2, div, inv). GTPSA's in-place functions are overwritten in this
 # process only: at a zero argument they record the CSR.jl call site, shift the scalar part by 1e-200 and continue.
-# Lattices as specs/stage2c.md 6.E (A: Beamline, B: Branch with an lcavity, B with dE_ref knob at 0).
+# Lattices as specs/stage2c.md 6.E (A: Beamline, B: Branch with an lcavity, B with dE_ref knob at 0); since 2026-10-18
+# also images, bmad_compat, sliced_centroid = false, and a Branch with the SaganCavity first (code review W4).
 # Run: julia --project=<test env> stage2c_tps_zero_hazards.jl
 using CSR, BeamTracking, Beamlines, GTPSA
 using GTPSA: RealTPS
@@ -80,11 +81,33 @@ function kt_build_b(p; dE0 = false)
 end
 
 k = collect(@vars(Descriptor(7, 2)))
-for (name, build) in (("A", kt_build_a), ("B", kt_build_b), ("B dE0", p -> kt_build_b(p; dE0 = true)))
+img(kw) = merge(kw, (; params = CSRParams(n_bin = kw.params.n_bin, ds_step = kw.params.ds_step, n_shield_images = 2,
+                                          beam_chamber_height = 0.01)))
+compat(kw) = merge(kw, (; params = CSRParams(n_bin = kw.params.n_bin, ds_step = kw.params.ds_step, bmad_compat = true)))
+imgcompat(kw) = merge(kw, (; params = CSRParams(n_bin = kw.params.n_bin, ds_step = kw.params.ds_step, n_shield_images = 2,
+                                                beam_chamber_height = 0.01, bmad_compat = true)))
+unsliced(kw) = merge(kw, (; sliced_centroid = false))
+function kt_build_cavfirst(p)   # Branch with the SaganCavity first (kick at s = 0 of a cavity), then bends
+  c(x) = x + zero(p[1])
+  cav = RFCavity(L = 1.0 + p[7], voltage = 2e8 * (1 + p[2]), rf_frequency = 1.3e9, dE_ref = 1e8 * (1 + p[3]), phi0 = 0.0,
+                 zero_phase = PhaseRef.Accelerating, tracking_method = SaganCavity(n_cells = 4), traveling_wave = true)
+  bends = [SBend(L = 0.1, g_ref = 0.5 + p[1], Kn0 = 0.5 + p[1]) for _ in 1:4]
+  br = Branch([Marker(E_ref = LC_E0 * (1 + p[4]), species_ref = TC_E), cav, bends...])
+  n = 400; z = collect(range(-6e-4, 6e-4; length = n)); w = gaussian.(z, 1e-4); w .*= (1e-9 / E_CHARGE) / sum(w)
+  v0 = zeros(n, 6); v0[:, 5] .= z; v = c.(v0)
+  b = Bunch(v, nothing, w .* (1 + p[5]); species = TC_E, p_over_q_ref = c(BeamTracking.E_to_R(TC_E, LC_E0 * (1 + p[4]))),
+            t_ref = c(0.0))
+  return b, br, (; params = CSRParams(n_bin = 40, ds_step = 0.05))
+end
+cases = (("A", kt_build_a, identity), ("B", kt_build_b, identity), ("B dE0", p -> kt_build_b(p; dE0 = true), identity),
+         ("A images", kt_build_a, img), ("A compat", kt_build_a, compat), ("A images+compat", kt_build_a, imgcompat),
+         ("B images", kt_build_b, img), ("A unsliced centroid", kt_build_a, unsliced),
+         ("cavity first", kt_build_cavfirst, identity), ("cavity first images", kt_build_cavfirst, img))
+for (name, build, mod) in cases
   empty!(HAZ)
   b, lat, kw = build(k)
-  t = @elapsed track_csr!(b, lat; kw...)
-  println("== lattice ", name, " (", round(t; digits = 1), " s): ", length(HAZ), " hazard sites")
+  t = @elapsed track_csr!(b, lat; mod(kw)...)
+  println("== ", name, " (", round(t; digits = 1), " s): ", length(HAZ), " hazard sites"); flush(stdout)
   for (key, n) in sort(collect(HAZ); by = first)
     println("  ", n, "×  ", key)
   end
