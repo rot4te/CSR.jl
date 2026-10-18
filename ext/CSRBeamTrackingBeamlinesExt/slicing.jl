@@ -61,7 +61,7 @@ function slice_tracking_method(tm, frac, first, last, bp, bm, rp)
   end
   if tm isa AbstractSymplectic
     fringe_at = fringe_at_ends(has_fringe_in(tm.fringe_at) && first, has_fringe_out(tm.fringe_at) && last)
-    n_steps = tm.n_steps > 0 ? max(1, round(Int, tm.n_steps * frac)) : -1
+    n_steps = tm.n_steps > 0 ? max(1, round(Int, tm.n_steps * CSR.primal(frac))) : -1
     return typeof(tm)(; order = tm.order, n_steps, ds_step = tm.ds_step,
       radiation_damping_on = tm.radiation_damping_on, radiation_fluctuations_on = tm.radiation_fluctuations_on,
       fringe_at, ibs_damping_on = tm.ibs_damping_on, ibs_fluctuations_on = tm.ibs_fluctuations_on,
@@ -70,7 +70,7 @@ function slice_tracking_method(tm, frac, first, last, bp, bm, rp)
     return Exact(; fringe_at = fringe_at_ends(has_fringe_in(tm.fringe_at) && first, has_fringe_out(tm.fringe_at) && last))
   elseif tm isa RungeKutta
     # No fringe kernels: only the step count is rescaled (ds_step is kept as is).
-    n_steps = tm.n_steps > 0 ? max(1, round(Int, tm.n_steps * frac)) : nothing
+    n_steps = tm.n_steps > 0 ? max(1, round(Int, tm.n_steps * CSR.primal(frac))) : nothing
     ds_step = tm.n_steps > 0 ? nothing : tm.ds_step
     return RungeKutta(; ds_step, n_steps, ibs_damping_on = tm.ibs_damping_on, ibs_fluctuations_on = tm.ibs_fluctuations_on)
   end
@@ -129,7 +129,7 @@ Alignment of the slice [s0, s0 + Ls] such that the slices compose to the misalig
 Bend: the element's alignment transform at the slice center is the slice's chord-midpoint transform.
 """
 function slice_alignment(a::AlignmentParams, bp, L, s0, Ls)
-  if !isactive(bp) || (bp.g_ref == 0 && bp.tilt_ref == 0)
+  if !isactive(bp) || (CSR.primal(bp.g_ref) == 0 && CSR.primal(bp.tilt_ref) == 0)
     s_del = s0 + Ls / 2 - L / 2
     d = quat_rotate((0, 0, s_del), rot_quaternion(a.x_rot, a.y_rot, a.tilt))
     return AlignmentParams(a.x_offset + d[1], a.y_offset + d[2], a.z_offset + d[3] - s_del, a.x_rot, a.y_rot, a.tilt)
@@ -213,14 +213,14 @@ function slice_rf(rp::RFParams, ele, frac)
 end
 
 function CSR.csr_sliceable(ele::LineElement; context = Beamlines.NULL_CONTEXT)
-  return deval(ele.UniversalParams, context).L != 0 && !isactive(ele.MapParams)
+  return CSR.primal(deval(ele.UniversalParams, context).L) != 0 && !isactive(ele.MapParams)
 end
 
 function CSR.slice_element(ele::LineElement, s0, L_slice, first::Bool, last::Bool;
                            context = Beamlines.NULL_CONTEXT)
   up = deval(ele.UniversalParams, context)
   L = float(up.L)
-  L > 0 || error("slice_element: element length must be positive (L = $L)")
+  CSR.primal(L) > 0 || error("slice_element: element length must be positive (L = $L)")
   frac = L_slice / L
   ap = deval(ele.AlignmentParams, context)
   bp = deval(ele.BendParams, context)
@@ -237,7 +237,7 @@ function CSR.slice_element(ele::LineElement, s0, L_slice, first::Bool, last::Boo
   s = LineElement()
   if isactive(mp)
     # A map cannot be split: only the whole element is allowed (tracked without CSR, as Bmad does for Taylor).
-    (first && last && L_slice == L) || error("slice_element: map elements cannot be sliced")
+    (first && last && CSR.primal(L_slice) == CSR.primal(L)) || error("slice_element: map elements cannot be sliced")
     s.UniversalParams = up
     s.MapParams = mp
   else

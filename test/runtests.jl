@@ -27,4 +27,5 @@ include("utils.jl")
   include("track_csr_test.jl")
   include("lcavity_test.jl")
   include("track_tps_test.jl")
+  include("track_tps_collective_test.jl")
 end

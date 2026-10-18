@@ -20,8 +20,10 @@ bt_ext() = Base.get_extension(BeamTracking, :BeamTrackingBeamlinesExt)
 
 Slice `[s0, s1]` of a SaganCavity element of length `L` (`csr_n_step` slicing), with the cavity constants
 BeamTracking computes for the whole element. `ele` holds the slice length, alignment, aperture and multipoles.
+`T`: number type of the energy, RF and length fields (promoted from the cavity's parameters; TPS or `Dual` with
+knobs).
 """
-struct SaganSlice{E,TM,M,K}
+struct SaganSlice{E,TM,M,K,T<:Number}
   ele::E
   tm::TM                  # The cavity's SaganCavity
   species::Species
@@ -29,24 +31,24 @@ struct SaganSlice{E,TM,M,K}
   q::Float64
   a::Float64              # Gyromagnetic anomaly
   traveling_wave::Bool
-  E0::Float64             # Reference energy at the cavity entrance (E_ref - dE_ref)
-  dE_ref::Float64
-  P0c0::Float64           # Reference momentum at the cavity entrance [eV]
-  p_over_q_ref::Float64   # Reference p_over_q of the cavity's beamline (exit energy)
-  rf_omega::Float64
-  t_phi0::Float64
-  q_gradient::Float64
-  q_voltage::Float64
+  E0::T                   # Reference energy at the cavity entrance (E_ref - dE_ref)
+  dE_ref::T
+  P0c0::T                 # Reference momentum at the cavity entrance [eV]
+  p_over_q_ref::T         # Reference p_over_q of the cavity's beamline (exit energy)
+  rf_omega::T
+  t_phi0::T
+  q_gradient::T
+  q_voltage::T
   n_cells::Float64
-  L_active::Float64
-  L::Float64
+  L_active::T
+  L::T
   m_order::M
   Bn::K                   # Multipole field strengths (BeamTracking: Kn * p_over_q at the entrance energy)
   Bs::K
   has_mult::Bool
   has_sol::Bool
-  s0::Float64
-  s1::Float64
+  s0::T
+  s1::T
   first::Bool
   last::Bool
 end
@@ -61,15 +63,18 @@ end
 """
     sagan_overlap(a, b, len, s0, s1)
 
-Length of segment [a, b] (nominal length len) inside [s0, s1]; the nominal length if it is fully inside.
+Length of segment [a, b] (nominal length len) inside [s0, s1]; the nominal length if it is fully inside. Decided on
+primal values (`Dual`s at exact boundary ties compare partials otherwise; D22 relies on exact ties).
 """
-@inline sagan_overlap(a, b, len, s0, s1) = (a >= s0 && b <= s1) ? len : max(zero(len), min(b, s1) - max(a, s0))
+@inline sagan_overlap(a, b, len, s0, s1) = (CSR.primal(a) >= CSR.primal(s0) && CSR.primal(b) <= CSR.primal(s1)) ? len :
+                                           CSR.primal_max(zero(len), CSR.primal_min(b, s1) - CSR.primal_max(a, s0))
 """
     sagan_in_window(p, s0, s1, last)
 
-Whether a point event at `p` belongs to slice `[s0, s1]`: `s0 ≤ p < s1`, or `p ≤ s1` for the last slice.
+Whether a point event at `p` belongs to slice `[s0, s1]`: `s0 ≤ p < s1`, or `p ≤ s1` for the last slice. Decided on
+primal values (`Dual`s at exact boundary ties compare partials otherwise; D22 relies on exact ties).
 """
-@inline sagan_in_window(p, s0, s1, last) = p >= s0 && (p < s1 || last)
+@inline sagan_in_window(p, s0, s1, last) = CSR.primal(p) >= CSR.primal(s0) && (CSR.primal(p) < CSR.primal(s1) || last)
 
 """
     sagan_P0c_at(c, s, inclusive)
@@ -78,7 +83,7 @@ Reference momentum after the cell kicks at p < s (p <= s if inclusive), applied 
 """
 function sagan_P0c_at(c::SaganSlice, s, inclusive)
   P0c = c.P0c0
-  before(p) = p < s || (inclusive && p <= s)
+  before(p) = CSR.primal(p) < CSR.primal(s) || (inclusive && CSR.primal(p) <= CSR.primal(s))
   Lo = (c.L - c.L_active) / 2
   if c.n_cells == 0
     before(Lo + c.L_active / 2) && (P0c += BeamTracking.dpc_given_dE(P0c, c.dE_ref, c.mass))
@@ -127,7 +132,7 @@ as the cell kicks); only the drift is split, and drifts compose exactly, so slic
 @inline function sagan_segment!(i, coords, val_rad_damping_on, val_rad_fluctuations_on, ::Val{traveling_wave},
                                 ::Val{has_mult}, ::Val{has_sol}, m_order, Kn, Ks, q, q_gradient, a_spin, mass, P0c,
                                 a, b, len, s0, s1, last, inside) where {traveling_wave, has_mult, has_sol}
-  len > 0 || return nothing
+  CSR.primal(len) > 0 || return nothing
   pond = inside && !traveling_wave
   beta0 = P0c / sqrt(P0c^2 + mass^2)
   gamma0 = P0c / (mass * beta0)
@@ -137,7 +142,7 @@ as the cell kicks); only the drift is split, and drifts compose exactly, so slic
                                                       q, m_order, Kn, Ks, a_spin, mass, P0c, beta0, len / 2)
   end
   d = sagan_overlap(a, b, len, s0, s1)
-  if d > 0
+  if CSR.primal(d) > 0
     if has_sol
       BeamTracking.exact_solenoid!(i, coords, Kn[1], beta0, gamma0 * gamma0, mass / P0c, nothing, d)
     else
@@ -169,22 +174,22 @@ function sagan_slice_kernel!(i, coords, val_rad_damping_on, val_rad_fluctuations
     sa, sb, len, s0, s1, last, inside)
 
   seg!(qp, P0c, 0.0, Lo, Lo, false)
-  if L_active > 0 && sagan_in_window(Lo, s0, s1, last)
+  if CSR.primal(L_active) > 0 && sagan_in_window(Lo, s0, s1, last)
     BeamTracking.sagan_cavity_fringe!(i, coords, a, q_gradient, rf_omega, t_phi0, t_ref, mass, P0c, +1)
   end
 
   if n_cells == 0
     h = L_active / 2
-    L_active > 0 && seg!(qp, P0c, Lo, Lo + h, h, true)
+    CSR.primal(L_active) > 0 && seg!(qp, P0c, Lo, Lo + h, h, true)
     if sagan_in_window(Lo + h, s0, s1, last)
-      BeamTracking.sagan_cavity_kick!(i, coords, a, L_active > 0 ? q_gradient * L_active : q_voltage,
+      BeamTracking.sagan_cavity_kick!(i, coords, a, CSR.primal(L_active) > 0 ? q_gradient * L_active : q_voltage,
                                       rf_omega, t_phi0, t_ref, mass, P0c)
       dP0c = BeamTracking.dpc_given_dE(P0c, dE_ref, mass)
       BeamTracking.reference_momentum_shift!(i, coords, P0c, dP0c, Val{true}())
       P0c += dP0c
       qp = q * c_l / P0c
     end
-    L_active > 0 && seg!(qp, P0c, Lo + h, Lo + L_active, h, true)
+    CSR.primal(L_active) > 0 && seg!(qp, P0c, Lo + h, Lo + L_active, h, true)
   else
     lc = L_active / n_cells
     for i_step in 0:n_cells
@@ -203,7 +208,7 @@ function sagan_slice_kernel!(i, coords, val_rad_damping_on, val_rad_fluctuations
     end
   end
 
-  if L_active > 0 && sagan_in_window(Lo + L_active, s0, s1, last)
+  if CSR.primal(L_active) > 0 && sagan_in_window(Lo + L_active, s0, s1, last)
     BeamTracking.sagan_cavity_fringe!(i, coords, a, q_gradient, rf_omega, t_phi0, t_ref, mass, P0c, -1)
   end
   seg!(qp, P0c, Lo + L_active, L, Lo, false)
@@ -241,7 +246,7 @@ function slice_sagan(ele::LineElement, up, s0, L_slice, first, last, context)
   rf_omega = bte.rf_omega_calc(rp, lp)
   t_phi0 = bte.rf_phi0_calc(rp, species) / rf_omega
   n_cells, L_active = bte.rf_step_calc(tm.n_cells, tm.L_active, rf_omega, L)
-  L_active <= L * (1 + eps(L)) || error("slice_element: SaganCavity L_active ($L_active) is greater than L ($L)")
+  CSR.primal(L_active) <= CSR.primal(L) * (1 + eps(CSR.primal(L))) || error("slice_element: SaganCavity L_active ($L_active) is greater than L ($L)")
 
   bm = deval(ele.BMultipoleParams, context)
   p0q = BeamTracking.E_to_R(species, E0)
@@ -265,10 +270,14 @@ function slice_sagan(ele::LineElement, up, s0, L_slice, first, last, context)
     isnothing(dps) || (s.ApertureParams = dps)
   end
 
+  q_gradient = CSR.primal(L_active) > 0 ? q * rp.voltage / L_active : 0.0
+  vals = (float(E0), dE_ref, sqrt(E0^2 - mass^2), float(p_over_q_ref), float(rf_omega), float(t_phi0),
+          q_gradient, float(q * rp.voltage), float(L_active), L, float(s0), float(s0 + L_slice))
+  T = float(promote_type(map(typeof, vals)...))
+  v = map(x -> convert(T, x), vals)
   return SaganSlice(s, tm, species, float(mass), float(q), float(gyromagnetic_anomaly(species)), rp.traveling_wave,
-                    float(E0), dE_ref, sqrt(E0^2 - mass^2), float(p_over_q_ref), float(rf_omega), float(t_phi0),
-                    L_active > 0 ? q * rp.voltage / L_active : 0.0, float(q * rp.voltage), float(n_cells),
-                    float(L_active), L, m_order, Bn, Bs, has_mult, has_sol, float(s0), float(s0 + L_slice), first, last)
+                    v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], float(n_cells), v[9], v[10], m_order, Bn, Bs,
+                    has_mult, has_sol, v[11], v[12], first, last)
 end
 
 """

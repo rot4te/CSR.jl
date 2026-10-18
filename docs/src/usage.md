@@ -166,6 +166,22 @@ track_csr!(bunch, bl; params, test_bunch = tb)
 GTPSA.jacobian(tb.coords.v[1, :])   # 6×6 linear map including the frozen-wake CSR kicks
 ```
 
+`track_csr!` also takes a whole bunch in TPS, with knobs in element parameters, the bunch charge, the reference
+energy or the initial coordinates; the result is the collective map in the knobs. Build the `Bunch` with TPS
+coordinates, `t_ref` and `p_over_q_ref` (BeamTracking writes the reference time back into it):
+
+```julia
+k = @vars(Descriptor(3, 2))           # knobs: curvature of the first bend, bunch charge, energy chirp
+c(x) = x + zero(k[1])                 # TPS constant
+line = [Drift(L = 0.2), SBend(L = 0.4, g_ref = 1.5 + k[1], Kn0 = 1.5 + k[1]), Drift(L = 0.2)]
+bl = Beamline(line; p_over_q_ref = pq, species_ref = e)
+v = c.(v0)                            # v0, w0: Float64 coordinates (N×6) and weights of a line bunch
+v[:, 6] .+= k[3] .* v0[:, 5]          # chirp: pz += k₃ z
+bunch = Bunch(v, nothing, w0 .* (1 + k[2]); species = e, p_over_q_ref = c(pq), t_ref = c(0.0))
+track_csr!(bunch, bl; params = CSRParams(n_bin = 40, ds_step = 0.1))
+GTPSA.jacobian(bunch.coords.v[1, :])  # 6×3: final coordinates of particle 1 w.r.t. the knobs
+```
+
 The collective kick itself also takes TPS: `csr_kick_pz` and `csr_kick!` accept TPS particle coordinates and charges,
 a geometry built by `CSRGeometry` from TPS lengths, curvatures or centroid, and TPS `s_kick` and `gamma`. The deposit
 and the kick tables are then computed in TPS, and each retarded source point gets its expansion by Newton steps from
