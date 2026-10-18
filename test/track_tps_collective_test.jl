@@ -202,6 +202,18 @@ end
     @test GTPSA.jacobian([gk2])[1, 1] == -1
   end
 
+  # Unit check of the ramp rule (6.C.6) for the dE_ref knob at 0, which the lattice-level testset above does not resolve
+  @testset "csr_ref_energies ramp with a dE_ref knob at 0" begin
+    br = kt_build_b(k; dE0 = true)[2]
+    cav = reduce(vcat, [bl.line for bl in br.beamlines])[end]   # the cavity is the last element (dE0)
+    E_start, E_end, ramp = TC_EXT.csr_ref_energies(cav, LC_E, cav.p_over_q_ref, br.context)
+    @test ramp                                                  # ramp for every SaganCavity (D49), also at dE_ref = 0
+    @test scalar(E_start) == scalar(E_end)
+    # E_start is the entrance energy E0 = LC_E0 * (1 + p4): independent of the dE_ref knob p3 (E_end = E0 + dE_ref)
+    @test GTPSA.jacobian([E_start])[1, 4] ≈ LC_E0 rtol = 1e-12
+    @test abs(GTPSA.jacobian([E_start])[1, 3]) <= 1e-12 * LC_E0
+  end
+
   @testset "Entry checks" begin
     bl = kt_build_a(k)[2]
 
