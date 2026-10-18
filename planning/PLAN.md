@@ -186,8 +186,25 @@ keep testing on Julia 1.13.1.
 
 13. **Session 2026-10-17/18, branch `stage/csr/02-stage2c`. Done.** Stage 2c (D49): `track_csr!` with a TPS/`Dual`
     bunch in knobs; spec `specs/stage2c.md` with amendments 6.F–6.M (all approved by the user; results in Section 9).
-    Next (user decides): Stage 03, CSR-side workaround for the BeamTracking double `pz` shift after a SaganCavity
-    (user chose a separate stage); the whole-codebase review after the final stage; open items in Section 4.
+    Next: the whole-codebase review (running at the end of the session); open items in Section 4.
+
+14. **Next session (user, 2026-10-18): fix the BeamTracking double `pz` shift upstream (D50).** Instead of a CSR-side
+    workaround (the planned Stage 03, dropped), fix the bug in a branch of `~/.julia/dev/BeamTracking.jl` and open a PR
+    to `bmad-sim/BeamTracking.jl`. Starting points:
+    - Bug: SaganCavity `universal!` (`ext/BeamTrackingBeamlinesExt/unpack_bl.jl:357` ff., v0.8.7 `65e343f`) sets
+      `bunch.p_over_q_ref` only for a `TimeDependentParam` (`:421`); the Sagan kernels already renormalize the
+      coordinates to the exit reference, so the next element shifts `pz` again (`:133`). Draft report with reproduction
+      in `planning/upstream_reports.md` ("BeamTracking.jl: second issue"); reproduction script
+      `diagnostics/stage2c_sagan_pq_check.jl` (reference particle `pz` −0.5 after a drift; expected 0).
+    - Suggested fix (from the draft, to be checked): set `bunch.p_over_q_ref` to the cavity's (exit) `p_over_q_ref` at
+      the end of the SaganCavity `universal!` for constant `p_over_q_ref`; check `TimeDependentParam`,
+      `ramp_update_each_particle`, and BeamTracking's own SaganCavity tests (`test/sagan_cavity_tracking_test.jl`).
+    - Git there: new branch in the BeamTracking checkout (do not commit to its existing branches); the PR is pushed
+      and opened by the user (Claude never pushes).
+    - CSR.jl side afterwards: `track_slice!(::SaganSlice)` (`ext/CSRBeamTrackingBeamlinesExt/sagan.jl`) copies the same
+      bookkeeping; update it to match the fixed BeamTracking (sliced == whole cavity, D22), rerun the lcavity tests and
+      the Stage 2c "dE_ref knob at 0" test with the final drift restored (`specs/stage2c.md` 6.H.4), update the
+      `track_csr!` docstring "Limits" sentence and the compat entry for the BeamTracking release with the fix.
 
 **Handoff 2026-10-17.** Latest state: branch `stage/csr/01-stage2b` (committed by Claude), not pushed. Suite
 2215/2215 on 1 and 4 threads (7m40s, 7m22s); docs build clean (existing warnings). Next (user decides): Stage 2c
@@ -329,6 +346,7 @@ weakdeps, or new extensions silently do not load.
 | D47 | 10-16 | `csr_kick!` raises a clear `ErrorException` up front when `eltype(pz) <: AbstractFloat` but the kick's number type (promoted from z, q, geometry, s_kick, γ, kick_factor, pz_scale) is not (`Dual`, TPS): "use csr_kick_pz, or a pz with element type …". User chose this over docs only. Float `pz` with float inputs unchanged. |
 | D48 | 10-17 | Stage 2b (user's scope): test particles in 6D + knobs with a collective TPS kick. `csr_apply_test_kicks!` counts live test particles outside the bin range first (`count_outside`, `csr_count_outside_kernel!`; cell and range test in a shared primal helper `kick_cell`, so count and kick agree; NaN/Inf/far-off z counts as outside) and kicks none if any is outside (review finding 4). `check_test_particles` (equal lengths, a float `pz_t` cannot hold a TPS/`Dual` kick, descriptor check only when the kick is TPS) runs in `csr_kick!` before the tables and again in `csr_apply_test_kicks!`; `csr_kick!` kicks test particles before the bunch, so these errors leave `pz`, `pz_t` unchanged. Zero-length launches return early. ULP-level change of the TPS range test at cell edges accepted. Spec `specs/stage2b.md`. |
 | D49 | 10-17 | Stage 2c (`track_csr!` with a TPS bunch; in progress). Scope (user): knobs in element parameters (L, g_ref, patch, field knobs such as Kn1), bunch charge (TPS weights), reference energy (`p_over_q_ref`, `dE_ref`), initial coordinates. Probe `diagnostics/stage2c_tps_params_probe.jl`: BeamTracking 0.8.7/Beamlines 0.11.0 track TPS knobs correctly (vs FD) if the Bunch has TPS `t_ref`/`p_over_q_ref`; CSR.jl fails in `slice_tracking_method` (round), `SaganSlice` (Float64 fields), `track_csr_line!` (Float64 arrays). Tests: TPS order 1 vs ForwardDiff (Dual knobs through the same `track_csr!`, so Duals supported too) and central FD; order 2 vs nested Duals. A Bunch whose `t_ref`/`p_over_q_ref` cannot hold the promoted type of L, `p_over_q_ref`, `dE_ref`, patch parameters: clear error up front. Descriptor checks at entry: bunch coords, weight, t_ref, p_over_q_ref, `centroid_start`, test bunch, and the element parameters CSR reads (L, g_ref, patch, dE_ref, p_over_q_ref). lcavity ramp applies for every SaganCavity (not `E_start != E_end`), so a `dE_ref` knob at 0 keeps its derivative. A `g` knob on a straight element at TPS order ≥ 3 is truncated by `advance_floor`'s series (documented, deferred). |
+| D50 | 10-18 | BeamTracking double `pz` shift after a SaganCavity (found in Stage 2c): fix upstream in a BeamTracking.jl branch and open a PR (user, next session), not a CSR-side workaround (the planned Stage 03 is dropped). CSR.jl's SaganCavity slices then follow the fixed BeamTracking. Section 1, item 14. |
 
 ---
 
@@ -1207,7 +1225,7 @@ Hat costs ~5× the source solves of point sampling.
 | 4 | KernelAbstractions kernels | done (GPU: particle side + CPU tables, Stage C) |
 | 5 | Shielding (image charges) | done (+ D20, D24, V9) |
 | 6 | AD: steps 0–2 particles (done); step 3 geometry/γ via implicit differentiation of the source root | done (3a forward, 3b rrules, D30 cheaper pullback) |
-| 7 | TPS: generic root (done), frozen-wake test particles (done), `track_csr!` with a TPS test bunch (done), full collective TPS (Stage 2, D37: 2a done + review fixes D46, D47; 2b done (D48); 2c done (D49)) (D33–D38); tests: first order = Jacobian, second = ForwardDiff Hessian | done (Stage 03: lcavity `pz` workaround pending) |
+| 7 | TPS: generic root (done), frozen-wake test particles (done), `track_csr!` with a TPS test bunch (done), full collective TPS (Stage 2, D37: 2a done + review fixes D46, D47; 2b done (D48); 2c done (D49)) (D33–D38); tests: first order = Jacobian, second = ForwardDiff Hessian | done (BeamTracking SaganCavity `pz` fix upstream pending, D50) |
 | 8 | FFT convolution (`CSRAbstractFFTsExt`) for large n_bin; benchmarks; GPU wake table (isbits geometry via Adapt; work struct immutable since D29; errors/recursion in the source search); issue for a BeamTracking collective-step hook (route b); test-particle backend handling (review finding 2; Stage 2b review findings 4, 12; Section 4) | not started |
 
 Follow-ups not requested: per-element `ds_step` (Bmad `csr_ds_step`); caching slices per element (rebuilt every step);
