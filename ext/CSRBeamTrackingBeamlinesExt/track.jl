@@ -126,6 +126,10 @@ tracking. Dynamic-descriptor TPS in the bunch, `centroid_start`, the test bunch 
 
 Limits: a SaganCavity with automatic `n_cells` and a knob in its length or RF frequency fails in BeamTracking
 (`round` of a TPS); derivatives of order ≥ 3 in a curvature knob of an element with `g = 0` are truncated.
+BeamTracking 0.8.7 leaves `bunch.p_over_q_ref` at the entrance value after a SaganCavity (the coordinates are
+already normalized to the exit reference), so the next element shifts `pz` a second time; CSR.jl's lcavity
+slices follow BeamTracking. With a `dE_ref` knob of primal value 0 that second shift is skipped for the
+derivatives (equal reference energies in value).
 
 Macroparticle charge: `weight × |charge of species|` [C] (`weight = nothing` means 1).
 
