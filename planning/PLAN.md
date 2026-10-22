@@ -9,7 +9,7 @@ earlier parts win.
 Contents
 1. Status and next steps
 2. How to work on this project (preferences, git, paths, test environment)
-3. Decisions (D1–D47)
+3. Decisions (D1–D51)
 4. Open questions and pending upstream reports
 5. Code map
 6. Physics and implementation notes
@@ -68,7 +68,9 @@ GTPSA TPS).
 - **`stage2a-fixes`** (created by the user from `stage2-tps` `2ad0ca8`, 2026-10-16; name as proposed in the session,
   verify): fixes from the Stage 2a review (D46, D47; Section 9), committed by the user.
 - **`stage/csr/01-stage2b`** (from `stage2a-fixes` `2ddb2b8`, 2026-10-17; branch and commits by Claude under the session's git rules, not pushed): Stage 2b (D48) and its review fixes, spec `specs/stage2b.md`.
-- **`stage/csr/02-stage2c`** (from `stage/csr/01-stage2b` `2fdbe77`, 2026-10-17/18, by Claude, not pushed): Stage 2c (D49), spec `specs/stage2c.md`. **Latest state.**
+- **`stage/csr/02-stage2c`** (from `stage/csr/01-stage2b` `2fdbe77`, 2026-10-17/18, by Claude, not pushed): Stage 2c (D49), spec `specs/stage2c.md`.
+- **`stage/csr/03-bt-pr369-check`** (from `stage/csr/02-stage2c`, 2026-10-18, planning only): PR #369 check (D50).
+- **`stage/csr/04-review-fixes`** (from `stage/csr/03-bt-pr369-check` `06fb544`, 2026-10-22, by Claude, not pushed): D51, item 15. **Latest state.**
 
 | Commit | Branch | Content |
 |---|---|---|
@@ -209,6 +211,14 @@ keep testing on Julia 1.13.1.
     `stage/csr/04-<desc>` from the latest branch; `03` is the #369 check branch). Not blocked by item 14. Groups: type stability (W1, W2,
     W6), correctness (W3, W5), docs and checks (W4, S1, S2), cleanup and small items (S3–S10, incl. S6: the user
     decides on removing the tracked `diagnostics/base/`, `diagnostics/head/` snapshots and the unused `Adapt`).
+
+16. **Slicing split (D51, user 2026-10-22): deferred.** Move element slicing (`slicing.jl`, `sagan.jl`, the slice loop,
+    `csr_ref_energies`/`csr_slice_P0c`, centroid tracking, possibly the reference geometry) out of CSR.jl, with a
+    general step interface (callback per slice: slice, s, reference energy/γ, end flags; step-length rule). Open: where
+    it lives (new package vs BeamTracking; SaganSlice copies BeamTracking internals), whether to design against
+    SpaceCharge.jl's needs first, registration. Estimate (Claude, 2026-10-22): moving the code ~1 stage; interface
+    1–2 stages; a SpaceCharge.jl connector separate. Rule and deferred features in D51. Write a design note in
+    `planning/` before any spec.
 
 **Handoff 2026-10-18.** Latest state: branch `stage/csr/02-stage2c` (from `stage/csr/01-stage2b`; committed by Claude,
 not pushed). Suite 2536/2536 on 1 and 4 threads at the end of Stage 2c (then one assertion removed); docs build clean
@@ -354,6 +364,7 @@ weakdeps, or new extensions silently do not load.
 | D48 | 10-17 | Stage 2b (user's scope): test particles in 6D + knobs with a collective TPS kick. `csr_apply_test_kicks!` counts live test particles outside the bin range first (`count_outside`, `csr_count_outside_kernel!`; cell and range test in a shared primal helper `kick_cell`, so count and kick agree; NaN/Inf/far-off z counts as outside) and kicks none if any is outside (review finding 4). `check_test_particles` (equal lengths, a float `pz_t` cannot hold a TPS/`Dual` kick, descriptor check only when the kick is TPS) runs in `csr_kick!` before the tables and again in `csr_apply_test_kicks!`; `csr_kick!` kicks test particles before the bunch, so these errors leave `pz`, `pz_t` unchanged. Zero-length launches return early. ULP-level change of the TPS range test at cell edges accepted. Spec `specs/stage2b.md`. |
 | D49 | 10-17 | Stage 2c (`track_csr!` with a TPS bunch; in progress). Scope (user): knobs in element parameters (L, g_ref, patch, field knobs such as Kn1), bunch charge (TPS weights), reference energy (`p_over_q_ref`, `dE_ref`), initial coordinates. Probe `diagnostics/stage2c_tps_params_probe.jl`: BeamTracking 0.8.7/Beamlines 0.11.0 track TPS knobs correctly (vs FD) if the Bunch has TPS `t_ref`/`p_over_q_ref`; CSR.jl fails in `slice_tracking_method` (round), `SaganSlice` (Float64 fields), `track_csr_line!` (Float64 arrays). Tests: TPS order 1 vs ForwardDiff (Dual knobs through the same `track_csr!`, so Duals supported too) and central FD; order 2 vs nested Duals. A Bunch whose `t_ref`/`p_over_q_ref` cannot hold the promoted type of L, `p_over_q_ref`, `dE_ref`, patch parameters: clear error up front. Descriptor checks at entry: bunch coords, weight, t_ref, p_over_q_ref, `centroid_start`, test bunch, and the element parameters CSR reads (L, g_ref, patch, dE_ref, p_over_q_ref). lcavity ramp applies for every SaganCavity (not `E_start != E_end`), so a `dE_ref` knob at 0 keeps its derivative. A `g` knob on a straight element at TPS order ≥ 3 is truncated by `advance_floor`'s series (documented, deferred). |
 | D50 | 10-18 | BeamTracking double `pz` shift after a SaganCavity (found in Stage 2c): fix upstream in a BeamTracking.jl branch and open a PR (user, next session), not a CSR-side workaround (the planned Stage 03 is dropped). CSR.jl's SaganCavity slices then follow the fixed BeamTracking. Section 1, item 14. **Update 10-18:** upstream PR #369 (David Sagan, fixes issue #367) already does this; the user chose to test it rather than write a competing fix. It passes (Section 9); CSR.jl follow-up after its release. |
+| D51 | 10-22 | Slicing to be split out of CSR.jl (so SpaceCharge.jl and others can use it): **deferred** until CSR.jl development settles; where it goes (new package or proposal to BeamTracking) not decided. Until then: (1) `slicing.jl` and `sagan.jl` in `CSRBeamTrackingBeamlinesExt` use only `CSR.primal`, `CSR.primal_max`, `CSR.primal_min` from CSR (enforced by a test, added in item 15); (2) no new features that tie the step schedule to CSR (the Phase 8 collective-step hook, per-element `ds_step`, slice caching, GPU `track_csr!`) before the split, or only designed with it in mind. Section 1, item 16. |
 
 ---
 
@@ -1281,7 +1292,7 @@ Stage 03 (Section 1, item 15).
 | 5 | Shielding (image charges) | done (+ D20, D24, V9) |
 | 6 | AD: steps 0–2 particles (done); step 3 geometry/γ via implicit differentiation of the source root | done (3a forward, 3b rrules, D30 cheaper pullback) |
 | 7 | TPS: generic root (done), frozen-wake test particles (done), `track_csr!` with a TPS test bunch (done), full collective TPS (Stage 2, D37: 2a done + review fixes D46, D47; 2b done (D48); 2c done (D49)) (D33–D38); tests: first order = Jacobian, second = ForwardDiff Hessian | done (BeamTracking SaganCavity `pz` fix: PR #369 open, tested 10-18; CSR.jl `SaganSlice` follow-up after its release, D50) |
-| 8 | FFT convolution (`CSRAbstractFFTsExt`) for large n_bin; benchmarks; GPU wake table (isbits geometry via Adapt; work struct immutable since D29; errors/recursion in the source search); issue for a BeamTracking collective-step hook (route b); test-particle backend handling (review finding 2; Stage 2b review findings 4, 12; Section 4) | not started |
+| 8 | FFT convolution (`CSRAbstractFFTsExt`) for large n_bin; benchmarks; GPU wake table (isbits geometry via Adapt; work struct immutable since D29; errors/recursion in the source search); issue for a BeamTracking collective-step hook (route b; deferred to the slicing split, D51); test-particle backend handling (review finding 2; Stage 2b review findings 4, 12; Section 4) | not started |
 
 Follow-ups not requested: per-element `ds_step` (Bmad `csr_ds_step`); caching slices per element (rebuilt every step);
 Metal tests in the suite (conditional on Metal.jl).
