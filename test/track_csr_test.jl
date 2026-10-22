@@ -212,6 +212,11 @@ end
     b = tc_line_bunch(1e-3, 1e-9, 201, pq)
     err = entry_error(b, () -> track_csr!(b, bl; params = CSRParams(n_bin = 40), csr_on))
     @test err isa ErrorException && occursin("params.ds_step", err.msg)
+    # sliced_centroid = false: the centroid pass does not run, so only the entry check can raise the error before the
+    # non-CSR drift is tracked (its message differs from the one of csr_n_step)
+    b = tc_line_bunch(1e-3, 1e-9, 201, pq)
+    err = entry_error(b, () -> track_csr!(b, bl; params = CSRParams(n_bin = 40), csr_on, sliced_centroid = false))
+    @test err isa ErrorException && occursin("track_csr!: params.ds_step must be set (> 0) for elements with CSR on (element 2)", err.msg)
     err = entry_error(b, () -> track_csr!(b, bl; params = CSRParams(n_bin = 40, ds_step = 0.1), csr_on,
                                           centroid_start = zeros(5)))
     @test err isa ErrorException && occursin("centroid_start", err.msg)

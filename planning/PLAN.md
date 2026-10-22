@@ -206,7 +206,8 @@ keep testing on Julia 1.13.1.
       Spec not written yet; re-read the merged diff first (it may change before merging).
     - User may post the results on #369 (not done by Claude).
 
-15. **Later session (user, 2026-10-18): Stage 03, fixes from the whole-codebase review** (findings in Section 9,
+15. **Done 2026-10-22 (branch `stage/csr/04-review-fixes`, spec `specs/review-fixes.md`; results in Section 9,
+    "Stage 04 review fixes").** Original entry: **Stage 03, fixes from the whole-codebase review** (findings in Section 9,
     "Whole-codebase review 2026-10-18"; all groups selected by the user; spec not written yet, branch
     `stage/csr/04-<desc>` from the latest branch; `03` is the #369 check branch). Not blocked by item 14. Groups: type stability (W1, W2,
     W6), correctness (W3, W5), docs and checks (W4, S1, S2), cleanup and small items (S3–S10, incl. S6: the user
@@ -224,6 +225,10 @@ keep testing on Julia 1.13.1.
 not pushed). Suite 2536/2536 on 1 and 4 threads at the end of Stage 2c (then one assertion removed); docs build clean
 (existing warnings). The whole-codebase review finished (Section 9); its fixes are item 15. The
 test environment is a scratch env (Section 2), rebuilt each session.
+
+**Update 2026-10-22.** Branch `stage/csr/04-review-fixes` (by Claude, not pushed): D51 (slicing split deferred, boundary
+rule), item 15 done. Next: item 14 once BeamTracking #369 is released (still open on 10-22: `main` at v0.8.7, PR head
+`0add206`), item 16 (slicing split) when the user chooses, Phase 8.
 
 **Update 2026-10-18 (later).** Branch `stage/csr/03-bt-pr369-check` (from `stage/csr/02-stage2c`; planning files
 only): BeamTracking PR #369 tested, passes (item 14). Next: item 15 (review fixes), and the CSR.jl `SaganSlice`
@@ -442,6 +447,9 @@ weakdeps, or new extensions silently do not load.
 - Image kick vs `s_kick` has kinks within ~1e-5 m (first kick in a bend, y = 1 cm; `diagnostics/stage2c_images_dL.jl`):
   map-level FD cannot check knobs that move kick points with images. AD verified against FD at small h (≤ 1.5e-7).
   Attribution to hard-edge source acceleration is an inference.
+- **Open (Stage 04, 2026-10-22, Phase 8):** the `csr_kick_pz` rrule pullback is CPU only: `csr_kick_adjoint` reads
+  `bins.z0_edge[1]` on the host (`src/adjoint.jl:42`), scalar indexing on Metal; the geometry/`s_kick`/γ part is
+  CPU-only by design. W5 limit: no tolerance on `E > mass` (Section 9, Stage 04).
 - Float32 on GPUs limits strongly shielded kicks to ~3e-4 relative (cancellation); a mixed-precision table/convolve
   path would be needed for better.
 
@@ -1010,6 +1018,35 @@ Hat costs ~5× the source solves of point sampling.
 - **CSR.jl impact.** None now: no test compares a sliced cavity followed by another element with whole-cavity
   tracking. After the release, `track_slice!(::SaganSlice)` must follow #369 (Section 1, item 14).
 
+### Stage 04 review fixes (10-22, branch `stage/csr/04-review-fixes`, spec `specs/review-fixes.md`)
+- **User decisions:** all groups; S6 keep `diagnostics/base/` (a stray gitlink to `9211f86`, empty) and
+  `diagnostics/head/` (95 files); remove `Adapt`; W4 fixed now; W5/S2 clear errors up front; D51 boundary test.
+- **Changes:** W1 `path_excess` accumulator from the first GL term; W2 `g_bend = zero(k.L)`; W3 `promote` in
+  `shifted_to_slice`; W4 `device_eltype(backend, T)` (`src/utils/backend.jl`), used by `csr_kick_pz` and its rrule,
+  `device_scalar` on `pz_scale`; W5 γ > 1 in `CSRKickPoint`, `csr_kick_coef`, and reference energy > rest mass per CSR
+  element in `check_csr_steps` (`track.jl`, before any tracking); W6 `test/inference_test.jl` (533 checks; Float64,
+  Float32, Dual, nested Dual, TPS); extra: `root_tangent` early return only for `f0 isa Real` (TPS source search
+  returned `Union{Float64,TPS}`); S1 `slice_element` docstring, `validation.md`; S2 `ds_step > 0` (when any element has
+  CSR on) and `length(centroid_start) == 6` in `check_csr_steps`; S3 `adjoint_kick_cell`; S4 "8 intervals (9 nodes)",
+  `hat_nodes` returns `Pair`s; S5 `GTPSA = "~1.5.6"`; S7 `@kwdef SaganSlice`; S8 docs: `track_csr!` CPU only; S9
+  `widen_source_range` (no boxed closure state); S10a range test before indexing in `csr_apply_kicks_reference!`; S10b
+  last slice `L_slice = L − s0` (`csr_slice` takes `L`); D51 test in `slicing_test.jl` (parses `slicing.jl`,
+  `sagan.jl`).
+- **Spec changes (user-approved):** 6.A/6.B mutation checks waived (the internal `Union` is removed by the compiler;
+  `@inferred` guards result types only); `root_tangent` fix; W5 limit: no tolerance, so an lcavity after a `Marker` at
+  `E_ref = mass` (round-off `E_start = mass + 1.2e-9 eV`) fails later with "centroid orbit lost", bunch unchanged;
+  Metal agreement 2e-6 instead of exact.
+- **Tests:** suite 3133/3133 on `-t 4` (9m48s) and `-t 1` (10m12s) by spec-tester (round 1); round 2 added the
+  `sliced_centroid = false` `ds_step` case (+2 assertions; with the default the old code already errored in the
+  centroid pass), `track_csr_test.jl` 53/53, full suite not rerun after round 2 (test-only change). Mutation checks:
+  each fix detected (6.C, 6.E ×3, 6.G ×2, S10a, S10b, D51 ×2, `root_tangent`). Docs clean (two known warnings).
+- **S10b effect:** lcavity slices bit-identical; other elements change only when `n_step·ds ≠ L`, at round-off
+  (Quad, n = 11: 8.888e-16 → 8.890e-16).
+- **Metal (M3, Metal.jl 1.11.1, `diagnostics/w4_metal_check.jl`, `_check2.jl`, `_check3.jl`):** `csr_kick_pz` on
+  `MtlVector{Float32}` vs `csr_kick!` on copies 4.0e-7–4.9e-7, vs CPU Float32 3.0e-7–7.3e-7, rrule forward 4.0e-7–5.9e-7;
+  repeated `csr_kick!` on Metal differ by ~4e-7 (atomic deposit order). The rrule pullback fails on Metal (scalar
+  indexing, `csr_kick_adjoint`, `src/adjoint.jl:42` `bins.z0_edge[1]`): documented CPU only; Phase 8.
+
 ### Whole-codebase review 2026-10-18 (code-reviewer, read-only, after Stage 2c)
 No critical findings. Checked without defects: primal branching everywhere; GTPSA zero-argument hazards (guarded or
 unreachable); thread safety (D45); kernels vs `reference.jl`; memory safety of `@inbounds` kernels; no type piracy.
@@ -1346,7 +1383,7 @@ Metal tests in the suite (conditional on Metal.jl).
 | `verify_analytic.jl` | Section 8 checks (Base Julia). |
 | `dspline_coeff.md`, `upstream-bin.md` | Write-ups for V1 and V5. |
 | `upstream_reports.md` | Drafted upstream reports (Section 4). |
-| `../diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`, `bench_pullback.jl`, `bench_forward.jl`, `d32_flake.jl [compat\|free] [Γ] [rtol] [tangent\|block] [atol]`, `test_rrule_seeds.jl [free\|compat] [rtol] [n_seeds] [atol] [verbose]`, `d32_steps.jl`, `root_newton_mutation.jl`, `track_tps_probe.jl`, `track_tps_lcavity_probe.jl`, `track_tps_timing.jl`, `track_tps_compile.jl`, `track_tps_mutation.jl [none\|scale]`, `track_tps_docs_example.jl`, `track_tps_thread_spread.jl [n_runs]`, `sagan_tref_check.jl`, `v3_rrule_images.jl`, `v3_rrule_scan.jl`, `v3_hat_node_search.jl`, `v3_image_entry_adjoint.jl`, `v3_node_adjoint.jl`, `v3_warm_start.jl [s_kick] [layer]`, `seam_uniqueness.jl`, `drift_lag0_image.jl`, `drift_kick_default.jl [case] [ix_last]`, `first_bin_straight.jl`, `s_kick_residual.jl [s]`, `image_kernel_roundoff.jl [s]`, `flake_geom_steps.jl [compat]`; data `layer_terms_*.txt` (the `_400` files predate V9). Not yet copied there (session scratchpad, 2026-10-16, deleted when the session ends): the Stage 2a-fixes scripts `diag/r1–r8.jl` (MethodError matrix), `accept/margins.jl` (`MUTATE=1`), `accept/extras.jl`. |
+| `../diagnostics/` | Scripts (run with the test env; they include `~/.julia/dev/CSR.jl/test/utils.jl`): `v8_drift.jl`, `first_bin_vs_quadrature.jl`, `transient_*.jl`, `steady_state_convergence.jl`, `image_proto.jl`, `image_layers.jl`, `layer_terms.jl [n_layers] [n_ele] [h,...]`, `layer_shape.jl`, `layer_sum_methods.jl`, `layer_kick_profile.jl`, `image_kernel_exact.jl`, `image_large_y.jl`, `bench_excess.jl`, `bench_pullback.jl`, `bench_forward.jl`, `d32_flake.jl [compat\|free] [Γ] [rtol] [tangent\|block] [atol]`, `test_rrule_seeds.jl [free\|compat] [rtol] [n_seeds] [atol] [verbose]`, `d32_steps.jl`, `root_newton_mutation.jl`, `track_tps_probe.jl`, `track_tps_lcavity_probe.jl`, `track_tps_timing.jl`, `track_tps_compile.jl`, `track_tps_mutation.jl [none\|scale]`, `track_tps_docs_example.jl`, `track_tps_thread_spread.jl [n_runs]`, `sagan_tref_check.jl`, `v3_rrule_images.jl`, `v3_rrule_scan.jl`, `v3_hat_node_search.jl`, `v3_image_entry_adjoint.jl`, `v3_node_adjoint.jl`, `v3_warm_start.jl [s_kick] [layer]`, `seam_uniqueness.jl`, `drift_lag0_image.jl`, `drift_kick_default.jl [case] [ix_last]`, `first_bin_straight.jl`, `s_kick_residual.jl [s]`, `image_kernel_roundoff.jl [s]`, `flake_geom_steps.jl [compat]`, `w4_metal_check.jl`, `w4_metal_check2.jl`, `w4_metal_check3.jl` (Metal env: Metal.jl + dev CSR + AtomicAndPhysicalConstants, StaticArrays, ChainRulesCore; Stage 04); data `layer_terms_*.txt` (the `_400` files predate V9). Not yet copied there (session scratchpad, 2026-10-16, deleted when the session ends): the Stage 2a-fixes scripts `diag/r1–r8.jl` (MethodError matrix), `accept/margins.jl` (`MUTATE=1`), `accept/extras.jl`. |
 | `../crosscheck/` | Bmad/Tao cross-check (README there). |
 | `../docs/` | Documenter docs (`julia --project=docs docs/make.jl`; `docs/README.md`); pages Home, Usage, Physics model, Physics decisions, Validation, API, Internals. Deployed by `.github/workflows/Documentation.yml` from `main`. Keep "Physics decisions" in sync with Section 3 when physics changes. |
 | `../specs/` (repo) | Specs for `spec-implementer`/`spec-tester` (Section 2): `stage2a-fixes.md` (D46, D47, per-block tolerances; with its "Spec changes" log). |

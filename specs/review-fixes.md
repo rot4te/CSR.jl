@@ -58,12 +58,14 @@ Fixes for the review's findings, in four groups, plus the D51 boundary test:
 ## 5. Files to change
 
 `Project.toml`; `src/utils/spline.jl`, `src/kernels/image_charges.jl`, `src/geometry.jl`, `src/kick.jl`,
-`src/utils/backend.jl`, `src/adjoint.jl` (only if needed for W4), `src/kernels/adjoint.jl`, `src/kernels/kick.jl`
+`src/utils/backend.jl`, `src/utils/kick_setup.jl` (6.E), `src/utils/root_finding.jl` (6.F spec change),
+`src/adjoint.jl` (only if needed for W4), `src/kernels/adjoint.jl`, `src/kernels/kick.jl`
 (docstring references only), `src/types.jl`, `src/tables.jl`, `src/param_adjoint.jl`, `src/reference.jl`,
 `src/interface.jl`; `ext/CSRChainRulesCoreExt/CSRChainRulesCoreExt.jl`; `ext/CSRBeamTrackingBeamlinesExt/slicing.jl`,
 `sagan.jl`, `track.jl`; `docs/src/validation.md`, `docs/src/usage.md` (S8, W4 sentence if needed); tests: one new
 file `test/inference_test.jl` (W6) included from `test/runtests.jl`, one new testset for D51 (in
-`test/slicing_test.jl`), and new testsets in existing files as listed per component.
+`test/slicing_test.jl`), and new testsets in `test/binning_test.jl`, `test/kernels_test.jl`, `test/kick_test.jl`,
+`test/track_csr_test.jl` as listed per component. `diagnostics/w4_metal_check.jl` (Metal check script, 6.D).
 
 ## 6. Components
 
@@ -102,9 +104,10 @@ shifted point (s + s0, t + t0) in value. Float64 path unchanged.
   `Float64 → Float32` on the mock, identity for `Float32`, `Dual`, `Int` on the mock and for everything on `CPU()`.
 - Manual check (spec-tester, not in the suite): in a Metal env (Metal.jl + dev CSR + AtomicAndPhysicalConstants,
   StaticArrays), `csr_kick_pz` on `MtlArray{Float32}` inputs with a Float64 geometry and default
-  `kick_factor`/`pz_scale` returns an `MtlArray{Float32}` equal to `csr_kick!` on copies (exact) and to the CPU Float32
-  run within 1e-5 relative (free space; the Stage C measurement was 2.7e-6); and the rrule's forward value equals
-  `csr_kick_pz`. If Metal is unavailable on the machine, report "not verified" (do not fake it).
+  `kick_factor`/`pz_scale` returns an `MtlArray{Float32}` that agrees with `csr_kick!` on copies and with the rrule's
+  forward value within 2e-6 relative (Metal's atomic deposit order varies, so repeated runs differ by ~4e-7; exact
+  equality is not possible), and with the CPU Float32 run within 1e-5 relative (the Stage C measurement was 2.7e-6).
+  Use a geometry with a bend (a straight drift gives a zero kick and a vacuous comparison). If Metal is unavailable on the machine, report "not verified" (do not fake it).
 
 ### 6.E W5 γ ≤ 1
 - `CSRKickPoint(geom, ix, s_kick, gamma; ...)` (`src/geometry.jl:85`): after the descriptor check,
@@ -166,8 +169,9 @@ Check that `docs/Project.toml` and the test env do not need it.
 
 ### 6.M S7 `SaganSlice` keyword constructor (`sagan.jl`)
 `@kwdef` on `SaganSlice` (no defaults), and `slice_sagan` constructs it with keywords. Type parameters as now
-(`SaganSlice{E,TM,M,K,TE,T}`), field types inferred as now; `@inferred slice_element(...)` on a SaganCavity in
-Float64 and with a TPS knob as before (`sagan_exit_P0c` test still passes). No behaviour change.
+(`SaganSlice{E,TM,M,K,TE,T}`), field types inferred as now; the inferred return type of `slice_element(...)` on a
+SaganCavity, in Float64 and with a TPS knob, is unchanged (`Any` before and after; `sagan_exit_P0c` test still
+passes). No behaviour change.
 
 ### 6.N S8 `track_csr!` CPU only
 `track_csr!` docstring (method docstring in `track.jl`) and `docs/src/usage.md`: one sentence that `track_csr!` runs
@@ -236,3 +240,7 @@ ChainRulesCore, ChainRulesTestUtils, GTPSA, AtomicAndPhysicalConstants, KernelAb
 | 10-22 | 6.A, 6.B, 7.2 | Mutation checks waived: reverting either fix still passes `@inferred` (the internal `Union` is resolved by the compiler; the result type is concrete, no `Union` slot in `code_typed`). The 6.F testset guards result types only. Fixes kept. | user, 10-22 |
 | 10-22 | 6.F | Extra fix: `root_tangent` (`src/utils/root_finding.jl`) returns early only for `f0 isa Real && n == 0` (a TPS's order is a runtime value, which made the TPS source search return `Union{Float64,TPS}`). A TPS of max order 0 now returns a TPS instead of `s0`. | user, 10-22 |
 | 10-22 | 6.E | Limit accepted: `primal(E) > mass` without tolerance; an lcavity after a `Marker` at `E_ref = mass` has `E_start = mass + 1.2e-9 eV` (round-off), passes the check and fails later with "centroid orbit lost", bunch unchanged. The literal 6.E Branch test is replaced by a drift at the rest mass and a cavity first in a Branch (`E_start = 0`). | user, 10-22 |
+| 10-22 | 6.D | Metal check: agreement within 2e-6 relative instead of exact equality (nondeterministic atomic deposit); bend geometry for the comparisons. | user, 10-22 |
+| 10-22 | 6.M | "`@inferred slice_element` as before" → inferred return type unchanged (`Any` before and after). | user, 10-22 |
+| 10-22 | 5 | File list: `src/utils/kick_setup.jl`, `src/utils/root_finding.jl`, the four edited test files, `diagnostics/w4_metal_check.jl`. | user, 10-22 |
+| 10-22 | 6.G | Test round 2 (follows from the existing requirement): the `ds_step` test also runs with `sliced_centroid = false` (with the default the old code already errored in the centroid pass, so the test did not detect a missing check). | — (within spec) |
