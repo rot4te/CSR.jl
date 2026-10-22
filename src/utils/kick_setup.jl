@@ -9,8 +9,11 @@ Default: `Δpz = ΔE / (β² E)` with `ΔE = |q| e E_z ds` and `E_z = (1/4πε�
 `ds * r_e * |q| / (rel_mass * e * β² * γ)` (`q` in units of `e`, `rel_mass = m / m_e`).
 `bmad_compat = true`: Bmad's `ds * r_c / (rel_mass * e * |q| * γ)` with `r_c = r_e q² / rel_mass`, i.e. `β²/rel_mass`
 times the default (docs, "Physics decisions", V2).
+
+`gamma` must be greater than 1 (error otherwise).
 """
 function csr_kick_coef(species::Species, gamma, ds; bmad_compat::Bool = false)
+  primal(gamma) > 1 || error("csr_kick_coef: gamma must be > 1 (gamma = $gamma)")
   rel_mass = massof(species) / M_ELECTRON
   q = chargeof(species)
   q == 0 && error("csr_kick_coef: species has zero charge")

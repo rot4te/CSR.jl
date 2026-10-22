@@ -10,10 +10,13 @@ function ChainRulesCore.rrule(::typeof(csr_kick_pz), pz::AbstractVector, z::Abst
                               alive::AbstractVector{Bool}, geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma,
                               species, params::CSRParams; kick_factor = 1.0, pz_scale = 1.0)
   st = CSR.csr_binned_kick(z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor)
-  pz_new = similar(pz, promote_type(eltype(pz), eltype(z), eltype(q), CSR.number_type(geom), typeof(s_kick),
-                                    typeof(gamma), typeof(kick_factor), typeof(pz_scale)))
+  backend = CSR.get_backend(pz)
+  pz_new = similar(pz, CSR.device_eltype(backend, promote_type(eltype(pz), eltype(z), eltype(q), CSR.number_type(geom),
+                                                               typeof(s_kick), typeof(gamma), typeof(kick_factor),
+                                                               typeof(pz_scale))))
   copyto!(pz_new, pz)
-  CSR.csr_apply_kicks!(pz_new, z, alive, st.bins, st.kick; pz_scale)
+  pz_scale_d = CSR.device_scalar(backend, pz_scale)
+  CSR.csr_apply_kicks!(pz_new, z, alive, st.bins, st.kick; pz_scale = pz_scale_d)
 
   function csr_kick_pz_pullback(ybar)
     ybar = unthunk(ybar)
@@ -21,7 +24,7 @@ function ChainRulesCore.rrule(::typeof(csr_kick_pz), pz::AbstractVector, z::Abst
       pzbar, zbar, qbar = ybar, ybar, ybar
       geombar, s_kickbar, gammabar = ybar, ybar, ybar
     else
-      pzbar, zbar, qbar, kbar = CSR.csr_kick_adjoint(ybar, z, q, alive, st, params; pz_scale)
+      pzbar, zbar, qbar, kbar = CSR.csr_kick_adjoint(ybar, z, q, alive, st, params; pz_scale = pz_scale_d)
       gv, s_kickbar, gammabar = CSR.csr_kick_param_adjoint(kbar, st.bins, geom, ix_ele_kick, s_kick, gamma, species,
                                                            params; kick_factor)
       geombar = geometry_tangent(geom, gv)

@@ -123,6 +123,19 @@ end
     @test CSR.slice_element(es, 0.0, 0.1, true, false).Kn1 == 1.0
   end
 
+  @testset "The last CSR slice ends at the element length (S10b)" begin
+    # 11 * (0.1 / 11) != 0.1 in floating point
+    L, n = 0.1, 11
+    bl = slice_test_line([Drift(L = L)])
+    e = bl.line[1]
+    ds = L / n
+    @test n * ds - (n - 1) * ds != L - (n - 1) * ds
+    s = ext.csr_slice(e, n, n, L, ds, bl.context)
+    @test (n - 1) * ds + s.L == L
+    @test ext.csr_slice(e, 1, n, L, ds, bl.context).L == ds
+    @test ext.csr_slice(e, 1, 1, L, L, bl.context).L == L
+  end
+
   @testset "Apertures only at element ends" begin
     ap = (x1_limit = -1.5e-3, x2_limit = 1.5e-3, y1_limit = -1.0, y2_limit = 1.0,
           aperture_shape = ApertureShape.Rectangular)
@@ -225,6 +238,32 @@ end
     @test_throws Exception CSR.slice_element(ele, 0.0, 0.125, true, false)  # detached: no reference energy
   end
 
+  @testset "Slice potentials with a Dual or TPS p_over_q_ref (W3)" begin
+    # s0 is Float64 and t0 = s0/(β₀c) carries the derivative of p_over_q_ref: the shift pair must be promoted
+    d = Descriptor(1, 1)
+    x1 = @vars(d)[1]
+    flat(t) = collect(Iterators.flatten(t))
+    bg = BeamTracking.R_to_beta_gamma(Species("electron"), SLICE_PQ)
+    beta_0 = bg / sqrt(1 + bg^2)
+    @testset "$name, $what" for (name, pq) in (("Dual", ForwardDiff.Dual(SLICE_PQ, 1.0)), ("TPS", SLICE_PQ * (1 + x1))),
+                                (what, ele, f, pot) in (
+        ("four-potential", LineElement(L = 0.5, four_potential = slice_test_potential, four_potential_normalized = true,
+                                       tracking_method = sym8), s -> s.four_potential, slice_test_potential),
+        ("EM field", LineElement(L = 0.5, em_field = slice_test_em_field, tracking_method = RungeKutta(n_steps = 8)),
+         s -> s.em_field, slice_test_em_field))
+      e = Beamline([ele]; p_over_q_ref = pq, species_ref = Species("electron")).line[1]
+      s0 = 0.25
+      sl = f(CSR.slice_element(e, s0, 0.125, false, false))
+      @test sl isa ext.ShiftedPotential
+      @test CSR.primal(sl.t0) ≈ s0 / (beta_0 * C_LIGHT) rtol = 1e-14
+      @test CSR.primal(sl.s0) == s0
+      xx, yy, ss, tt = 1e-3, -5e-4, 0.03, 2e-11
+      got = flat(sl(xx, yy, ss, tt))
+      ref = flat(pot(xx, yy, ss + s0, tt + s0 / (beta_0 * C_LIGHT)))
+      @test CSR.primal.(got) ≈ ref rtol = 1e-12
+    end
+  end
+
   @testset "RungeKutta" begin
     # n_steps divisible by the slice count: the slices take the same RK steps as the whole element.
     rk8 = RungeKutta(n_steps = 8)
@@ -310,4 +349,39 @@ end
   @testset "Zero-length elements cannot be sliced" begin
     @test_throws ErrorException CSR.slice_element(Marker(), 0.0, 0.0, true, true)
   end
+end
+
+# D51: the slicing files stay separable from CSR's core (they may become a package of their own): the only CSR names
+# they use are the primal helpers, plus the methods they define for CSR's interface functions.
+"`CSR.<name>` references (a) and bare symbols that are exported names of CSR (b) in Julia source `src` (docstrings are strings)."
+function d51_scan(src::AbstractString)
+  exported = Set(setdiff(names(CSR), [:CSR]))
+  refs, bare = Set{Symbol}(), Set{Symbol}()
+  function walk(x)
+    if x isa Expr
+      if x.head === :. && length(x.args) == 2 && x.args[1] === :CSR && x.args[2] isa QuoteNode
+        push!(refs, x.args[2].value)
+      else
+        foreach(walk, x.args)
+      end
+    elseif x isa Symbol && x in exported
+      push!(bare, x)
+    end
+  end
+  walk(Meta.parseall(src))
+  return refs, bare
+end
+
+@testset "Slicing uses only primal helpers from CSR (D51)" begin
+  allowed = Set([:primal, :primal_max, :primal_min, :slice_element, :csr_sliceable])
+  extdir = joinpath(dirname(dirname(pathof(CSR))), "ext", "CSRBeamTrackingBeamlinesExt")
+  @testset "$file" for file in ("slicing.jl", "sagan.jl")
+    refs, bare = d51_scan(read(joinpath(extdir, file), String))
+    @test issubset(refs, allowed)
+    @test isempty(bare)
+  end
+  # The scan finds a violation
+  refs, bare = d51_scan("f(x) = CSR.csr_n_step(x, CSR.primal(x)) + csr_kick!(x)")
+  @test refs == Set([:csr_n_step, :primal])
+  @test bare == Set([:csr_kick!])
 end

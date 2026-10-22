@@ -174,12 +174,13 @@ end
 """
     shifted_to_slice(f, ele, s0)
 
-`ShiftedPotential` of `f` for a slice starting at `s0`: `t0 = s0/(β₀c)` with β₀ of the element's reference.
+`ShiftedPotential` of `f` for a slice starting at `s0`: `t0 = s0/(β₀c)` with β₀ of the element's reference
+(`s0` and `t0` promoted to one number type).
 """
 function shifted_to_slice(f, ele, s0)
   bg = R_to_beta_gamma(ele.species_ref, ele.p_over_q_ref)
   beta_0 = bg / sqrt(1 + bg^2)
-  return ShiftedPotential(f, float(s0), s0 / (beta_0 * C_LIGHT))
+  return ShiftedPotential(f, promote(float(s0), s0 / (beta_0 * C_LIGHT))...)
 end
 
 """

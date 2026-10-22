@@ -199,6 +199,48 @@ end
     @test_throws ErrorException track_csr!(tc_line_bunch(1e-3, 1e-9, 201, pq), blv; params = CSRParams(n_bin = 40, ds_step = 0.1))
   end
 
+  @testset "Entry checks leave the bunch unchanged (S2, W5)" begin
+    pq = tc_pq(100)
+    bl = Beamline([Drift(L = 0.2), SBend(L = 0.3, g_ref = 1.0, Kn0 = 1.0)]; p_over_q_ref = pq, species_ref = TC_E)
+    csr_on = ele -> ele.L == 0.3   # a non-CSR element before the first CSR element
+    function entry_error(b, f)
+      v0, state0, t0 = copy(b.coords.v), copy(b.coords.state), b.t_ref
+      err = try f(); nothing catch e; e end
+      @test b.coords.v == v0 && b.coords.state == state0 && b.t_ref == t0
+      return err
+    end
+    b = tc_line_bunch(1e-3, 1e-9, 201, pq)
+    err = entry_error(b, () -> track_csr!(b, bl; params = CSRParams(n_bin = 40), csr_on))
+    @test err isa ErrorException && occursin("params.ds_step", err.msg)
+    err = entry_error(b, () -> track_csr!(b, bl; params = CSRParams(n_bin = 40, ds_step = 0.1), csr_on,
+                                          centroid_start = zeros(5)))
+    @test err isa ErrorException && occursin("centroid_start", err.msg)
+    # ds_step = 0 is allowed when no element has CSR on
+    b1 = tc_line_bunch(1e-3, 1e-9, 201, pq)
+    b2 = tc_line_bunch(1e-3, 1e-9, 201, pq)
+    track!(b1, bl)
+    track_csr!(b2, bl; params = CSRParams(n_bin = 40), csr_on = ele -> false)
+    @test b1.coords.v == b2.coords.v
+
+    # Reference energy at the rest mass (gamma = 1): error before anything is tracked
+    mass = massof(TC_E)
+    br = Branch([Marker(E_ref = mass, species_ref = TC_E), Drift(L = 0.2), SBend(L = 0.3, g_ref = 1.0, Kn0 = 1.0)])
+    b0 = tc_line_bunch(1e-3, 1e-9, 201, pq)
+    b = Bunch(b0.coords.v, nothing, b0.coords.weight; species = TC_E, p_over_q_ref = BeamTracking.E_to_R(TC_E, mass))
+    err = entry_error(b, () -> track_csr!(b, br; params = CSRParams(n_bin = 40, ds_step = 0.1)))
+    @test err isa ErrorException && occursin("rest mass in element 2", err.msg)
+    # SaganCavity first in a Branch: reference energy 0 at its entrance (lcavity from rest)
+    cav = RFCavity(L = 1.0, voltage = 2e8, rf_frequency = 1.3e9, E_ref = mass + 1e8, dE_ref = 1e8, species_ref = TC_E,
+                   phi0 = 0.0, zero_phase = PhaseRef.Accelerating, tracking_method = SaganCavity(n_cells = 4),
+                   traveling_wave = true)
+    br_cav = Branch([cav, Drift(L = 0.5)])
+    b = Bunch(b0.coords.v, nothing, b0.coords.weight; species = TC_E, p_over_q_ref = BeamTracking.E_to_R(TC_E, 1e8))
+    err = entry_error(b, () -> track_csr!(b, br_cav; params = CSRParams(n_bin = 40, ds_step = 0.1)))
+    @test err isa ErrorException && occursin("rest mass in element 1", err.msg)
+    # Only the elements with CSR on are checked: the bend is at the rest mass too
+    @test_throws ErrorException track_csr!(b, br; params = CSRParams(n_bin = 40, ds_step = 0.1), csr_on = ele -> ele.L == 0.3)
+  end
+
   @testset "csr_ref_energy" begin
     @test CSR.csr_ref_energy(1.0, 3.0, 0.0, 2.0) == 1.0
     @test CSR.csr_ref_energy(1.0, 3.0, 2.0, 2.0) == 3.0

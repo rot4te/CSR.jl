@@ -51,6 +51,7 @@ maxrel(a, b) = maximum(abs, a .- b) / maximum(abs, b)
     # A particle outside the grid is an internal error
     zbad = copy(z); zbad[1] = 1.0
     @test_throws ErrorException CSR.csr_apply_kicks!(copy(pz1), zbad, alive, r, k1)
+    @test_throws ErrorException CSR.csr_apply_kicks_reference!(copy(pz2), zbad, alive, r, k2)   # not a BoundsError
   end
 
   # Kicks: off-axis centroid (c3 ≠ 0), drift-bend-drift with sources upstream of the lattice, kicks at an

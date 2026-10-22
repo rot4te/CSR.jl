@@ -21,9 +21,9 @@ bt_ext() = Base.get_extension(BeamTracking, :BeamTrackingBeamlinesExt)
 Slice `[s0, s1]` of a SaganCavity element of length `L` (`csr_n_step` slicing), with the cavity constants
 BeamTracking computes for the whole element. `ele` holds the slice length, alignment, aperture and multipoles.
 `TE`: number type of the energy fields (`E0`, `dE_ref`, `P0c0`, `p_over_q_ref`); `T`: RF and length fields
-(promoted from the cavity's parameters; TPS or `Dual` with knobs).
+(promoted from the cavity's parameters; TPS or `Dual` with knobs). Built with keywords (`@kwdef`, no defaults).
 """
-struct SaganSlice{E,TM,M,K,TE<:Number,T<:Number}
+Base.@kwdef struct SaganSlice{E,TM,M,K,TE<:Number,T<:Number}
   ele::E
   tm::TM                  # The cavity's SaganCavity
   species::Species
@@ -276,11 +276,12 @@ function slice_sagan(ele::LineElement, up, s0, L_slice, first, last, context)
   vt = (float(rf_omega), float(t_phi0), q_gradient, float(q * rp.voltage), float(L_active), L, float(s0),
         float(s0 + L_slice))
   T = float(promote_type(map(typeof, vt)...))
-  return SaganSlice(s, tm, species, float(mass), float(q), float(gyromagnetic_anomaly(species)), rp.traveling_wave,
-                    convert(TE, ve[1]), convert(TE, ve[2]), convert(TE, ve[3]), convert(TE, ve[4]),
-                    convert(T, vt[1]), convert(T, vt[2]), convert(T, vt[3]), convert(T, vt[4]), float(n_cells),
-                    convert(T, vt[5]), convert(T, vt[6]), m_order, Bn, Bs, has_mult, has_sol,
-                    convert(T, vt[7]), convert(T, vt[8]), first, last)
+  return SaganSlice(; ele = s, tm, species, mass = float(mass), q = float(q), a = float(gyromagnetic_anomaly(species)),
+                    traveling_wave = rp.traveling_wave, E0 = convert(TE, ve[1]), dE_ref = convert(TE, ve[2]),
+                    P0c0 = convert(TE, ve[3]), p_over_q_ref = convert(TE, ve[4]), rf_omega = convert(T, vt[1]),
+                    t_phi0 = convert(T, vt[2]), q_gradient = convert(T, vt[3]), q_voltage = convert(T, vt[4]),
+                    n_cells = float(n_cells), L_active = convert(T, vt[5]), L = convert(T, vt[6]), m_order, Bn, Bs,
+                    has_mult, has_sol, s0 = convert(T, vt[7]), s1 = convert(T, vt[8]), first, last)
 end
 
 """

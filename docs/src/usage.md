@@ -91,6 +91,9 @@ csr_kick!(pz_d, MtlArray(Float32.(z)), MtlArray(Float32.(q)), MtlArray(alive), g
 
 In `Float32`, strongly shielded kicks (a small residual of large image terms) are accurate to only ~3e-4 relative.
 
+[`csr_kick_pz`](@ref) also runs on these backends (on a backend without `Float64`, with a `Float32` result); the
+pullback of its `rrule` is CPU only. [`track_csr!`](@ref) runs on the CPU: bunches with GPU arrays are not supported.
+
 ## Derivatives
 
 [`csr_kick_pz`](@ref) is the non-mutating form of `csr_kick!`. ForwardDiff `Dual`s pass through it in the particles

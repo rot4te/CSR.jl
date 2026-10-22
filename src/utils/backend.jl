@@ -16,6 +16,15 @@ Scalar passed to kernels on `backend`: unchanged unless the backend lacks Float6
 device_scalar(backend, x) = KernelAbstractions.supports_float64(backend) ? x : csr_float_type(backend)(x)
 
 """
+    device_eltype(backend, T)
+
+Element type for an array of number type `T` allocated on `backend`: `T`, unless `T` is an `AbstractFloat` and the
+backend has no `Float64`, then `csr_float_type(backend)`. `Dual`, TPS and integer types are returned unchanged.
+"""
+device_eltype(backend, ::Type{T}) where {T} =
+  (KernelAbstractions.supports_float64(backend) || !(T <: AbstractFloat)) ? T : csr_float_type(backend)
+
+"""
     table_backend(backend)
 
 Backend the kick tables are computed on. The table kernels need the CPU (non-isbits geometry; see `csr_wake_table`).

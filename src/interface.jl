@@ -1,7 +1,7 @@
 # Functions implemented in package extensions (CSRBeamTrackingBeamlinesExt).
 
 """
-    slice_element(ele, s0, L_slice, first::Bool, last::Bool; context) -> LineElement
+    slice_element(ele, s0, L_slice, first::Bool, last::Bool; context) -> LineElement or SaganSlice
 
 Copy of the Beamlines `LineElement` `ele` restricted to `[s0, s0 + L_slice]` (relative to the element
 entrance), for tracking one slice with `BeamTracking.track!` (pass `_p_over_q_ref`).
@@ -23,7 +23,9 @@ Slice rules follow Bmad's `create_element_slice` / `makeup_super_slave1`:
   Needs `ele` in a `Beamline` (reference species and energy).
 - RF: voltage scaled by `L_slice / L`; the rate is converted to a frequency. The returned slice sits in
   a one-element `Beamline` that carries the reference species. Needs `ele` in a `Beamline`.
-  `SaganCavity` tracking is not supported.
+- `SaganCavity` (lcavity): returns a `SaganSlice` object (not a `LineElement`), the part of the cavity's kernel
+  sequence inside `[s0, s0 + L_slice]`, which the extension tracks itself (`track_slice!`; `BeamTracking.track!`
+  cannot split a `SaganCavity`). Needs `ele` in a `Beamline` (reference energy and `dE_ref`).
 - Map elements (`MapParams`) cannot be split: only the whole element (`first && last`, `L_slice == L`)
   is allowed. See `csr_sliceable`.
 """

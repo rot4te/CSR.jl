@@ -18,8 +18,8 @@ is not isbits (its element vector), and the source search raises errors and recu
 are in `table_type(geom, kp, dz)` (`Float64`, or e.g. `Dual`s or TPS for derivatives with respect to the geometry,
 `s_kick` or `gamma`; the sources are then searched in primal values, `primal_search`).
 
-`I_int` for bins `i ≥ 2`: trapezoid in `I_csr`, or with `all_bin_quadrature` Simpson in `u^(1/3)` with 8 nodes per
-bin (`I_csr_quadrature`; 8 more source solves per bin, in blocks as above).
+`I_int` for bins `i ≥ 2`: trapezoid in `I_csr`, or with `all_bin_quadrature` Simpson in `u^(1/3)` with 8 intervals
+(9 nodes) per bin (`I_csr_quadrature`; 9 more source solves per bin, in blocks as above).
 """
 function csr_wake_table(geom::CSRGeometry, kp::CSRKickPoint, dz, n_bin, backend;
                         n_block = min(n_bin, 4 * Threads.nthreads()), all_bin_quadrature::Bool = false)

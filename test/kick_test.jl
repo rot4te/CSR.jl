@@ -19,6 +19,30 @@
     @test_throws ErrorException csr_kick_coef(Species("neutron"), 100.0, 0.01)
   end
 
+  @testset "gamma must exceed 1 (W5)" begin
+    geom = CSRGeometry([0.2, 0.3], [0.0, 1.5], zeros(3, 6))
+    p = CSRParams(n_bin = 40, ds_step = 0.1)
+    d = Descriptor(1, 1)
+    gtps = 1.0 + 0.0 * @vars(d)[1]   # primal value 1, with a knob
+    @testset "gamma = $gamma" for gamma in (1.0, 0.5, gtps)
+      @test_throws ErrorException CSRKickPoint(geom, 1, 0.1, gamma)
+      @test_throws ErrorException csr_kick_coef(electron, gamma, 0.01)
+      @test_throws ErrorException csr_kick_coef(electron, gamma, 0.01; bmad_compat = true)
+      err = try csr_kick_coef(electron, gamma, 0.01); "" catch e; sprint(showerror, e) end
+      @test occursin("gamma must be > 1", err)
+    end
+    # csr_kick! raises before any pz is changed
+    zs, qs, als = gaussian_line_bunch(sigma, Q, 200)
+    for gamma in (1.0, 0.5)
+      pz = fill(1e-4, length(zs))
+      @test_throws ErrorException csr_kick!(pz, zs, qs, als, geom, 1, 0.1, gamma, electron, p)
+      @test pz == fill(1e-4, length(zs))
+      @test_throws ErrorException csr_kick_pz(pz, zs, qs, als, geom, 1, 0.1, gamma, electron, p)
+    end
+    @test_throws ErrorException csr_kick_pz(zeros(length(zs)), zs, qs, als, geom, 1, 0.1, gtps, electron, p)
+    @test csr_kick!(zeros(length(zs)), zs, qs, als, geom, 1, 0.1, 1.0 + 1e-3, electron, p) isa CSRStepResult
+  end
+
   @testset "csr_n_step" begin
     p = CSRParams(ds_step = 0.03)
     @test csr_n_step(0.1, p) == (3, 0.1 / 3)

@@ -50,6 +50,15 @@ CSR.KernelAbstractions.supports_float64(::NoFloat64Backend) = false
     @test CSR.csr_float_type(NoFloat64Backend()) == Float32
     @test CSR.device_scalar(NoFloat64Backend(), 1.3) === 1.3f0
     @test CSR.table_backend(NoFloat64Backend()) isa CSR.CPU
+    # device_eltype: Float64 becomes Float32 on a backend without Float64; other types are unchanged
+    D = ForwardDiff.Dual{Nothing,Float64,2}
+    @test CSR.device_eltype(NoFloat64Backend(), Float64) === Float32
+    @test CSR.device_eltype(NoFloat64Backend(), Float32) === Float32
+    @test CSR.device_eltype(NoFloat64Backend(), D) === D
+    @test CSR.device_eltype(NoFloat64Backend(), Int) === Int
+    for T in (Float64, Float32, D, Int)
+      @test CSR.device_eltype(CSR.CPU(), T) === T
+    end
   end
 
   @testset "CSRParams" begin

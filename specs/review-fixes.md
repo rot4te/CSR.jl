@@ -233,3 +233,6 @@ ChainRulesCore, ChainRulesTestUtils, GTPSA, AtomicAndPhysicalConstants, KernelAb
 
 | Date | Section | Change | Approved |
 |---|---|---|---|
+| 10-22 | 6.A, 6.B, 7.2 | Mutation checks waived: reverting either fix still passes `@inferred` (the internal `Union` is resolved by the compiler; the result type is concrete, no `Union` slot in `code_typed`). The 6.F testset guards result types only. Fixes kept. | user, 10-22 |
+| 10-22 | 6.F | Extra fix: `root_tangent` (`src/utils/root_finding.jl`) returns early only for `f0 isa Real && n == 0` (a TPS's order is a runtime value, which made the TPS source search return `Union{Float64,TPS}`). A TPS of max order 0 now returns a TPS instead of `s0`. | user, 10-22 |
+| 10-22 | 6.E | Limit accepted: `primal(E) > mass` without tolerance; an lcavity after a `Marker` at `E_ref = mass` has `E_start = mass + 1.2e-9 eV` (round-off), passes the check and fails later with "centroid orbit lost", bunch unchanged. The literal 6.E Branch test is replaced by a drift at the rest mass and a cavity first in a Branch (`E_start = 0`). | user, 10-22 |

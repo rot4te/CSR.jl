@@ -2,7 +2,7 @@
 
 ## Test suite
 
-`test/runtests.jl` (about 1000 checks, run on 1 and 4 threads) covers:
+`test/runtests.jl` (about 3100 checks, run on 1 and 4 threads) covers:
 
 | File | Checks |
 |---|---|
@@ -13,9 +13,14 @@
 | `kernels_test.jl` | Kernels against the serial reference implementation: grid, tables and source points exactly, kicks to 1e-12; Float32 and BigFloat particles. |
 | `shielding_test.jl` | Image kick on a drift = uniform-motion field; hat-integrated table vs its analytic integral; free-space limit and shielding in a bend; averaged layer sum converges in the layer count. |
 | `ad_test.jl` | `rrule` vs ForwardDiff `J'ȳ` (~1e-15) vs finite differences. |
-| `slicing_test.jl` | Sliced tracking with CSR off reproduces unsliced tracking for every element kind. |
+| `ad_geometry_test.jl` | Forward derivatives of one kick with respect to the geometry (element `L`, `g`, centroid), `s_kick` and `γ` (`Dual`s, source roots by implicit differentiation) vs finite differences; second derivatives with nested `Dual`s. |
+| `ad_rrule_test.jl` | `rrule` of `csr_kick_pz` with respect to the geometry, `s_kick` and `γ`, and of the `CSRGeometry` constructors, vs ForwardDiff (round-off) and `ChainRulesTestUtils`. |
+| `tps_collective_test.jl` | Collective TPS: bunch, geometry, `s_kick` and `γ` as TPS in shared knobs, vs ForwardDiff Jacobians and nested-`Dual` second and third derivatives; test particles in 6D + knobs; element-type and descriptor checks. |
+| `inference_test.jl` | `@inferred` (no `Union`) for the core hot-path functions (`path_excess`, `ddz_calc_csr`, `image_charge_kick`, `s_source_calc`, `I_csr_calc`, `with_fields`, `CSRKickPoint`) in `Float64`, `Float32`, `Dual`, nested `Dual` and TPS. |
+| `slicing_test.jl` | Sliced tracking with CSR off reproduces unsliced tracking for every element kind; the slicing files use only the primal helpers from `CSR` (D51). |
 | `track_csr_test.jl`, `lcavity_test.jl` | `track_csr!` through Beamlines and Branches; SaganCavity slices vs the whole cavity (round-off). |
 | `tps_test.jl`, `track_tps_test.jl` | TPS test particles in the frozen wake, for one kick and through `track_csr!` (Beamline, Branch with an lcavity): TPS Jacobian and second derivatives vs ForwardDiff of the same Float64 tracking (round-off; 1e-10 bound for the multithreaded deposit order); Float64 test particles follow bunch particles (≤ 1e-15). |
+| `track_tps_collective_test.jl` | `track_csr!` with a TPS bunch in knobs (element parameters, bunch charge, reference energy, initial coordinates) vs ForwardDiff and finite differences, nested `Dual`s for second order; entry checks. |
 
 ## Cross-check against Bmad/Tao
 

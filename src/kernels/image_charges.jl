@@ -16,7 +16,7 @@ function image_charge_kick(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
     sp = geom.ele[ix].spline
     g_bend = -spline_d2(sp, k.s_chord_source) / sqrt(1 + spline_d1(sp, k.s_chord_source)^2)^3
   else
-    g_bend = 0.0
+    g_bend = zero(k.L)
   end
   theta = k.floor_s.theta
   t_vec = SVector(sin(theta), 0.0, cos(theta))                         # Direction of motion at the source point

@@ -94,9 +94,10 @@ csr_slice_P0c(_) = nothing
     CSR.track_csr!(bunch, br::Branch; ...) -> bunch
 
 Track `bunch` through `bl` (or the Beamlines of `br` in order) with 1D CSR kicks between slices of each element
-(Bmad `csr_method = one_dim`).
+(Bmad `csr_method = one_dim`). `track_csr!` runs on the CPU (bunches with GPU arrays are not supported); `csr_kick!`
+itself runs on GPU backends.
 
-- `params::CSRParams` (`ds_step` must be set).
+- `params::CSRParams` (`ds_step` must be set if any element has CSR on: error before anything is tracked).
 - `csr_on(ele)`: elements for which it returns `false` are tracked whole without CSR, like Bmad's per-element
   `csr_method = off`. Zero-length and map elements are always tracked whole without CSR.
 - `centroid_start`: 6-vector where the centroid orbit starts (Bmad/Tao: the supplied `centroid` orbit).
@@ -139,6 +140,8 @@ Reference energy: constant inside elements, except SaganCavity elements (lcavity
 where γ for the CSR kick ramps linearly from `E_ref - dE_ref` to `E_ref` (`csr_ref_energy`, Bmad). The particles'
 reference momentum there steps at each RF cell (BeamTracking), so the applied Δpz is rescaled from the linearly ramped
 reference momentum to the stepped one.
+The reference energy at the entrance and exit of every CSR element must exceed the rest mass (γ > 1; an lcavity from
+rest is not supported): error before anything is tracked.
 """
 function CSR.track_csr!(bunch::Bunch, bl::Beamline; test_bunch = nothing, centroid_start = nothing, kwargs...)
   isempty(bl.line) && return bunch
@@ -273,6 +276,29 @@ function test_kick_particles(tb::Bunch)
 end
 
 """
+    check_csr_steps(bunch, line, context, params, csr_on, centroid_start)
+
+Entry checks of `track_csr_line!`, before anything is tracked: `length(centroid_start) == 6`; if any element has
+`csr_on(ele)` and is sliceable, `params.ds_step > 0`, and for each such element the reference energies at its entrance
+and exit above the rest mass (`gamma > 1`; an lcavity from rest is not supported).
+"""
+function check_csr_steps(bunch, line, context, params, csr_on, centroid_start)
+  centroid_start === nothing || length(centroid_start) == 6 ||
+    error("track_csr!: centroid_start must have 6 elements (length = $(length(centroid_start)))")
+  mass = massof(bunch.species)
+  for (i, ele) in enumerate(line)
+    csr_on(ele) && CSR.csr_sliceable(ele; context) || continue
+    params.ds_step > 0 || error("track_csr!: params.ds_step must be set (> 0) for elements with CSR on (element $i)")
+    p_over_q_ref = ele.p_over_q_ref
+    p_over_q_ref isa Number || continue   # time-dependent reference energy: error when tracking the element
+    E_start, E_end, _ = csr_ref_energies(ele, bunch.species, p_over_q_ref, context)
+    CSR.primal(E_start) > mass && CSR.primal(E_end) > mass ||
+      error("track_csr!: reference energy at or below the rest mass in element $i (lcavity from rest is not supported)")
+  end
+  return nothing
+end
+
+"""
     track_csr_line!(bunch, line, context; params, csr_on, centroid_start, sliced_centroid, diagnostics, test_bunch)
 
 Body of `track_csr!` for a vector of elements: reference survey (with patches), centroid orbit, `CSRGeometry`,
@@ -280,6 +306,7 @@ then the step loop over elements and slices with half kicks at the element ends 
 """
 function track_csr_line!(bunch::Bunch, line, context; params::CSRParams, csr_on = ele -> true,
                          centroid_start = nothing, sliced_centroid = true, diagnostics = nothing, test_bunch = nothing)
+  check_csr_steps(bunch, line, context, params, csr_on, centroid_start)
   n = length(line)
   species = bunch.species
   q_abs = abs(chargeof(species; C = true))
@@ -345,15 +372,16 @@ function track_csr_line!(bunch::Bunch, line, context; params::CSRParams, csr_on 
 end
 
 """
-    csr_slice(ele, i_step, n_step, ds, context)
+    csr_slice(ele, i_step, n_step, L, ds, context)
 
-Slice i_step (1..n_step) of an element cut into n_step slices of length ds, as tracked between CSR kicks.
+Slice i_step (1..n_step) of an element of length `L` cut into n_step slices of length ds, as tracked between CSR kicks.
 s0 + L_slice equals the next slice's s0 exactly (Sterbenz), so SaganCavity cell kicks on a boundary fall in
-exactly one slice.
+exactly one slice. The last slice ends at the element length `L` exactly (`L_slice = L - s0`).
 """
-function csr_slice(ele, i_step, n_step, ds, context)
+function csr_slice(ele, i_step, n_step, L, ds, context)
   s0 = (i_step - 1) * ds
-  return CSR.slice_element(ele, s0, i_step * ds - s0, i_step == 1, i_step == n_step; context)
+  L_slice = i_step == n_step ? L - s0 : i_step * ds - s0
+  return CSR.slice_element(ele, s0, L_slice, i_step == 1, i_step == n_step; context)
 end
 
 """
@@ -365,7 +393,7 @@ default Symplectic method takes one step per element or slice). Function barrier
 function track_centroid_sliced!(cb, ele, L, p_over_q_ref, params, context)
   n_step, ds = csr_n_step(L, params)
   for i_step in 1:n_step
-    track_slice!(cb, csr_slice(ele, i_step, n_step, ds, context), p_over_q_ref)
+    track_slice!(cb, csr_slice(ele, i_step, n_step, L, ds, context), p_over_q_ref)
   end
   return cb
 end
@@ -386,7 +414,7 @@ function track_csr_element!(bunch, ele, i, L, E_start, E_end, ramp, p_over_q_ref
   P0c = convert(TP, sqrt(E_start^2 - mass^2))::TP   # Particles' reference momentum (used in an lcavity only)
   for i_step in 0:n_step
     if i_step != 0
-      s = csr_slice(ele, i_step, n_step, ds, context)
+      s = csr_slice(ele, i_step, n_step, L, ds, context)
       track_slice!(bunch, s, p_over_q_ref)
       isnothing(test_bunch) || track_slice!(test_bunch, s, p_over_q_ref)
       ramp && (P0c = convert(TP, csr_slice_P0c(s))::TP)
