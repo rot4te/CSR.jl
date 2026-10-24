@@ -86,7 +86,7 @@ function path_excess(s0, s1, c, dtheta_ref = 0.0; bmad_compat::Bool = false)
   bmad_compat && return dspline_len(s0, s1, c, dtheta_ref; bmad_compat)
   h = (s1 - s0) / 2
   m = (s0 + s1) / 2
-  acc = zero(float(promote_type(eltype(c), typeof(s0), typeof(s1))))
+  acc = zero(float(promote_type(eltype(GL4_WEIGHTS), eltype(c), typeof(s0), typeof(s1))))
   for i in 1:4
     xp = spline_d1(c, m + h * GL4_NODES[i])
     acc += GL4_WEIGHTS[i] * xp^2 / (1 + sqrt(1 + xp^2))
