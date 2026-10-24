@@ -377,7 +377,9 @@ Per sub-stage:
    b. W2: `code_warntype` (or `Base.code_typed`) of `image_charge_kick` for the Dual and TPS cases shows a
       `Union{Float64, …}` for `g_bend` with `g_bend = 0.0` restored, and none with the fix. Report only (`@inferred`
       cannot detect it: the return type is the same).
-   c. W1: on Julia 1.13.2 restoring `acc = 0.0` does not change inference (implementer, 2026-10-24); no requirement.
+   c. W1: on Julia 1.13.2 restoring `acc = 0.0` does not change the return type (so `@inferred` cannot see it), but
+      `code_warntype` of the keyword body of `path_excess` shows `acc::Union{Float64, …}` for Dual and TPS inputs with
+      the old line and a concrete `acc` with the fix. Report only; no requirement.
    d. Julia 1.10 (user, 2026-10-24): repeat b and c (and report whether `acc` / `g_bend` / the return types are
       unions with the old lines) on Julia 1.10 in a separate env (Section 10). Report only. If Julia 1.10 is not
       installed (`julia +1.10 --version` fails), report "blocked: no Julia 1.10" and do not install it.
@@ -459,3 +461,4 @@ None affecting implementation.
 |---|---|---|---|
 | 2026-10-24 | 6.A.4 added (`root_tangent` early return converted to the promoted type); Section 5 row A. | spec-implementer stopped: TPS `s_source_calc` infers `Tuple{CSRKick1{TPS}, Union{Float64, TPS}}` (union from `root_source`); coordinator traced it to `root_order(::TPS)` being a runtime value (by reading, unverified). | Approved by the user |
 | 2026-10-24 | 6.A.3 assertion 1: `isconcretetype(typeof(r))` → `isa promote_type(T, typeof(s_kick))`. Criterion 1: sensitivity replaced by 1a–1d (A.4 detection; W2 by `code_warntype`, report only; W1 not reproducible on 1.13.2; W1/W2 rerun on Julia 1.10). | spec-implementer: `isconcretetype` of a value's type is always true; restoring `acc = 0.0` or `g_bend = 0.0` does not change `@inferred` results on 1.13.2. | Approved by the user (1.10 check added by the user) |
+| 2026-10-24 | 9.1c: "does not change inference" → "does not change the return type ... but `code_warntype` of the keyword body shows `acc::Union{...}` with the old line". | Criterion 1 sensitivity (sub-stage A test, coordinator): `code_warntype` of the `path_excess` keyword body (Julia 1.13.2) shows `acc::Union{Float64, Dual}` and `acc::Union{Float64, TPS64}` with `acc = 0.0`, concrete with the fix; return types are the same, so `@inferred` does not see it. The old wording was true only of the return type. | Applied (clarification; no requirement changed) |
