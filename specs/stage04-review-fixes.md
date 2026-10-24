@@ -151,6 +151,44 @@ n == 0 && return convert(promote_type(typeof(s0), typeof(f0)), s0)
 (converted to the promoted type of `s0` and `f0`) when `f0` carries no derivatives." Nothing else changes. For
 `Float64`/`Dual` the result is bitwise unchanged.
 
+**A.5 (amendment 2026-10-24; code review of sub-stage A, findings W1–W4, all approved by the user).**
+
+1. **`path_excess` with all-`Float32` arguments** (`src/utils/spline.jl`). The accumulator becomes
+   `acc = zero(float(promote_type(eltype(GL4_WEIGHTS), eltype(c), typeof(s0), typeof(s1))))` (the Gauss–Legendre
+   weights are `Float64`, so a `Float32` `acc` became `Union{Float32, Float64}`). Float64/Dual/TPS unchanged.
+2. **Test file** `test/type_stability_test.jl`:
+   a. Header comment (lines 1–2) replaced by:
+      ```julia
+      # Stage 04 sub-stage A (W1, W2, W6): return types (`@inferred`) of the core source-point, kick and image-charge
+      # functions for Float64, Float32 scalars (the geometry is always at least Float64), a Float32 spline in
+      # `path_excess`, Dual, nested Dual, static- and dynamic-descriptor TPS. Detects A.4 regressions; the W1/W2
+      # local-variable unions leave the return types unchanged and are not detected here.
+      ```
+   b. A sixth case after `"TPS"`: `("TPS dynamic", 1.5 + x_dyn[1], 0.1, 200.0, 1e-4)`, with, after `x_tps = @vars(d_tps)`:
+      `d_dyn = Descriptor(1, 2)` and `x_dyn = @vars(d_dyn, dynamic = true)` (so `GTPSA.desc_current` is `d_dyn` while
+      the cases run; create no other `Descriptor` before the loop ends).
+   c. Every `@inferred` counts as a test and does not stop the case on failure:
+      - Line `k1, s1 = @inferred CSR.s_source_calc(k0, geom, kp, search)` becomes two lines:
+        `@test (@inferred CSR.s_source_calc(k0, geom, kp, search)) isa Tuple` and
+        `k1, s1 = CSR.s_source_calc(k0, geom, kp, search)`.
+      - Each bare `@inferred X` line (`ddz_calc_csr`, both `I_csr_calc`, both `with_fields`, both `image_charge_kick`)
+        becomes `@test (@inferred X) isa Any`.
+   d. After the `for` loop (inside the top-level testset), `@testset "Float32 spline"`:
+      `c32 = SVector{4,Float32}(1f-3, 2f-3, -1f-3, 5f-4)`;
+      `@test (@inferred CSR.path_excess(0f0, 0.1f0, c32, 0.01f0)) isa Float64`;
+      `@test (@inferred CSR.path_excess(0f0, 0.1f0, c32, 0.01f0; bmad_compat = true)) isa AbstractFloat`.
+      `SVector` comes from `StaticArrays`, which `runtests.jl` and the one-file command (Section 10) load; do not add
+      a `using` line.
+   e. Last, `@testset "root_tangent with an order-0 TPS"`: `d0 = Descriptor(1, 0)`; `f0 = zero(first(@vars(d0)))`;
+      `@test CSR.root_order(f0) == 0`; `r = @inferred CSR.root_tangent(s -> s - 0.25, 0.25, f0, 1.0)`;
+      `@test r isa typeof(f0)`; `@test GTPSA.scalar(r) == 0.25`. If `Descriptor(1, 0)` or `@vars(d0)` raises, or
+      `CSR.root_order(f0) != 0`, omit this testset and report what happened (do not try other constructions).
+      It must be the last testset in the file (it changes `GTPSA.desc_current`).
+3. Acceptance (criterion 1e): the file passes; report the new assertion count. Sensitivity (scratch `@eval`):
+   (i) A.5.1 without `eltype(GL4_WEIGHTS)` → the "Float32 spline" default-mode assertion fails;
+   (ii) A.4 old line → TPS and "TPS dynamic" `s_source_calc` assertions fail **and** their later assertions still
+   run (counted as pass/fail, not skipped); the order-0 testset's `r isa typeof(f0)` fails (if present).
+
 ### 6.B Correctness (sub-stage B)
 
 **B.1 (W3) `shifted_to_slice`** (`ext/CSRBeamTrackingBeamlinesExt/slicing.jl`). Replace the return line by
@@ -459,6 +497,7 @@ None affecting implementation.
 
 | Date | Change | Reason | Status |
 |---|---|---|---|
+| 2026-10-24 | 6.A.5 added (Float32 `path_excess` accumulator; test file: header, dynamic-descriptor TPS case, counted `@inferred`, Float32 spline testset, order-0 TPS `root_tangent` testset); criterion 1e. | Code review of sub-stage A, warnings W1–W4. | Approved by the user |
 | 2026-10-24 | 6.A.4 added (`root_tangent` early return converted to the promoted type); Section 5 row A. | spec-implementer stopped: TPS `s_source_calc` infers `Tuple{CSRKick1{TPS}, Union{Float64, TPS}}` (union from `root_source`); coordinator traced it to `root_order(::TPS)` being a runtime value (by reading, unverified). | Approved by the user |
 | 2026-10-24 | 6.A.3 assertion 1: `isconcretetype(typeof(r))` → `isa promote_type(T, typeof(s_kick))`. Criterion 1: sensitivity replaced by 1a–1d (A.4 detection; W2 by `code_warntype`, report only; W1 not reproducible on 1.13.2; W1/W2 rerun on Julia 1.10). | spec-implementer: `isconcretetype` of a value's type is always true; restoring `acc = 0.0` or `g_bend = 0.0` does not change `@inferred` results on 1.13.2. | Approved by the user (1.10 check added by the user) |
 | 2026-10-24 | 9.1c: "does not change inference" → "does not change the return type ... but `code_warntype` of the keyword body shows `acc::Union{...}` with the old line". | Criterion 1 sensitivity (sub-stage A test, coordinator): `code_warntype` of the `path_excess` keyword body (Julia 1.13.2) shows `acc::Union{Float64, Dual}` and `acc::Union{Float64, TPS64}` with `acc = 0.0`, concrete with the fix; return types are the same, so `@inferred` does not see it. The old wording was true only of the return type. | Applied (clarification; no requirement changed) |
