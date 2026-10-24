@@ -65,6 +65,6 @@
   @testset "Float32 spline" begin
     c32 = SVector{4,Float32}(1f-3, 2f-3, -1f-3, 5f-4)
     @test (@inferred CSR.path_excess(0f0, 0.1f0, c32, 0.01f0)) isa Float64
-    @test (@inferred CSR.path_excess(0f0, 0.1f0, c32, 0.01f0; bmad_compat = true)) isa AbstractFloat
+    @test (@inferred CSR.path_excess(0f0, 0.1f0, c32, 0.01f0; bmad_compat = true)) isa Float64
   end
 end
