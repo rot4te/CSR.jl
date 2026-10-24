@@ -176,7 +176,7 @@ n == 0 && return convert(promote_type(typeof(s0), typeof(f0)), s0)
    d. After the `for` loop (inside the top-level testset), `@testset "Float32 spline"`:
       `c32 = SVector{4,Float32}(1f-3, 2f-3, -1f-3, 5f-4)`;
       `@test (@inferred CSR.path_excess(0f0, 0.1f0, c32, 0.01f0)) isa Float64`;
-      `@test (@inferred CSR.path_excess(0f0, 0.1f0, c32, 0.01f0; bmad_compat = true)) isa AbstractFloat`.
+      `@test (@inferred CSR.path_excess(0f0, 0.1f0, c32, 0.01f0; bmad_compat = true)) isa Float64` (after A.5.3).
       `SVector` comes from `StaticArrays`, which `runtests.jl` and the one-file command (Section 10) load; do not add
       a `using` line.
    e. Last, `@testset "root_tangent with an order-0 TPS"`: `d0 = Descriptor(1, 0)`; `f0 = zero(first(@vars(d0)))`;
@@ -184,10 +184,26 @@ n == 0 && return convert(promote_type(typeof(s0), typeof(f0)), s0)
       `@test r isa typeof(f0)`; `@test GTPSA.scalar(r) == 0.25`. If `Descriptor(1, 0)` or `@vars(d0)` raises, or
       `CSR.root_order(f0) != 0`, omit this testset and report what happened (do not try other constructions).
       It must be the last testset in the file (it changes `GTPSA.desc_current`).
-3. Acceptance (criterion 1e): the file passes; report the new assertion count. Sensitivity (scratch `@eval`):
+   **Outcome (spec-implementer, 2026-10-24):** `Descriptor(1, 0)` is created as `MO = 1` and `root_order(f0) == 1`,
+   so 5.2e was omitted as specified; the executed `n == 0` branch stays untested (inference only).
+3. **`path_excess` compat branch return type** (amendment 2026-10-24, user's choice). With all-`Float32` arguments
+   the compat branch (`dspline_len`) returned `Float32` and the default branch `Float64`, so `path_excess` inferred
+   `Union{Float32, Float64}` (`bmad_compat` is a runtime `Bool`). Replace the line
+   `bmad_compat && return dspline_len(s0, s1, c, dtheta_ref; bmad_compat)` by
+
+   ```julia
+   R = float(promote_type(eltype(GL4_WEIGHTS), eltype(c), typeof(s0), typeof(s1), typeof(dtheta_ref)))
+   bmad_compat && return convert(R, dspline_len(s0, s1, c, dtheta_ref; bmad_compat))
+   ```
+
+   (`R` is the default branch's return type; for Float64, `Dual` and TPS inputs it equals `dspline_len`'s type, so
+   `convert` is the identity and results are bitwise unchanged). Add to the docstring: "The result type is the same
+   in both modes (`Float64` for `Float32` arguments)." Nothing else changes.
+4. Acceptance (criterion 1e): the file passes; report the new assertion count. Sensitivity (scratch `@eval`):
    (i) A.5.1 without `eltype(GL4_WEIGHTS)` → the "Float32 spline" default-mode assertion fails;
    (ii) A.4 old line → TPS and "TPS dynamic" `s_source_calc` assertions fail **and** their later assertions still
-   run (counted as pass/fail, not skipped); the order-0 testset's `r isa typeof(f0)` fails (if present).
+   run (counted as pass/fail, not skipped); the order-0 testset's `r isa typeof(f0)` fails (if present);
+   (iii) A.5.3 old line (no `convert`) → both "Float32 spline" assertions fail.
 
 ### 6.B Correctness (sub-stage B)
 
@@ -497,6 +513,7 @@ None affecting implementation.
 
 | Date | Change | Reason | Status |
 |---|---|---|---|
+| 2026-10-24 | 6.A.5.3 added (`path_excess` compat branch converted to the default branch's type); 6.A.5.2d compat assertion `isa AbstractFloat` → `isa Float64`; 5.2e outcome recorded (omitted: `Descriptor(1, 0)` has `MO = 1`); criterion 1e (iii). | spec-implementer stopped: both Float32-spline `@inferred` errored, `Union{Float32, Float64}` from the two return branches (`acc` itself concrete). | Approved by the user |
 | 2026-10-24 | 6.A.5 added (Float32 `path_excess` accumulator; test file: header, dynamic-descriptor TPS case, counted `@inferred`, Float32 spline testset, order-0 TPS `root_tangent` testset); criterion 1e. | Code review of sub-stage A, warnings W1–W4. | Approved by the user |
 | 2026-10-24 | 6.A.4 added (`root_tangent` early return converted to the promoted type); Section 5 row A. | spec-implementer stopped: TPS `s_source_calc` infers `Tuple{CSRKick1{TPS}, Union{Float64, TPS}}` (union from `root_source`); coordinator traced it to `root_order(::TPS)` being a runtime value (by reading, unverified). | Approved by the user |
 | 2026-10-24 | 6.A.3 assertion 1: `isconcretetype(typeof(r))` → `isa promote_type(T, typeof(s_kick))`. Criterion 1: sensitivity replaced by 1a–1d (A.4 detection; W2 by `code_warntype`, report only; W1 not reproducible on 1.13.2; W1/W2 rerun on Julia 1.10). | spec-implementer: `isconcretetype` of a value's type is always true; restoring `acc = 0.0` or `g_bend = 0.0` does not change `@inferred` results on 1.13.2. | Approved by the user (1.10 check added by the user) |
