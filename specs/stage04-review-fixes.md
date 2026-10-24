@@ -53,7 +53,7 @@ Registry checked 2026-10-24 (General registry `Versions.toml` on GitHub): GTPSA 
 
 | Sub-stage | Files |
 |---|---|
-| A | `src/utils/spline.jl` (W1), `src/kernels/image_charges.jl` (W2), new `test/type_stability_test.jl`, `test/runtests.jl` (one `include`). |
+| A | `src/utils/spline.jl` (W1), `src/kernels/image_charges.jl` (W2), `src/utils/root_finding.jl` (A.4), new `test/type_stability_test.jl`, `test/runtests.jl` (one `include`). |
 | B | `ext/CSRBeamTrackingBeamlinesExt/slicing.jl` (W3), `src/utils/backend.jl` (W4 helper), `src/kick.jl` (W4), `ext/CSRChainRulesCoreExt/CSRChainRulesCoreExt.jl` (W4), `src/geometry.jl` (W5), `src/utils/kick_setup.jl` (W5), `docs/src/usage.md` (W4, one sentence), new `test/review_fixes_test.jl`, `test/runtests.jl` (one `include`). |
 | C | `src/interface.jl` (S1), `docs/src/validation.md` (S1), `ext/CSRBeamTrackingBeamlinesExt/track.jl` (S2, S8), `test/review_fixes_test.jl` (S2 testset). |
 | D | `src/kernels/adjoint.jl` (S3), `src/types.jl`, `src/tables.jl`, `src/param_adjoint.jl` (S4, S9), `Project.toml` (S5, S6), delete `diagnostics/base/` and `diagnostics/head/` (S6), `ext/CSRBeamTrackingBeamlinesExt/sagan.jl` (S7, S10), `src/reference.jl` (S10), `test/review_fixes_test.jl` (S10 testsets). |
@@ -120,8 +120,8 @@ k0 = CSR.CSRKick1(geom, kp; dz_particles = lag)
 
 and these assertions (each call wrapped in `@inferred`; `@test` on the stated property):
 
-1. `@inferred CSR.path_excess(zero(s_kick), s_kick, geom.ele[2].spline, 0.01)`; also with `bmad_compat = true`.
-   Test the result `isa` a concrete type (`isconcretetype(typeof(r))`).
+1. `@test (@inferred CSR.path_excess(zero(s_kick), s_kick, geom.ele[2].spline, 0.01)) isa promote_type(T,
+   typeof(s_kick))`; the same with `bmad_compat = true`.
 2. `k1, s1 = @inferred CSR.s_source_calc(k0, geom, kp, search)`; test `k1 isa CSR.CSRKick1`.
 3. `@inferred CSR.ddz_calc_csr(k1, s1, geom, kp)`.
 4. `@inferred CSR.I_csr_calc(k1, 1, lag, geom, kp, 0.0, search)` and `@inferred CSR.I_csr_calc(k1, 2, lag, geom, kp,
@@ -135,9 +135,21 @@ and these assertions (each call wrapped in `@inferred`; `@test` on the stated pr
    CSR.primal_search(geom, kp_u, T))`; `@test ku.ix_ele_source == 0`; `@inferred CSR.image_charge_kick(ku, geom,
    kp_u)`.
 
-If any assertion fails for a reason other than W1/W2 (e.g. another function is not inferred, or a call signature in
-this section does not exist), **stop and report** the failing call, case, and the inferred type; do not change other
+If any assertion fails for a reason other than W1/W2/A.4 (e.g. another function is not inferred, or a call signature
+in this section does not exist), **stop and report** the failing call, case, and the inferred type; do not change other
 source code.
+
+**A.4 (amendment 2026-10-24) `root_tangent`** (`src/utils/root_finding.jl`). For a TPS, `root_order(t::TPS) =
+Int(t.mo)` is a runtime value, so the early return `n == 0 && return s0` (Float64 primal root) made the result
+`Union{Float64, TPS}` (found by A.3 assertion 2, TPS case). Replace that line by
+
+```julia
+n == 0 && return convert(promote_type(typeof(s0), typeof(f0)), s0)
+```
+
+(the type the Newton steps return). Docstring: "Returns `s0` when `f0` carries no derivatives." → "Returns `s0`
+(converted to the promoted type of `s0` and `f0`) when `f0` carries no derivatives." Nothing else changes. For
+`Float64`/`Dual` the result is bitwise unchanged.
 
 ### 6.B Correctness (sub-stage B)
 
@@ -360,9 +372,15 @@ Float64 results: bitwise unchanged except D.7 (lcavity tests keep their existing
 
 Per sub-stage:
 
-1. **A:** `type_stability_test.jl` passes, all five cases. Sensitivity (scratch, `@eval`, repo unchanged): with
-   `acc = 0.0` restored in `path_excess`, the Dual, nested Dual and TPS cases of assertion 1 fail; with `g_bend = 0.0`
-   restored, assertion 7 fails for those cases. Report which assertions fail.
+1. **A:** `type_stability_test.jl` passes, all five cases. Sensitivity (scratch, `@eval`, repo unchanged):
+   a. A.4: with the old line `n == 0 && return s0` restored in `root_tangent`, TPS assertion 2 fails.
+   b. W2: `code_warntype` (or `Base.code_typed`) of `image_charge_kick` for the Dual and TPS cases shows a
+      `Union{Float64, …}` for `g_bend` with `g_bend = 0.0` restored, and none with the fix. Report only (`@inferred`
+      cannot detect it: the return type is the same).
+   c. W1: on Julia 1.13.2 restoring `acc = 0.0` does not change inference (implementer, 2026-10-24); no requirement.
+   d. Julia 1.10 (user, 2026-10-24): repeat b and c (and report whether `acc` / `g_bend` / the return types are
+      unions with the old lines) on Julia 1.10 in a separate env (Section 10). Report only. If Julia 1.10 is not
+      installed (`julia +1.10 --version` fails), report "blocked: no Julia 1.10" and do not install it.
 2. **B:** the B testsets pass. **Metal check** (outside the suite; separate scratch env with Metal.jl + CSR (dev) +
    AtomicAndPhysicalConstants + StaticArrays + ChainRulesCore, Section 10): with the 6.B.4 item 2 geometry and bunch on
    Metal (`Float32` `MtlArray`s for `pz`, `z`, `q`; `MtlArray(alive)`), `csr_kick_pz(...; pz_scale = 1.3)` returns an
@@ -408,6 +426,10 @@ and `julia --project=docs -e 'using Pkg; Pkg.resolve()'` (docs `Manifest.toml` i
   "AtomicAndPhysicalConstants", "StaticArrays", "ChainRulesCore", "KernelAbstractions"])`. Script in the scratchpad;
   copy it to `diagnostics/stage04_metal_kick_pz.jl` when it passes.
 
+- Julia 1.10 env (criterion 1d): `<scratchpad>/env110`, `julia +1.10 --project=<scratchpad>/env110 -e 'using Pkg;
+  Pkg.develop(path = expanduser("~/.julia/dev/CSR.jl")); Pkg.add(["Test", "StaticArrays", "ForwardDiff", "GTPSA"])'`.
+  If resolution fails on 1.10, report the error (do not change compat).
+
 Scripts and logs in the scratchpad.
 
 ## 11. Implementation order
@@ -435,3 +457,5 @@ None affecting implementation.
 
 | Date | Change | Reason | Status |
 |---|---|---|---|
+| 2026-10-24 | 6.A.4 added (`root_tangent` early return converted to the promoted type); Section 5 row A. | spec-implementer stopped: TPS `s_source_calc` infers `Tuple{CSRKick1{TPS}, Union{Float64, TPS}}` (union from `root_source`); coordinator traced it to `root_order(::TPS)` being a runtime value (by reading, unverified). | Approved by the user |
+| 2026-10-24 | 6.A.3 assertion 1: `isconcretetype(typeof(r))` → `isa promote_type(T, typeof(s_kick))`. Criterion 1: sensitivity replaced by 1a–1d (A.4 detection; W2 by `code_warntype`, report only; W1 not reproducible on 1.13.2; W1/W2 rerun on Julia 1.10). | spec-implementer: `isconcretetype` of a value's type is always true; restoring `acc = 0.0` or `g_bend = 0.0` does not change `@inferred` results on 1.13.2. | Approved by the user (1.10 check added by the user) |
