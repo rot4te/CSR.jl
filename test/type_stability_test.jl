@@ -31,10 +31,8 @@
       search = CSR.primal_search(geom, kp, T)
       k0 = CSR.CSRKick1(geom, kp; dz_particles = lag)
 
-      r = @inferred CSR.path_excess(zero(s_kick), s_kick, geom.ele[2].spline, 0.01)
-      @test isconcretetype(typeof(r))
-      r = @inferred CSR.path_excess(zero(s_kick), s_kick, geom.ele[2].spline, 0.01; bmad_compat = true)
-      @test isconcretetype(typeof(r))
+      @test (@inferred CSR.path_excess(zero(s_kick), s_kick, geom.ele[2].spline, 0.01)) isa promote_type(T, typeof(s_kick))
+      @test (@inferred CSR.path_excess(zero(s_kick), s_kick, geom.ele[2].spline, 0.01; bmad_compat = true)) isa promote_type(T, typeof(s_kick))
 
       k1, s1 = @inferred CSR.s_source_calc(k0, geom, kp, search)
       @test k1 isa CSR.CSRKick1

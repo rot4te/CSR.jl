@@ -71,11 +71,11 @@ Newton steps `s ← s - (f(s) - r0) / dfds` from `s0` in the number type of `f0 
 primal root stays `s0`) and the primal slope `dfds = ∂f/∂s` at `s0` (computed by `root_slope` if `nothing`). With a
 constant slope each step gains one order, so `root_order(f0)` steps are taken: one for `Dual`s (implicit
 differentiation, `ds/dp = -(∂f/∂p) / (∂f/∂s)`), two for nested `Dual`s (Hessians), the truncation order for a TPS.
-Returns `s0` when `f0` carries no derivatives.
+Returns `s0` (converted to the promoted type of `s0` and `f0`) when `f0` carries no derivatives.
 """
 function root_tangent(f, s0, f0, dfds = nothing)
   n = root_order(f0)
-  n == 0 && return s0
+  n == 0 && return convert(promote_type(typeof(s0), typeof(f0)), s0)
   d = dfds === nothing ? root_slope(f, s0) : dfds
   r0 = primal(f0)
   s = s0 - (f0 - r0) / d
