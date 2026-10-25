@@ -56,7 +56,7 @@ Registry checked 2026-10-24 (General registry `Versions.toml` on GitHub): GTPSA 
 | A | `src/utils/spline.jl` (W1), `src/kernels/image_charges.jl` (W2), `src/utils/root_finding.jl` (A.4), new `test/type_stability_test.jl`, `test/runtests.jl` (one `include`). |
 | B | `ext/CSRBeamTrackingBeamlinesExt/slicing.jl` (W3), `src/utils/backend.jl` (W4 helper), `src/kick.jl` (W4), `ext/CSRChainRulesCoreExt/CSRChainRulesCoreExt.jl` (W4), `src/geometry.jl` (W5), `src/utils/kick_setup.jl` (W5), `docs/src/usage.md` (W4, one sentence), new `test/review_fixes_test.jl`, `test/runtests.jl` (one `include`). |
 | C | `src/interface.jl` (S1), `docs/src/validation.md` (S1), `ext/CSRBeamTrackingBeamlinesExt/track.jl` (S2, S8), `test/review_fixes_test.jl` (S2 testset). |
-| D | `src/kernels/adjoint.jl` (S3), `src/types.jl`, `src/tables.jl`, `src/param_adjoint.jl` (S4, S9), `Project.toml` (S5, S6), delete `diagnostics/base/` and `diagnostics/head/` (S6), `ext/CSRBeamTrackingBeamlinesExt/sagan.jl` (S7, S10), `src/reference.jl` (S10), `test/review_fixes_test.jl` (S10 testsets). |
+| D | `src/kernels/adjoint.jl` (S3), `src/types.jl`, `src/tables.jl`, `src/param_adjoint.jl` (S4, S9), `Project.toml` (S5, S6), delete `diagnostics/base/` and `diagnostics/head/` (S6), `ext/CSRBeamTrackingBeamlinesExt/sagan.jl` (S7, S10), `src/reference.jl` (S10), `test/review_fixes_test.jl` (S10 testsets), four `diagnostics/*.jl` include lines (D.9). |
 
 ## 6. Components
 
@@ -404,6 +404,16 @@ pz[i] += r0 * kick[i0] + r1 * kick[i0+1]
 
   If `trunc(Int, ...)` itself throws `InexactError` for a non-finite or huge `zp`, leave it (not in scope).
 
+**D.9 Diagnostics include path** (user, 2026-10-25). The scripts moved from `planning/diagnostics/` to `diagnostics/`,
+so `joinpath(@__DIR__, "..", "..", "test", "utils.jl")` points outside the repo. In each of these four files, the
+`include` line for `test/utils.jl` becomes exactly `include(joinpath(@__DIR__, "..", "test", "utils.jl"))`:
+`diagnostics/first_bin_vs_quadrature.jl`, `diagnostics/steady_state_convergence.jl`,
+`diagnostics/transient_all_bin_quadrature.jl`, `diagnostics/transient_first_bin_integrand.jl`. In the first three
+the line currently reads `include(joinpath("/Users/alexcoxe/.julia/dev/CSR.jl", "test", "utils.jl"))` (an uncommitted
+working-tree edit); replace it the same way. Change nothing else in these files (the stale `planning/diagnostics/`
+paths in run-instruction comments stay). **Do not run or test these scripts** (user's instruction); no test or
+acceptance criterion covers D.9.
+
 **D.8 Tests** (`test/review_fixes_test.jl`):
 1. `@testset "S10 last SaganCavity slice"`: `ele = lc_in_branch(lc_cavity(L = 0.3, tracking_method =
    SaganCavity()))`; `@test 0.2 + 0.1 != 0.3` (precondition); `sl = CSR.slice_element(ele, 0.2, 0.1, false, true)`:
@@ -539,3 +549,4 @@ None affecting implementation.
 | 2026-10-24 | 6.A.3 assertion 1: `isconcretetype(typeof(r))` → `isa promote_type(T, typeof(s_kick))`. Criterion 1: sensitivity replaced by 1a–1d (A.4 detection; W2 by `code_warntype`, report only; W1 not reproducible on 1.13.2; W1/W2 rerun on Julia 1.10). | spec-implementer: `isconcretetype` of a value's type is always true; restoring `acc = 0.0` or `g_bend = 0.0` does not change `@inferred` results on 1.13.2. | Approved by the user (1.10 check added by the user) |
 | 2026-10-24 | 9.1c: "does not change inference" → "does not change the return type ... but `code_warntype` of the keyword body shows `acc::Union{...}` with the old line". | Criterion 1 sensitivity (sub-stage A test, coordinator): `code_warntype` of the `path_excess` keyword body (Julia 1.13.2) shows `acc::Union{Float64, Dual}` and `acc::Union{Float64, TPS64}` with `acc = 0.0`, concrete with the fix; return types are the same, so `@inferred` does not see it. The old wording was true only of the return type. | Applied (clarification; no requirement changed) |
 | 2026-10-24 | Sub-stage B, criterion 2 (Metal check): proposed replacing the exact `==` comparison (csr_kick_pz and rrule output vs csr_kick! on a copy) by a tolerance comparison, `maximum(abs, a .- b) <= 1e-5 * maximum(abs, pz_out .- pz_in)`. | spec-tester Metal run (Apple M1 Pro, Metal 4, Julia 1.13.2): `==` fails by 1 ulp-scale noise on the last element. Two identical csr_kick! runs also differ (max 7.3e-12; max kick 2.2e-5), so `==` is not reproducible (atomic-add order). The sensitivity run (device_number_type = T) errors as expected. | Approved by the user (2026-10-25) with tolerance 1e-6 instead of 1e-5 |
+| 2026-10-25 | 6.D.9 added (portable `include` path for `test/utils.jl` in four `diagnostics/*.jl` scripts; no testing); Section 5 row D. | Coordinator found the `@__DIR__/../..` paths broken after the move to `diagnostics/`, and uncommitted absolute-path edits in three of the files. | Requested by the user (not to be tested) |
