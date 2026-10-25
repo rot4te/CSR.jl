@@ -23,6 +23,8 @@ function ChainRulesCore.rrule(::typeof(csr_kick_pz), pz::AbstractVector, z::Abst
       pzbar, zbar, qbar = ybar, ybar, ybar
       geombar, s_kickbar, gammabar = ybar, ybar, ybar
     else
+      CSR.csr_float_type(backend) === Float64 ||
+        error("csr_kick_pz pullback: needs a backend with Float64 (the CPU); the forward pass ran on $(typeof(backend))")
       pzbar, zbar, qbar, kbar = CSR.csr_kick_adjoint(ybar, z, q, alive, st, params; pz_scale)
       gv, s_kickbar, gammabar = CSR.csr_kick_param_adjoint(kbar, st.bins, geom, ix_ele_kick, s_kick, gamma, species,
                                                            params; kick_factor)

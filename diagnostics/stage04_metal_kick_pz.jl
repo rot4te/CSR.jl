@@ -66,9 +66,19 @@ println("backend: ", KernelAbstractions.get_backend(pz_d), " supports_float64 = 
   println("ratio csr_kick_pz vs csr_kick!  = ", r_fwd)
   @test r_fwd <= 1e-6
 
-  y_rr, _ = ChainRulesCore.rrule(csr_kick_pz, pz_d, z_d, q_d, alive_d, geom, 3, 0.1, 200.0, e, params; pz_scale = 1.3)
+  y_rr, pb = ChainRulesCore.rrule(csr_kick_pz, pz_d, z_d, q_d, alive_d, geom, 3, 0.1, 200.0, e, params; pz_scale = 1.3)
   @test y_rr isa MtlArray{Float32}
   r_rr = ratio(Array(y_rr), pz_out, kick)
   println("ratio rrule forward vs csr_kick! = ", r_rr)
   @test r_rr <= 1e-6
+
+  # The pullback is CPU-only (Float64): on Metal, a nonzero cotangent raises an ErrorException.
+  err = try
+    pb(MtlArray(ones(Float32, length(pz_d))))
+    nothing
+  catch ex
+    ex
+  end
+  println("pullback on Metal: ", err)
+  @test err isa ErrorException && occursin("needs a backend with Float64", err.msg)
 end

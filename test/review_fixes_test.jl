@@ -1,11 +1,9 @@
 # Stage 04 review fixes (2026-10-18), sub-stage B (W3, W4, W5): shifted_to_slice number types, device number types
-# (backends without Float64), gamma > 1 checks. Uses TC_EXT, TC_E, tc_pq (track_csr_test.jl) and kernel_test_bunch
-# (kernels_test.jl), included before this file.
+# (backends without Float64), gamma > 1 checks. Uses TC_EXT, TC_E, tc_pq (track_csr_test.jl), kernel_test_bunch
+# (kernels_test.jl) and NoFloat64Backend (binning_test.jl), included before this file. NoFloat64Backend is not defined
+# here (binning_test.jl defines it with supertype CSR.KernelAbstractions.GPU).
 
 import KernelAbstractions
-
-struct NoFloat64Backend <: KernelAbstractions.Backend end
-KernelAbstractions.supports_float64(::NoFloat64Backend) = false
 
 @testset "Review fixes 2026-10-18" begin
   L3 = [0.2, 0.3, 0.2]
@@ -22,19 +20,25 @@ KernelAbstractions.supports_float64(::NoFloat64Backend) = false
     @test typeof(sp.s0) == typeof(sp.t0)
     @test ForwardDiff.value(sp.s0) == 0.25
     @test ForwardDiff.value(sp(0.0, 0.0, 0.1, 0.0)[1]) ≈ 0.35
+    bg = TC_EXT.R_to_beta_gamma(TC_E, tc_pq(200))
+    beta0 = bg / sqrt(1 + bg^2)
+    @test ForwardDiff.value(sp.t0) ≈ 0.25 / (beta0 * TC_EXT.C_LIGHT)
+    @test ForwardDiff.partials(sp.t0)[1] != 0
+    @test ForwardDiff.partials(sp.s0)[1] == 0
 
     ele64 = (; species_ref = TC_E, p_over_q_ref = tc_pq(200))
     sp64 = TC_EXT.shifted_to_slice(f, ele64, 0.25)
     @test sp64.s0 === 0.25
     @test sp64.t0 isa Float64
+    @test sp64.t0 ≈ 0.25 / (beta0 * TC_EXT.C_LIGHT)
   end
 
   @testset "W4 device_number_type" begin
-    @test CSR.device_number_type(NoFloat64Backend(), Float64) === Float32
-    @test CSR.device_number_type(NoFloat64Backend(), Float32) === Float32
-    @test CSR.device_number_type(NoFloat64Backend(), ForwardDiff.Dual{Nothing,Float64,1}) ===
+    @test (@inferred CSR.device_number_type(NoFloat64Backend(), Float64)) === Float32
+    @test (@inferred CSR.device_number_type(NoFloat64Backend(), Float32)) === Float32
+    @test (@inferred CSR.device_number_type(NoFloat64Backend(), ForwardDiff.Dual{Nothing,Float64,1})) ===
           ForwardDiff.Dual{Nothing,Float64,1}
-    @test CSR.device_number_type(KernelAbstractions.CPU(), Float64) === Float64
+    @test (@inferred CSR.device_number_type(KernelAbstractions.CPU(), Float64)) === Float64
 
     # CPU: csr_kick_pz keeps Float64 output for a Float32 pz
     geom = CSRGeometry(L3, [0.0, 1.5, 0.0], c3)
@@ -43,20 +47,37 @@ KernelAbstractions.supports_float64(::NoFloat64Backend) = false
     pz = zeros(Float32, length(z))
     pz_new = csr_kick_pz(pz, z, q, alive, geom, 3, 0.1, 200.0, Species("electron"), params)
     @test eltype(pz_new) == Float64
+
+    # CPU: the rrule forward pass gives the same kick as csr_kick_pz (pz is zero, so pz_new is the kick)
+    y, _ = ChainRulesCore.rrule(csr_kick_pz, pz, z, q, alive, geom, 3, 0.1, 200.0, Species("electron"), params)
+    @test eltype(y) == Float64
+    @test maximum(abs, y .- pz_new) <= 1e-6 * maximum(abs, pz_new)
   end
 
   @testset "W5 gamma check" begin
     geom = CSRGeometry(L3, [0.0, 1.5, 0.0], c3)
     electron = Species("electron")
     for g in (1.0, 0.5, NaN)
-      @test_throws ErrorException CSRKickPoint(geom, 3, 0.1, g)
-      @test_throws ErrorException csr_kick_coef(electron, g, 0.01)
-      @test_throws ErrorException csr_kick_coef(electron, g, 0.01; bmad_compat = true)
+      @test_throws "gamma must be > 1" CSRKickPoint(geom, 3, 0.1, g)
+      @test_throws "gamma must be > 1" csr_kick_coef(electron, g, 0.01)
+      @test_throws "gamma must be > 1" csr_kick_coef(electron, g, 0.01; bmad_compat = true)
     end
-    # TPS gamma with primal value 1: raises an error (no abort)
+    @test CSRKickPoint(geom, 3, 0.1, 1.0001) isa CSRKickPoint
+    @test_throws "gamma must be > 1" CSRKickPoint(geom, 3, 0.1, ForwardDiff.Dual(1.0, 1.0))
+    @test CSRKickPoint(geom, 3, 0.1, ForwardDiff.Dual(200.0, 1.0)) isa CSRKickPoint
+    @test csr_kick_coef(electron, ForwardDiff.Dual(200.0, 1.0), 0.01) isa ForwardDiff.Dual
+  end
+
+  # Keep last: Descriptor(...) changes GTPSA.desc_current.
+  @testset "TPS cases" begin
     d = Descriptor(1, 1)
     x = @vars(d)
-    @test_throws ErrorException CSRKickPoint(geom, 3, 0.1, 1.0 + x[1])
-    @test CSRKickPoint(geom, 3, 0.1, 1.0001) isa CSRKickPoint
+    geom = CSRGeometry(L3, [0.0, 1.5, 0.0], c3)
+    @test_throws "gamma must be > 1" CSRKickPoint(geom, 3, 0.1, 1.0 + x[1])
+    @test CSRKickPoint(geom, 3, 0.1, 200.0 + x[1]) isa CSRKickPoint
+    f(x, y, s, t, pp = nothing) = (s, t)
+    spt = TC_EXT.shifted_to_slice(f, (; species_ref = TC_E, p_over_q_ref = tc_pq(200) + x[1]), 0.25)
+    @test typeof(spt.s0) == typeof(spt.t0)
+    @test scalar(spt.s0) == 0.25
   end
 end
