@@ -192,6 +192,8 @@ end
 
 Non-mutating `csr_kick!`: returns `pz` after the kick in a new vector (element type promoted with `z`, `q`, the
 geometry's number type, `s_kick`, `gamma`, `kick_factor` and `pz_scale`), leaving `pz` unchanged.
+On a backend without `Float64` (e.g. Metal) the returned vector has element type `Float32` (`CSR.csr_float_type`).
+The `rrule`'s pullback needs a backend with `Float64` (the CPU).
 
 Differentiable with ForwardDiff `Dual`s in any of these: the particles (`pz`, `z`, `q`), the geometry (built by
 `CSRGeometry` from `Dual` lengths, curvatures or centroid), `s_kick`, `gamma`, `kick_factor`, `pz_scale`. The kick
@@ -209,8 +211,9 @@ function csr_kick_pz(pz::AbstractVector, z::AbstractVector, q::AbstractVector, a
                      geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma, species::Species,
                      params::CSRParams; kick_factor = 1.0, pz_scale = 1.0)
   check_descriptors("csr_kick_pz"; pz, z, q, geom, s_kick, gamma, kick_factor, pz_scale)
-  pz_new = similar(pz, promote_type(eltype(pz), eltype(z), eltype(q), number_type(geom), typeof(s_kick),
-                                    typeof(gamma), typeof(kick_factor), typeof(pz_scale)))
+  pz_new = similar(pz, device_number_type(get_backend(pz), promote_type(eltype(pz), eltype(z), eltype(q),
+                                          number_type(geom), typeof(s_kick), typeof(gamma), typeof(kick_factor),
+                                          typeof(pz_scale))))
   copyto!(pz_new, pz)
   csr_kick!(pz_new, z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor, pz_scale)
   return pz_new

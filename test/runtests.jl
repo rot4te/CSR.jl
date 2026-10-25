@@ -29,4 +29,5 @@ include("utils.jl")
   include("lcavity_test.jl")
   include("track_tps_test.jl")
   include("track_tps_collective_test.jl")
+  include("review_fixes_test.jl")
 end

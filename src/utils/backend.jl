@@ -16,6 +16,16 @@ Scalar passed to kernels on `backend`: unchanged unless the backend lacks Float6
 device_scalar(backend, x) = KernelAbstractions.supports_float64(backend) ? x : csr_float_type(backend)(x)
 
 """
+    device_number_type(backend, T)
+
+Element type for a particle array on `backend` that must hold numbers of type `T`: `csr_float_type(backend)` when
+`T <: AbstractFloat` and the backend lacks `Float64` (e.g. Metal), else `T`. `Dual` and TPS types are returned
+unchanged (not supported on such backends).
+"""
+device_number_type(backend, ::Type{T}) where {T} =
+  (T <: AbstractFloat && !KernelAbstractions.supports_float64(backend)) ? csr_float_type(backend) : T
+
+"""
     table_backend(backend)
 
 Backend the kick tables are computed on. The table kernels need the CPU (non-isbits geometry; see `csr_wake_table`).

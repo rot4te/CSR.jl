@@ -89,6 +89,8 @@ pz_d = Metal.zeros(Float32, length(z))
 csr_kick!(pz_d, MtlArray(Float32.(z)), MtlArray(Float32.(q)), MtlArray(alive), geom, 80, 0.05, 1e4, e, params)
 ```
 
+`csr_kick_pz` works the same way; its `rrule` pullback runs on the CPU only.
+
 In `Float32`, strongly shielded kicks (a small residual of large image terms) are accurate to only ~3e-4 relative.
 
 ## Derivatives

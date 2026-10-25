@@ -80,10 +80,11 @@ end
 Kick point at reference position `s_kick` from the entrance of element `ix_ele_kick` (chord coordinate from
 `s_ref_to_s_chord`, floor position on the centroid spline), for a reference particle with Lorentz factor `gamma`.
 `y_source` is the height of the source particle (image charges; 0 in free space), `kick_factor` multiplies every
-kick computed with this point (half steps, image sign and weight).
+kick computed with this point (half steps, image sign and weight). Errors unless `gamma > 1` (primal value; NaN fails).
 """
 function CSRKickPoint(geom::CSRGeometry, ix_ele_kick, s_kick, gamma; y_source = 0.0, kick_factor = 1.0)
   check_descriptors("CSRKickPoint"; geom, s_kick, gamma, y_source, kick_factor)
+  primal(gamma) > 1 || error("CSRKickPoint: gamma must be > 1 (got $(primal(gamma)))")
   e = geom.ele[ix_ele_kick]
   s_chord_kick = s_ref_to_s_chord(s_kick, e; geom.bmad_compat)
   x = spline_val(e.spline, s_chord_kick)
