@@ -292,6 +292,60 @@ device_number_type(backend, ::Type{T}) where {T} =
    TPS: `d = Descriptor(1, 1); x = @vars(d)`, `@test_throws ErrorException CSRKickPoint(geom, 3, 0.1, 1.0 + x[1])`
    (must raise, not abort the process); and `CSRKickPoint(geom, 3, 0.1, 1.0001)` runs.
 
+**B.5 Review fixes (sub-stage B review, approved by the user 2026-10-25: W1, W2, W3, suggestion 1).**
+
+B.5.1 (suggestion 1) `ext/CSRChainRulesCoreExt/CSRChainRulesCoreExt.jl`, `csr_kick_pz_pullback`: as the first statement
+of the `else` branch (before `CSR.csr_kick_adjoint`), add
+
+```julia
+CSR.csr_float_type(backend) === Float64 ||
+  error("csr_kick_pz pullback: needs a backend with Float64 (the CPU); the forward pass ran on $(typeof(backend))")
+```
+
+(`backend` is the local already defined in the `rrule`). The `AbstractZero` branch is unchanged. If
+`CSR.csr_float_type` does not exist or does not return `Float64` for `KernelAbstractions.CPU()`, stop and report.
+
+B.5.2 Tests, `test/review_fixes_test.jl`.
+
+0. Remove the file's own `struct NoFloat64Backend ...` and its `KernelAbstractions.supports_float64` method (keep
+   `import KernelAbstractions`); use the `NoFloat64Backend` (`<: CSR.KernelAbstractions.GPU`) defined in
+   `test/binning_test.jl`, which `runtests.jl` includes earlier. Update the file's header comment to say so. Reason: the
+   second definition has a different supertype; Julia ≥ 1.12 accepts the redefinition, Julia 1.10 does not (coordinator,
+   from memory; verify). For the one-file command (Section 10), add `include("binning_test.jl")` before the file.
+
+All TPS use moves to one new testset, the last inside
+`@testset "Review fixes 2026-10-18"`, named `"TPS cases"`, preceded by the comment
+`# Keep last: Descriptor(...) changes GTPSA.desc_current.` Testsets added by sub-stages C and D go before it.
+
+a. `"W3 shifted_to_slice"` (W1 of the review): after the existing Dual assertions add
+   `bg = TC_EXT.R_to_beta_gamma(TC_E, tc_pq(200)); beta0 = bg / sqrt(1 + bg^2)` and
+   `@test ForwardDiff.value(sp.t0) ≈ 0.25 / (beta0 * TC_EXT.C_LIGHT)`,
+   `@test ForwardDiff.partials(sp.t0)[1] != 0`, `@test ForwardDiff.partials(sp.s0)[1] == 0`; after the Float64
+   assertions add `@test sp64.t0 ≈ 0.25 / (beta0 * TC_EXT.C_LIGHT)`.
+b. `"W4 device_number_type"` (W2): replace the four `===` assertions by the same calls wrapped as
+   `@test (@inferred CSR.device_number_type(...)) === <expected>` (same expected values). After the `csr_kick_pz`
+   assertion add `y, _ = ChainRulesCore.rrule(csr_kick_pz, pz, z, q, alive, geom, 3, 0.1, 200.0, Species("electron"),
+   params)`, `@test eltype(y) == Float64`, and `@test maximum(abs, y .- pz_new) <= 1e-6 * maximum(abs, pz_new)`
+   (tolerance, not `==`: the threaded CPU deposit may sum in a different order; `pz` is zero, so `pz_new` is the
+   kick). Requires `ChainRulesCore` in the test namespace (loaded by `runtests.jl`); if it is not, stop and report.
+c. `"W5 gamma check"` (W3): replace every `@test_throws ErrorException <call>` by `@test_throws "gamma must be > 1"
+   <call>` (string form; Julia ≥ 1.8). Remove the TPS lines (`Descriptor`, `@vars`, the TPS `@test_throws`) from this
+   testset. Add `@test_throws "gamma must be > 1" CSRKickPoint(geom, 3, 0.1, ForwardDiff.Dual(1.0, 1.0))`,
+   `@test CSRKickPoint(geom, 3, 0.1, ForwardDiff.Dual(200.0, 1.0)) isa CSRKickPoint`, and
+   `@test csr_kick_coef(electron, ForwardDiff.Dual(200.0, 1.0), 0.01) isa ForwardDiff.Dual`.
+d. `"TPS cases"`: `d = Descriptor(1, 1); x = @vars(d)`; `geom` as in W5; then
+   - W5: `@test_throws "gamma must be > 1" CSRKickPoint(geom, 3, 0.1, 1.0 + x[1])` (moved) and
+     `@test CSRKickPoint(geom, 3, 0.1, 200.0 + x[1]) isa CSRKickPoint`;
+   - W3: `f(x, y, s, t, pp = nothing) = (s, t)`, `spt = TC_EXT.shifted_to_slice(f, (; species_ref = TC_E,
+     p_over_q_ref = tc_pq(200) + x[1]), 0.25)`, `@test typeof(spt.s0) == typeof(spt.t0)`, `@test scalar(spt.s0) ==
+     0.25` (GTPSA `scalar`).
+   If `shifted_to_slice` throws for the TPS `p_over_q_ref` (e.g. no `promote` rule), or a TPS γ > 1 is rejected,
+   stop and report (it is a B.1/B.3 defect for the user).
+
+B.5.3 Metal script `diagnostics/stage04_metal_kick_pz.jl`: add a check that calling the `rrule` pullback on Metal
+with a nonzero cotangent (`pb(MtlArray(ones(Float32, length(pz))))`) raises an `ErrorException` whose message
+contains `"needs a backend with Float64"`. Not part of the suite; the tester runs the script.
+
 ### 6.C Docs and entry checks (sub-stage C)
 
 **C.1 (S1) `slice_element` docstring** (`src/interface.jl`). In the "RF:" bullet replace the sentence
@@ -550,3 +604,4 @@ None affecting implementation.
 | 2026-10-24 | 9.1c: "does not change inference" → "does not change the return type ... but `code_warntype` of the keyword body shows `acc::Union{...}` with the old line". | Criterion 1 sensitivity (sub-stage A test, coordinator): `code_warntype` of the `path_excess` keyword body (Julia 1.13.2) shows `acc::Union{Float64, Dual}` and `acc::Union{Float64, TPS64}` with `acc = 0.0`, concrete with the fix; return types are the same, so `@inferred` does not see it. The old wording was true only of the return type. | Applied (clarification; no requirement changed) |
 | 2026-10-24 | Sub-stage B, criterion 2 (Metal check): proposed replacing the exact `==` comparison (csr_kick_pz and rrule output vs csr_kick! on a copy) by a tolerance comparison, `maximum(abs, a .- b) <= 1e-5 * maximum(abs, pz_out .- pz_in)`. | spec-tester Metal run (Apple M1 Pro, Metal 4, Julia 1.13.2): `==` fails by 1 ulp-scale noise on the last element. Two identical csr_kick! runs also differ (max 7.3e-12; max kick 2.2e-5), so `==` is not reproducible (atomic-add order). The sensitivity run (device_number_type = T) errors as expected. | Approved by the user (2026-10-25) with tolerance 1e-6 instead of 1e-5 |
 | 2026-10-25 | 6.D.9 added (portable `include` path for `test/utils.jl` in four `diagnostics/*.jl` scripts; no testing); Section 5 row D. | Coordinator found the `@__DIR__/../..` paths broken after the move to `diagnostics/`, and uncommitted absolute-path edits in three of the files. | Requested by the user (not to be tested) |
+| 2026-10-25 | 6.B.5 added: pullback error on backends without Float64 (B.5.1); stronger B tests (t0 values and partials, `@inferred device_number_type`, CPU rrule forward check, message-checking `@test_throws`, Dual/TPS γ > 1, TPS `shifted_to_slice`), TPS uses moved to a final `"TPS cases"` testset (B.5.2); duplicate `NoFloat64Backend` removed (B.5.2.0); Metal pullback-error check (B.5.3). | code-reviewer, sub-stage B review: W1, W2, W3, suggestion 1; B.5.2.0 found by the coordinator (conflicts with `binning_test.jl`'s definition). | Approved by the user. Declined (not selected): W4 (print Metal noise ratio), suggestion 2 (allocation helper), suggestion 3 (reject `Inf` γ). |
