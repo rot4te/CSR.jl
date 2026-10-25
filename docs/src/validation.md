@@ -2,7 +2,7 @@
 
 ## Test suite
 
-`test/runtests.jl` (about 1000 checks, run on 1 and 4 threads) covers:
+`test/runtests.jl` (about 2500 checks, run on 1 and 4 threads) covers:
 
 | File | Checks |
 |---|---|

@@ -96,7 +96,7 @@ csr_slice_P0c(_) = nothing
 Track `bunch` through `bl` (or the Beamlines of `br` in order) with 1D CSR kicks between slices of each element
 (Bmad `csr_method = one_dim`).
 
-- `params::CSRParams` (`ds_step` must be set).
+- `params::CSRParams` (`ds_step > 0` required; error otherwise).
 - `csr_on(ele)`: elements for which it returns `false` are tracked whole without CSR, like Bmad's per-element
   `csr_method = off`. Zero-length and map elements are always tracked whole without CSR.
 - `centroid_start`: 6-vector where the centroid orbit starts (Bmad/Tao: the supplied `centroid` orbit).
@@ -134,6 +134,9 @@ slices follow BeamTracking. With a `dE_ref` knob of primal value 0 that second s
 derivatives (equal reference energies in value).
 
 Macroparticle charge: `weight × |charge of species|` [C] (`weight = nothing` means 1).
+
+Runs on the CPU: the bunch's arrays must be CPU arrays (GPU bunches are not supported). Each kick uses `csr_kick!`, which
+also runs on GPU backends when called directly.
 
 Reference energy: constant inside elements, except SaganCavity elements (lcavity; with `dE_ref = 0` the ramp is flat),
 where γ for the CSR kick ramps linearly from `E_ref - dE_ref` to `E_ref` (`csr_ref_energy`, Bmad). The particles'
@@ -280,6 +283,9 @@ then the step loop over elements and slices with half kicks at the element ends 
 """
 function track_csr_line!(bunch::Bunch, line, context; params::CSRParams, csr_on = ele -> true,
                          centroid_start = nothing, sliced_centroid = true, diagnostics = nothing, test_bunch = nothing)
+  params.ds_step > 0 || error("track_csr!: params.ds_step must be > 0 (got $(params.ds_step))")
+  isnothing(centroid_start) || length(centroid_start) == 6 ||
+    error("track_csr!: centroid_start must have length 6 (got $(length(centroid_start)))")
   n = length(line)
   species = bunch.species
   q_abs = abs(chargeof(species; C = true))

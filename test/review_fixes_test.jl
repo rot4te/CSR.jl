@@ -68,6 +68,35 @@ import KernelAbstractions
     @test csr_kick_coef(electron, ForwardDiff.Dual(200.0, 1.0), 0.01) isa ForwardDiff.Dual
   end
 
+  @testset "S2 track_csr! entry checks" begin
+    pq = tc_pq(200)
+    bl = Beamline([Drift(L = 0.3), SBend(L = 0.5, g_ref = 0.4, Kn0 = 0.4)]; p_over_q_ref = pq, species_ref = TC_E)
+    b = tc_line_bunch(1e-3, 1e-9, 101, pq)
+    v0 = copy(b.coords.v)
+
+    @test_throws ErrorException track_csr!(b, bl; params = CSRParams(n_bin = 40))
+    @test b.coords.v == v0
+    err = try
+      track_csr!(b, bl; params = CSRParams(n_bin = 40))
+      nothing
+    catch e
+      e
+    end
+    @test err isa ErrorException && occursin("ds_step", sprint(showerror, err))
+
+    @test_throws ErrorException track_csr!(b, bl; params = CSRParams(n_bin = 40, ds_step = 0.05), centroid_start = zeros(5))
+    @test b.coords.v == v0
+    err = try
+      track_csr!(b, bl; params = CSRParams(n_bin = 40, ds_step = 0.05), centroid_start = zeros(5))
+      nothing
+    catch e
+      e
+    end
+    @test err isa ErrorException && occursin("centroid_start", sprint(showerror, err))
+
+    track_csr!(b, bl; params = CSRParams(n_bin = 40, ds_step = 0.05), centroid_start = zeros(6))
+  end
+
   # Keep last: Descriptor(...) changes GTPSA.desc_current.
   @testset "TPS cases" begin
     d = Descriptor(1, 1)

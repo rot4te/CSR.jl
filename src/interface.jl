@@ -23,7 +23,8 @@ Slice rules follow Bmad's `create_element_slice` / `makeup_super_slave1`:
   Needs `ele` in a `Beamline` (reference species and energy).
 - RF: voltage scaled by `L_slice / L`; the rate is converted to a frequency. The returned slice sits in
   a one-element `Beamline` that carries the reference species. Needs `ele` in a `Beamline`.
-  `SaganCavity` tracking is not supported.
+  A `SaganCavity` element gives a CSR.jl `SaganSlice` instead, with the cavity constants of the whole element; the
+  slices compose to the whole cavity to round-off.
 - Map elements (`MapParams`) cannot be split: only the whole element (`first && last`, `L_slice == L`)
   is allowed. See `csr_sliceable`.
 """
