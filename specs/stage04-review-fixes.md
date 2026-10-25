@@ -200,7 +200,9 @@ n == 0 && return convert(promote_type(typeof(s0), typeof(f0)), s0)
    `convert` is the identity and results are bitwise unchanged). Add to the docstring: "The result type is the same
    in both modes (`Float64` for `Float32` arguments)." Nothing else changes.
 4. Acceptance (criterion 1e): the file passes; report the new assertion count. Sensitivity (scratch `@eval`):
-   (i) A.5.1 without `eltype(GL4_WEIGHTS)` → the "Float32 spline" default-mode assertion fails;
+   (i) A.5.1 without `eltype(GL4_WEIGHTS)`: report only (not detectable by `@inferred`; `code_warntype` of the
+   keyword body shows `acc::Union{Float32, Float64}` with the old line, a concrete `acc` with the fix; user
+   2026-10-24);
    (ii) A.4 old line → TPS and "TPS dynamic" `s_source_calc` assertions fail **and** their later assertions still
    run (counted as pass/fail, not skipped); the order-0 testset's `r isa typeof(f0)` fails (if present);
    (iii) A.5.3 old line (no `convert`) → both "Float32 spline" assertions fail.
@@ -208,7 +210,7 @@ n == 0 && return convert(promote_type(typeof(s0), typeof(f0)), s0)
    Test") at the `s_source_calc` line of "TPS" and "TPS dynamic"; all later assertions ran; the order-0 testset is
    omitted (5.2e). (iii) 78 pass, 2 Error: both "Float32 spline" lines error, the default-mode one because the
    method's inferred return is `Union{Float32, Float64}` (the compat branch returns `Float32`).
-   (i) **PROPOSED — needs user approval:** observed 80 pass, 0 fail. With `acc = zero(float(promote_type(eltype(c),
+   (i) Observed 80 pass, 0 fail (replacement text above approved by the user). With `acc = zero(float(promote_type(eltype(c),
    typeof(s0), typeof(s1))))` the inferred return of the default mode stays `Float64` (`Base.return_types`;
    `code_warntype` of the keyword body shows `acc::Union{Float32, Float64}`), so `@inferred` cannot detect A.5.1. Proposed
    replacement for (i): "report only (not detectable by `@inferred`; `code_warntype` of the keyword body shows
@@ -446,7 +448,8 @@ Per sub-stage:
       the old line and a concrete `acc` with the fix. Report only; no requirement.
    d. Julia 1.10 (user, 2026-10-24): repeat b and c (and report whether `acc` / `g_bend` / the return types are
       unions with the old lines) on Julia 1.10 in a separate env (Section 10). Report only. If Julia 1.10 is not
-      installed (`julia +1.10 --version` fails), report "blocked: no Julia 1.10" and do not install it.
+      installed (`julia +lts --version` does not report 1.10.x), report "blocked: no Julia 1.10" and do not install it.
+      Also repeat A.5.1 (i) and run `type_stability_test.jl` on 1.10 (report only).
 2. **B:** the B testsets pass. **Metal check** (outside the suite; separate scratch env with Metal.jl + CSR (dev) +
    AtomicAndPhysicalConstants + StaticArrays + ChainRulesCore, Section 10): with the 6.B.4 item 2 geometry and bunch on
    Metal (`Float32` `MtlArray`s for `pz`, `z`, `q`; `MtlArray(alive)`), `csr_kick_pz(...; pz_scale = 1.3)` returns an
@@ -492,7 +495,7 @@ and `julia --project=docs -e 'using Pkg; Pkg.resolve()'` (docs `Manifest.toml` i
   "AtomicAndPhysicalConstants", "StaticArrays", "ChainRulesCore", "KernelAbstractions"])`. Script in the scratchpad;
   copy it to `diagnostics/stage04_metal_kick_pz.jl` when it passes.
 
-- Julia 1.10 env (criterion 1d): `<scratchpad>/env110`, `julia +1.10 --project=<scratchpad>/env110 -e 'using Pkg;
+- Julia 1.10 env (criterion 1d): `<scratchpad>/env110`, `julia +lts --project=<scratchpad>/env110 -e 'using Pkg;
   Pkg.develop(path = expanduser("~/.julia/dev/CSR.jl")); Pkg.add(["Test", "StaticArrays", "ForwardDiff", "GTPSA"])'`.
   If resolution fails on 1.10, report the error (do not change compat).
 
@@ -526,7 +529,8 @@ None affecting implementation.
 | 2026-10-24 | 6.A.5.3 added (`path_excess` compat branch converted to the default branch's type); 6.A.5.2d compat assertion `isa AbstractFloat` → `isa Float64`; 5.2e outcome recorded (omitted: `Descriptor(1, 0)` has `MO = 1`); criterion 1e (iii). | spec-implementer stopped: both Float32-spline `@inferred` errored, `Union{Float32, Float64}` from the two return branches (`acc` itself concrete). | Approved by the user |
 | 2026-10-24 | 6.A.5 added (Float32 `path_excess` accumulator; test file: header, dynamic-descriptor TPS case, counted `@inferred`, Float32 spline testset, order-0 TPS `root_tangent` testset); criterion 1e. | Code review of sub-stage A, warnings W1–W4. | Approved by the user |
 | 2026-10-24 | 6.A.5.4 (criterion 1e (ii), (iii)): "fail" wording now also records the observed form, "Error" (`@inferred` throws). Section 6.A.5.4, observed-results paragraph added. | spec-tester sensitivity runs on Julia 1.13.2 (`type_stability_test.jl` under scratch `@eval`): (ii) 2 Error, 78 pass; (iii) 2 Error, 78 pass. Clarification only; no expectation changed. | Editorial clarification, applied (spec-tester) |
-| 2026-10-24 | 6.A.5.4 (i): old expectation "the 'Float32 spline' default-mode assertion fails" replaced by "report only (not detectable by `@inferred`)". | spec-tester sensitivity (i) run: 80 pass, 0 fail. Default-mode return type stays `Float64` on Julia 1.13.2; the W1 union is internal to `acc` (`code_warntype`). The test file's own header already says W1 unions are not detected. This weakens a sensitivity expectation, so it is not applied. | PROPOSED — needs user approval |
+| 2026-10-24 | 6.A.5.4 (i): old expectation "the 'Float32 spline' default-mode assertion fails" replaced by "report only (not detectable by `@inferred`)". | spec-tester sensitivity (i) run: 80 pass, 0 fail. Default-mode return type stays `Float64` on Julia 1.13.2; the W1 union is internal to `acc` (`code_warntype`). The test file's own header already says W1 unions are not detected. This weakens a sensitivity expectation, so it is not applied. | Approved by the user (2026-10-24), applied |
+| 2026-10-24 | Criterion 1d and Section 10: Julia 1.10 is `julia +lts` (1.10.12), not `julia +1.10`. | spec-tester: juliaup has 1.10.12 under channels `lts` and `1.10~aarch64`; `+1.10` is not a channel. | Applied (editorial; user asked to run 1d) |
 | 2026-10-24 | 6.A.4 added (`root_tangent` early return converted to the promoted type); Section 5 row A. | spec-implementer stopped: TPS `s_source_calc` infers `Tuple{CSRKick1{TPS}, Union{Float64, TPS}}` (union from `root_source`); coordinator traced it to `root_order(::TPS)` being a runtime value (by reading, unverified). | Approved by the user |
 | 2026-10-24 | 6.A.3 assertion 1: `isconcretetype(typeof(r))` → `isa promote_type(T, typeof(s_kick))`. Criterion 1: sensitivity replaced by 1a–1d (A.4 detection; W2 by `code_warntype`, report only; W1 not reproducible on 1.13.2; W1/W2 rerun on Julia 1.10). | spec-implementer: `isconcretetype` of a value's type is always true; restoring `acc = 0.0` or `g_bend = 0.0` does not change `@inferred` results on 1.13.2. | Approved by the user (1.10 check added by the user) |
 | 2026-10-24 | 9.1c: "does not change inference" → "does not change the return type ... but `code_warntype` of the keyword body shows `acc::Union{...}` with the old line". | Criterion 1 sensitivity (sub-stage A test, coordinator): `code_warntype` of the `path_excess` keyword body (Julia 1.13.2) shows `acc::Union{Float64, Dual}` and `acc::Union{Float64, TPS64}` with `acc = 0.0`, concrete with the fix; return types are the same, so `@inferred` does not see it. The old wording was true only of the return type. | Applied (clarification; no requirement changed) |
