@@ -457,6 +457,10 @@ Per sub-stage:
    `ChainRulesCore.rrule(csr_kick_pz, ...; pz_scale = 1.3)[1]` equals it too. Sensitivity (same script, `@eval`):
    with `CSR.device_number_type(backend, ::Type{T}) where {T} = T`, `csr_kick_pz` on Metal fails (report the error).
    If Metal is not available on this machine, report "blocked: no Metal" for this item only.
+   **Amended (user, 2026-10-25):** "equal" and "equals" above mean, after `Array`,
+   `maximum(abs, a .- b) <= 1e-6 * maximum(abs, pz_out .- pz_in)`, where `pz_out .- pz_in` is the `csr_kick!` kick. The
+   exact `==` is not reproducible on Metal: Float32 atomic adds in the deposit make the summation order run-dependent
+   (two identical `csr_kick!` runs differed by up to 7.3e-12 against a largest kick of 2.2e-5).
 3. **C:** S2 testset passes; docs build (criterion 6).
 4. **D:** D.8 testsets pass; `Project.toml` has no `Adapt`; `diagnostics/base`, `diagnostics/head` are gone;
    `@code_warntype` (scratch) of `geometry_active_indices` shows no `Core.Box`. Sensitivity: with the old
@@ -534,3 +538,4 @@ None affecting implementation.
 | 2026-10-24 | 6.A.4 added (`root_tangent` early return converted to the promoted type); Section 5 row A. | spec-implementer stopped: TPS `s_source_calc` infers `Tuple{CSRKick1{TPS}, Union{Float64, TPS}}` (union from `root_source`); coordinator traced it to `root_order(::TPS)` being a runtime value (by reading, unverified). | Approved by the user |
 | 2026-10-24 | 6.A.3 assertion 1: `isconcretetype(typeof(r))` → `isa promote_type(T, typeof(s_kick))`. Criterion 1: sensitivity replaced by 1a–1d (A.4 detection; W2 by `code_warntype`, report only; W1 not reproducible on 1.13.2; W1/W2 rerun on Julia 1.10). | spec-implementer: `isconcretetype` of a value's type is always true; restoring `acc = 0.0` or `g_bend = 0.0` does not change `@inferred` results on 1.13.2. | Approved by the user (1.10 check added by the user) |
 | 2026-10-24 | 9.1c: "does not change inference" → "does not change the return type ... but `code_warntype` of the keyword body shows `acc::Union{...}` with the old line". | Criterion 1 sensitivity (sub-stage A test, coordinator): `code_warntype` of the `path_excess` keyword body (Julia 1.13.2) shows `acc::Union{Float64, Dual}` and `acc::Union{Float64, TPS64}` with `acc = 0.0`, concrete with the fix; return types are the same, so `@inferred` does not see it. The old wording was true only of the return type. | Applied (clarification; no requirement changed) |
+| 2026-10-24 | Sub-stage B, criterion 2 (Metal check): proposed replacing the exact `==` comparison (csr_kick_pz and rrule output vs csr_kick! on a copy) by a tolerance comparison, `maximum(abs, a .- b) <= 1e-5 * maximum(abs, pz_out .- pz_in)`. | spec-tester Metal run (Apple M1 Pro, Metal 4, Julia 1.13.2): `==` fails by 1 ulp-scale noise on the last element. Two identical csr_kick! runs also differ (max 7.3e-12; max kick 2.2e-5), so `==` is not reproducible (atomic-add order). The sensitivity run (device_number_type = T) errors as expected. | Approved by the user (2026-10-25) with tolerance 1e-6 instead of 1e-5 |
