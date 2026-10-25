@@ -360,6 +360,12 @@ weakdeps, or new extensions silently do not load.
 ## 4. Open questions and pending upstream reports
 
 **Open (user decisions or unresolved):**
+- **Julia 1.10 failure (found 2026-10-25, Stage 06 tester; investigate after sub-stage D, user):**
+  `test/lcavity_test.jl:171` (`csr_kick! pz_scale`, `r2.kick_per_meter == r1.kick_per_meter`, two `csr_kick!` runs)
+  fails exact equality on Julia 1.10.12 (env `<scratchpad>/env110_full`, spec `stage04-review-fixes.md` Section 10);
+  passes on 1.13.2 (suite on 4 threads, file alone on 1). Pre-existing, not caused by Stage 04. Cause unknown; possibly
+  atomic-deposit order (not verified; line 160 already uses a tolerance for that reason). Thread count of the 1.10 run
+  not recorded.
 - V2, V3: decided 2026-10-15 (D39, D40). The seam is removed in default mode (D41).
 - Seam/V4: closed by the rerun of `image_kernel_exact.jl` after D41 (2026-10-15): y = 3 mm, lag −3 mm now
   −1.111111e-3 vs exact −1.111111e-3 (was −1.3e-4). Lag 0 at y = 3 mm is still 0.945 of exact, but the absolute error
