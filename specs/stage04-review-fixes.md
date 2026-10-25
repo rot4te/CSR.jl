@@ -310,8 +310,8 @@ B.5.2 Tests, `test/review_fixes_test.jl`.
 0. Remove the file's own `struct NoFloat64Backend ...` and its `KernelAbstractions.supports_float64` method (keep
    `import KernelAbstractions`); use the `NoFloat64Backend` (`<: CSR.KernelAbstractions.GPU`) defined in
    `test/binning_test.jl`, which `runtests.jl` includes earlier. Update the file's header comment to say so. Reason: the
-   second definition has a different supertype; Julia ≥ 1.12 accepts the redefinition, Julia 1.10 does not (coordinator,
-   from memory; verify). For the one-file command (Section 10), add `include("binning_test.jl")` before the file.
+   second definition has a different supertype; Julia 1.13.2 accepts the redefinition, Julia 1.10.12 does not (checked 2026-10-25,
+   spec-tester: `invalid redefinition of constant Main.S`; Julia 1.12 not checked). For the one-file command (Section 10), add `include("binning_test.jl")` before the file.
 
 All TPS use moves to one new testset, the last inside
 `@testset "Review fixes 2026-10-18"`, named `"TPS cases"`, preceded by the comment
@@ -557,7 +557,7 @@ and `julia --project=docs -e 'using Pkg; Pkg.resolve()'` (docs `Manifest.toml` i
 - Full suite, from `test/`: `julia --project=$ENV -t 4 -e 'include("runtests.jl")'` (~17–21 min); `-t 1` likewise.
 - One file, from `test/`: `julia --project=$ENV -e 'using CSR, Test, StaticArrays, AbstractFFTs, BeamTracking,
   Beamlines, ChainRulesCore, ForwardDiff, GTPSA; include("utils.jl"); include("kernels_test.jl");
-  include("track_csr_test.jl"); include("lcavity_test.jl"); include("<file>")'`.
+  include("track_csr_test.jl"); include("lcavity_test.jl"); include("binning_test.jl"); include("<file>")'`.
 - Docs, from the repo root: `julia --project=docs docs/make.jl`.
 - Metal env (criterion 2): `$ENV_METAL=<scratchpad>/env_metal`, `Pkg.develop(path = ...CSR.jl)`, `Pkg.add(["Metal",
   "AtomicAndPhysicalConstants", "StaticArrays", "ChainRulesCore", "KernelAbstractions"])`. Script in the scratchpad;
@@ -605,3 +605,6 @@ None affecting implementation.
 | 2026-10-24 | Sub-stage B, criterion 2 (Metal check): proposed replacing the exact `==` comparison (csr_kick_pz and rrule output vs csr_kick! on a copy) by a tolerance comparison, `maximum(abs, a .- b) <= 1e-5 * maximum(abs, pz_out .- pz_in)`. | spec-tester Metal run (Apple M1 Pro, Metal 4, Julia 1.13.2): `==` fails by 1 ulp-scale noise on the last element. Two identical csr_kick! runs also differ (max 7.3e-12; max kick 2.2e-5), so `==` is not reproducible (atomic-add order). The sensitivity run (device_number_type = T) errors as expected. | Approved by the user (2026-10-25) with tolerance 1e-6 instead of 1e-5 |
 | 2026-10-25 | 6.D.9 added (portable `include` path for `test/utils.jl` in four `diagnostics/*.jl` scripts; no testing); Section 5 row D. | Coordinator found the `@__DIR__/../..` paths broken after the move to `diagnostics/`, and uncommitted absolute-path edits in three of the files. | Requested by the user (not to be tested) |
 | 2026-10-25 | 6.B.5 added: pullback error on backends without Float64 (B.5.1); stronger B tests (t0 values and partials, `@inferred device_number_type`, CPU rrule forward check, message-checking `@test_throws`, Dual/TPS γ > 1, TPS `shifted_to_slice`), TPS uses moved to a final `"TPS cases"` testset (B.5.2); duplicate `NoFloat64Backend` removed (B.5.2.0); Metal pullback-error check (B.5.3). | code-reviewer, sub-stage B review: W1, W2, W3, suggestion 1; B.5.2.0 found by the coordinator (conflicts with `binning_test.jl`'s definition). | Approved by the user. Declined (not selected): W4 (print Metal noise ratio), suggestion 2 (allocation helper), suggestion 3 (reject `Inf` γ). |
+| 2026-10-25 | Section 10, one-file command: `include("binning_test.jl")` added before `include("<file>")` (old: `...include("lcavity_test.jl"); include("<file>")'`; new: `...include("lcavity_test.jl"); include("binning_test.jl"); include("<file>")'`). | 6.B.5.2.0 directs this; Section 10 was not updated. `NoFloat64Backend` is defined only in `binning_test.jl`. Used by the 1.13 and 1.10 one-file runs (34/34). | Applied (editorial, directed by 6.B.5.2.0) |
+| 2026-10-25 | 6.B.5.2.0 reason: "Julia ≥ 1.12 accepts the redefinition, Julia 1.10 does not (coordinator, from memory; verify)" replaced by "Julia 1.13.2 accepts ..., Julia 1.10.12 does not (checked 2026-10-25 ...; Julia 1.12 not checked)". | Task 4a scratch script (`redef_S_110.jl`): Julia 1.10.12 `ERROR: invalid redefinition of constant Main.S`; Julia 1.13.2 accepts (supertype `B`). | Applied (clarification; verified; no requirement changed) |
+| 2026-10-25 | PROPOSED — Section 10: add a Julia 1.10 env for the B tests. New line after the criterion 1d env: `julia +lts --project=<scratchpad>/env110_full -e 'using Pkg; Pkg.develop(path = expanduser("~/.julia/dev/CSR.jl")); Pkg.add([PackageSpec(name = "BeamTracking", version = "0.8.7"), PackageSpec(name = "Beamlines", version = "0.11.0")]); Pkg.add(["Test", "StaticArrays", "AbstractFFTs", "ChainRulesCore", "ChainRulesTestUtils", "GTPSA", "AtomicAndPhysicalConstants", "KernelAbstractions", "Atomix", "ForwardDiff", "DelimitedFiles"]); Pkg.resolve()'`. | The criterion 1d env (4 packages) cannot run `review_fixes_test.jl` (needs BeamTracking, Beamlines, the Section 10 deps). This env resolved and precompiled on 1.10.12 (2026-10-25). | PROPOSED — needs user approval |
