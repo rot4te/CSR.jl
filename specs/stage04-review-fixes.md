@@ -358,7 +358,10 @@ includes, in that order (existing rows kept where the file exists; rows may grou
 `track_csr_test.jl`, `lcavity_test.jl` row does). Add rows for `ad_geometry_test.jl`, `ad_rrule_test.jl`,
 `tps_collective_test.jl`, `track_tps_collective_test.jl`, `type_stability_test.jl`, `review_fixes_test.jl`, each with a
 one-sentence description taken from the file's header comment or testset names. Do not change other sections of the
-page.
+page. **Clarified (user, 2026-10-25):** rows follow the `runtests.jl` include order strictly; a grouped row may only
+join files that are adjacent in `runtests.jl` (e.g. `track_csr_test.jl`, `lcavity_test.jl`). Split the existing
+`tps_test.jl, track_tps_test.jl` row into two rows (reuse its description, divided between them), and reorder all rows
+to the `runtests.jl` order. Keep existing descriptions otherwise unchanged.
 
 **C.3 (S2) Entry checks in `track_csr!`** (`ext/CSRBeamTrackingBeamlinesExt/track.jl`, `track_csr_line!`): as its first
 statements (before `n = length(line)`):
@@ -614,3 +617,4 @@ None affecting implementation.
 | 2026-10-25 | Section 10, one-file command: `include("binning_test.jl")` added before `include("<file>")` (old: `...include("lcavity_test.jl"); include("<file>")'`; new: `...include("lcavity_test.jl"); include("binning_test.jl"); include("<file>")'`). | 6.B.5.2.0 directs this; Section 10 was not updated. `NoFloat64Backend` is defined only in `binning_test.jl`. Used by the 1.13 and 1.10 one-file runs (34/34). | Applied (editorial, directed by 6.B.5.2.0) |
 | 2026-10-25 | 6.B.5.2.0 reason: "Julia ≥ 1.12 accepts the redefinition, Julia 1.10 does not (coordinator, from memory; verify)" replaced by "Julia 1.13.2 accepts ..., Julia 1.10.12 does not (checked 2026-10-25 ...; Julia 1.12 not checked)". | Task 4a scratch script (`redef_S_110.jl`): Julia 1.10.12 `ERROR: invalid redefinition of constant Main.S`; Julia 1.13.2 accepts (supertype `B`). | Applied (clarification; verified; no requirement changed) |
 | 2026-10-25 | PROPOSED — Section 10: add a Julia 1.10 env for the B tests. New line after the criterion 1d env: `julia +lts --project=<scratchpad>/env110_full -e 'using Pkg; Pkg.develop(path = expanduser("~/.julia/dev/CSR.jl")); Pkg.add([PackageSpec(name = "BeamTracking", version = "0.8.7"), PackageSpec(name = "Beamlines", version = "0.11.0")]); Pkg.add(["Test", "StaticArrays", "AbstractFFTs", "ChainRulesCore", "ChainRulesTestUtils", "GTPSA", "AtomicAndPhysicalConstants", "KernelAbstractions", "Atomix", "ForwardDiff", "DelimitedFiles"]); Pkg.resolve()'`. | The criterion 1d env (4 packages) cannot run `review_fixes_test.jl` (needs BeamTracking, Beamlines, the Section 10 deps). This env resolved and precompiled on 1.10.12 (2026-10-25). | Approved by the user (2026-10-25) |
+| 2026-10-25 | 6.C.2 clarified: strict `runtests.jl` order, grouping only of adjacent files, `tps_test.jl`/`track_tps_test.jl` row split, rows reordered. "About 2500 checks" kept. | spec-implementer stopped: the existing grouped tps row joins non-adjacent files and the table was not in `runtests.jl` order. | Decided by the user |
