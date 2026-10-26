@@ -85,7 +85,8 @@ import KernelAbstractions
     @test err isa ErrorException && occursin("ds_step", sprint(showerror, err))
     @test err isa ErrorException && occursin("must be > 0", sprint(showerror, err))
 
-    @test_throws ErrorException track_csr!(b, bl; params = CSRParams(n_bin = 40, ds_step = 0.05), centroid_start = zeros(5))
+    @test_throws ErrorException track_csr!(b, bl; params = CSRParams(n_bin = 40, ds_step = 0.05),
+                                           centroid_start = zeros(5))
     @test b.coords.v == v0
     err = try
       track_csr!(b, bl; params = CSRParams(n_bin = 40, ds_step = 0.05), centroid_start = zeros(5))
@@ -95,7 +96,7 @@ import KernelAbstractions
     end
     @test err isa ErrorException && occursin("centroid_start", sprint(showerror, err))
 
-    track_csr!(b, bl; params = CSRParams(n_bin = 40, ds_step = 0.05), centroid_start = zeros(6))
+    @test track_csr!(b, bl; params = CSRParams(n_bin = 40, ds_step = 0.05), centroid_start = zeros(6)) === b
   end
 
   # Keep last: Descriptor(...) changes GTPSA.desc_current.
