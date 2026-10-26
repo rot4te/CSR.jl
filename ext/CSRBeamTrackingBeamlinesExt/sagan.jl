@@ -216,6 +216,18 @@ function sagan_slice_kernel!(i, coords, val_rad_damping_on, val_rad_fluctuations
 end
 
 """
+    slice_end(L, s0, L_slice, last)
+
+End of a SaganCavity slice: `L` for the last slice, else `s0 + L_slice`, as one floating-point type (the promoted
+type of `L` and `s0 + L_slice`) so the result is inferable for mixed `Float64`/`Dual`/TPS arguments.
+"""
+function slice_end(L, s0, L_slice, last::Bool)
+  s1 = s0 + L_slice
+  T = promote_type(typeof(L), typeof(s1))
+  return float(last ? convert(T, L) : convert(T, s1))
+end
+
+"""
     slice_sagan(ele, up, s0, L_slice, first, last, context) -> SaganSlice
 
 SaganCavity slice `[s0, s0 + L_slice]`, with the cavity constants computed for the whole element as BeamTracking does
@@ -274,7 +286,7 @@ function slice_sagan(ele::LineElement, up, s0, L_slice, first, last, context)
   ve = (float(E0), dE_ref, sqrt(E0^2 - mass^2), float(p_over_q_ref))
   TE = float(promote_type(map(typeof, ve)...))
   vt = (float(rf_omega), float(t_phi0), q_gradient, float(q * rp.voltage), float(L_active), L, float(s0),
-        float(last ? L : s0 + L_slice))
+        slice_end(L, s0, L_slice, last))
   T = float(promote_type(map(typeof, vt)...))
   return SaganSlice(; ele = s, tm, species, mass = float(mass), q = float(q),
                     a = float(gyromagnetic_anomaly(species)), traveling_wave = rp.traveling_wave,

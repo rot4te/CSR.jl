@@ -135,6 +135,15 @@ import KernelAbstractions
     @test CSR.widen_source_range(3, 3, false, false, 2, 4) == (2, 3, false, false)
   end
 
+  @testset "D.10 slice_end types" begin
+    @test TC_EXT.slice_end(0.3, 0.2, 0.1, true) === 0.3
+    @test TC_EXT.slice_end(0.3, 0.2, 0.1, false) === 0.2 + 0.1
+    r = @inferred TC_EXT.slice_end(0.3, ForwardDiff.Dual(0.2, 1.0), 0.1, true)
+    @test r isa ForwardDiff.Dual && ForwardDiff.value(r) == 0.3
+    r2 = @inferred TC_EXT.slice_end(ForwardDiff.Dual(0.3, 1.0), 0.2, 0.1, false)
+    @test r2 isa ForwardDiff.Dual && ForwardDiff.value(r2) == 0.2 + 0.1
+  end
+
   # Keep last: Descriptor(...) changes GTPSA.desc_current.
   @testset "TPS cases" begin
     d = Descriptor(1, 1)
@@ -146,5 +155,7 @@ import KernelAbstractions
     spt = TC_EXT.shifted_to_slice(f, (; species_ref = TC_E, p_over_q_ref = tc_pq(200) + x[1]), 0.25)
     @test typeof(spt.s0) == typeof(spt.t0)
     @test scalar(spt.s0) == 0.25
+    @test (@inferred TC_EXT.slice_end(0.3, 0.2 + x[1], 0.1, true)) isa TPS
+    @test scalar(TC_EXT.slice_end(0.3, 0.2 + x[1], 0.1, true)) == 0.3
   end
 end
