@@ -22,7 +22,7 @@
 | `track_csr_test.jl`, `lcavity_test.jl` | `track_csr!` through Beamlines and Branches; SaganCavity slices vs the whole cavity (round-off). |
 | `track_tps_test.jl` | TPS test particles through `track_csr!` (Beamline, Branch with an lcavity): TPS Jacobian and second derivatives vs ForwardDiff of the same Float64 tracking (round-off; 1e-10 bound for the multithreaded deposit order); Float64 test particles follow bunch particles (≤ 1e-15). |
 | `track_tps_collective_test.jl` | `track_csr!` with a TPS bunch in knobs (element parameters, bunch charge, reference energy, initial coordinates) vs ForwardDiff and central finite differences (order 1), nested Duals (order 2), and entry checks. |
-| `review_fixes_test.jl` | Review fixes of 2026-10-18: `shifted_to_slice` and device number types, `gamma > 1` checks, `track_csr!` entry checks (`ds_step`, `centroid_start`), and TPS cases for the `gamma` check and `shifted_to_slice`. |
+| `review_fixes_test.jl` | Review fixes of 2026-10-18: `shifted_to_slice` and device number types, `gamma > 1` checks, `track_csr!` entry checks (`ds_step`, `centroid_start`), and TPS cases for the `gamma` check and `shifted_to_slice`. Sub-stage D: last SaganCavity slice ends at `L`, `csr_apply_kicks_reference!` range test, `SaganSlice` keyword construction, `widen_source_range`, `slice_end` types; final review: input-length and non-finite checks. |
 
 ## Cross-check against Bmad/Tao
 

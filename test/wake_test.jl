@@ -81,7 +81,7 @@ using CSR: CSRKickPoint, CSRKick1, s_source_calc, ddz_calc_csr, I_csr_calc, zbre
   end
 
   @testset "First-bin integral vanishes on a straight line (D42)" begin
-    # Closed form with exact retardation; with 2γ² in the log it was 1/(4γ⁴) (planning/diagnostics/first_bin_straight.jl)
+    # Closed form with exact retardation; with 2γ² in the log it was 1/(4γ⁴) (diagnostics/first_bin_straight.jl)
     g = CSRGeometry(fill(0.5, 4), zeros(4), zeros(5, 6))
     for γ in (82.0, 1e3), dz in (1e-7, 1e-4)   # source in the kick element, upstream of it
       kpg = CSRKickPoint(g, 3, 0.25, γ)

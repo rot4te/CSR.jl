@@ -120,7 +120,7 @@ function csr_kick_reference!(pz::AbstractVector, z::AbstractVector, q::AbstractV
   if params.all_bin_quadrature && !params.bmad_compat
     k = CSRKick1(; ix_ele_source = ix_ele_kick)
     for i in 2:n_bin
-      k, I_int[i] = I_csr_quadrature(k, (i - 1) * bins.dz, i * bins.dz, geom, kp, 8)
+      k, I_int[i] = I_csr_quadrature(k, (i - 1) * bins.dz, i * bins.dz, geom, kp, N_BIN_QUAD)
     end
   end
 

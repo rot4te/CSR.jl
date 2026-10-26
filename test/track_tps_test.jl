@@ -45,7 +45,7 @@ end
     Jt, Jf = GTPSA.jacobian(vt), ForwardDiff.jacobian(f, v0)
     # Separate bunch runs: with threads the atomic deposit order changes the frozen wake in the last bits (lcavity
     # Branch, 4 threads, 8 runs: Jacobian columns 1.9e-12, second derivatives 6.3e-15 of max |H|;
-    # planning/diagnostics/track_tps_thread_spread.jl)
+    # diagnostics/track_tps_thread_spread.jl)
     for c in 1:6
       @test Jt[:, c] ≈ Jf[:, c] rtol = 1e-10
     end

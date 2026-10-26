@@ -474,7 +474,7 @@ function csr_kick_param_adjoint(kbar::AbstractVector, bins::CSRBins, geom::CSRGe
   first_bin_adjoint!(grad, Ibar[1], geom0, ik, s_kick, gamma, params, dz, kick_factor)
   nodes = Tuple{Float64,Float64}[]
   if params.all_bin_quadrature && !params.bmad_compat
-    n_q = 8   # as csr_wake_table
+    n_q = N_BIN_QUAD
     for i in 2:n_bin
       t0 = cbrt((i - 1) * dz)
       h = (cbrt(i * dz) - t0) / n_q

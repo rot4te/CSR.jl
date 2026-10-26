@@ -541,7 +541,7 @@ same testset).
 **E.1 (C1) Input checks before the kernels.**
 - `csr_bin_particles` (`src/binning.jl`): directly after `check_descriptors(...)` add
   `length(z) == length(q) == length(alive) || error("csr_bin_particles: z, q, alive must have equal lengths (got
-  $(length(z)), $(length(q)), $(length(alive))))")`. Replace the line `z_maxval > z_minval || error(...)` by
+  $(length(z)), $(length(q)), $(length(alive)))")`. Replace the line `z_maxval > z_minval || error(...)` by
   ```julia
   isfinite(z_maxval) && isfinite(z_minval) || error("csr_bin_particles: non-finite z of a live particle")
   z_maxval > z_minval || error("csr_bin_particles: longitudinal width of beam is zero")
@@ -549,7 +549,7 @@ same testset).
 - `csr_apply_kicks!` (`src/kick.jl`): as its first statements
   ```julia
   length(pz) == length(z) == length(alive) ||
-    error("csr_apply_kicks!: pz, z, alive must have equal lengths (got $(length(pz)), $(length(z)), $(length(alive))))")
+    error("csr_apply_kicks!: pz, z, alive must have equal lengths (got $(length(pz)), $(length(z)), $(length(alive)))")
   length(kick) == length(bins.z_center) || error("csr_apply_kicks!: kick and bins.z_center must have equal lengths")
   ```
 - Docstrings of `csr_bin_particles` and `csr_kick!`: add "Errors if the array lengths differ or a live particle has a
@@ -776,4 +776,4 @@ None affecting implementation.
 | 2026-10-25 | 6.C.5 sensitivity sentence: the `centroid_start` assertions are stated to fail too (observed `DimensionMismatch`); "only" is scoped to the `ds_step` assertions. | Sub-stage C tester run (scratch `@eval`, Julia 1.13.2, S2 testset as in `test/review_fixes_test.jl`): 4 pass, 3 fail (the `"must be > 0"` message; both `centroid_start` assertions). The `ds_step` assertions pass. The sentence as written implied only the `"must be > 0"` check fails. | Applied (clarification; observed result; no expectation weakened) |
 | 2026-10-26 | PROPOSED — needs user approval: 6.D.7 `slice_sagan`: type the slice end as one type, e.g. `float(promote_type(typeof(L), typeof(s0 + L_slice))(last ? L : s0 + L_slice))`, instead of `float(last ? L : s0 + L_slice)`. The `vt` tuple last element is then concrete in every case. | Tester, sub-stage D (D.7 type check, scratch, Julia 1.13.2): with `L` a Dual and `s0`, `L_slice` Float64, `float(last ? L : s0 + L_slice)` infers `Union{Float64, Dual}` (`Base.return_types`); the proposed form infers `Dual`. Values and Float64 bits unchanged. In `slice_sagan` the union is hidden because `vt[8]` is already `Any` (`code_warntype`). The in-tree path (`csr_slice`) gives `s0`, `L_slice` the same type as `L`, so the mixed case needs a direct `slice_element` call with mismatched types. | Approved by the user (2026-10-26); written as 6.D.10 (helper `slice_end`, with tests) |
 | 2026-10-26 | Section 6.D.4: `diagnostics/base` was a gitlink (nested repository at commit `9211f86`, not in CSR.jl's history), not tracked files; its deletion with `rm -r` removed that repository. | Found by the coordinator after D.4 ran. | User accepted the loss (2026-10-26); gitlink removal committed with Stage 08 |
-| 2026-10-26 | 6.E added (final whole-codebase review: C1 input checks, W1 docs for all extensions, W2 SaganCavity entrance-energy error and `zero(Tg)`, W3 stale test descriptions, S1 docstring, S2 `N_BIN_QUAD`, S4/S5 style and stale references). | code-reviewer, final whole-codebase review. | Approved by the user. W2: user chose a clear error (no physics change). Declined (not selected): S3 (test helpers to `utils.jl`), S6 (pin BeamTracking `=0.8.7`; ForwardDiff floor), S1 pre-pass check. |
+| 2026-10-26 | 6.E added (final whole-codebase review: C1 input checks, W1 docs for all extensions, W2 SaganCavity entrance-energy error and `zero(Tg)`, W3 stale test descriptions, S1 docstring, S2 `N_BIN_QUAD`, S4/S5 style and stale references). | code-reviewer, final whole-codebase review. | Approved by the user. W2: user chose a clear error (no physics change). Correction (coordinator, 2026-10-26): the E.1 messages had one `)` too many ("(got 400, 400, 400))"); fixed to `$(length(alive)))")`. E.3 test: the spec's `Beamline(...; E_ref = ...)` form cannot give `dE_ref` outside a `Branch`; the implementer used `Branch([Marker(E_ref = 1e5, ...), lc_cavity(..., dE_ref = 2LC_E0)])`, as E.3 allows. E.7 "0.8.4" wording: PLAN 7b does not settle it, so left unchanged as E.7 directs. Declined (not selected): S3 (test helpers to `utils.jl`), S6 (pin BeamTracking `=0.8.7`; ForwardDiff floor), S1 pre-pass check. |

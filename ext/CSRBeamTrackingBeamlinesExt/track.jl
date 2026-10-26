@@ -138,6 +138,9 @@ Macroparticle charge: `weight × |charge of species|` [C] (`weight = nothing` me
 Runs on the CPU: the bunch's arrays must be CPU arrays (GPU bunches are not supported). Each kick uses
 `csr_kick!`, which also runs on GPU backends when called directly.
 
+An error raised during tracking (e.g. `gamma ≤ 1` at a kick, too few live particles, a particle outside the bin range)
+leaves the bunch tracked up to that point.
+
 Reference energy: constant inside elements, except SaganCavity elements (lcavity; with `dE_ref = 0` the ramp is flat),
 where γ for the CSR kick ramps linearly from `E_ref - dE_ref` to `E_ref` (`csr_ref_energy`, Bmad). The particles'
 reference momentum there steps at each RF cell (BeamTracking), so the applied Δpz is rescaled from the linearly ramped

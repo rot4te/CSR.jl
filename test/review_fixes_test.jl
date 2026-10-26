@@ -1,7 +1,9 @@
-# Stage 04 review fixes (2026-10-18), sub-stage B (W3, W4, W5) and sub-stage C (S2): shifted_to_slice number types,
-# device number types (backends without Float64), gamma > 1 checks, track_csr! entry checks. Uses TC_EXT, TC_E, tc_pq
-# (track_csr_test.jl), kernel_test_bunch (kernels_test.jl) and NoFloat64Backend (binning_test.jl), included before this
-# file. NoFloat64Backend is not defined here (binning_test.jl defines it with supertype CSR.KernelAbstractions.GPU).
+# Stage 04 review fixes (2026-10-18): sub-stage B (W3, W4, W5), sub-stage C (S2), sub-stage D (S7, S9, S10, D.10) and
+# the final review fixes (input lengths and non-finite z, SaganCavity entrance energy). Sub-stage B: shifted_to_slice
+# number types, device number types (backends without Float64), gamma > 1 checks; C: track_csr! entry checks.
+# Uses TC_EXT, TC_E, tc_pq (track_csr_test.jl), kernel_test_bunch (kernels_test.jl) and NoFloat64Backend
+# (binning_test.jl), included before this file. NoFloat64Backend is not defined here (binning_test.jl defines it
+# with supertype CSR.KernelAbstractions.GPU).
 
 import KernelAbstractions
 
@@ -142,6 +144,31 @@ import KernelAbstractions
     @test r isa ForwardDiff.Dual && ForwardDiff.value(r) == 0.3
     r2 = @inferred TC_EXT.slice_end(ForwardDiff.Dual(0.3, 1.0), 0.2, 0.1, false)
     @test r2 isa ForwardDiff.Dual && ForwardDiff.value(r2) == 0.2 + 0.1
+  end
+
+  @testset "Final review fixes" begin
+    geom = CSRGeometry(L3, [0.0, 1.5, 0.0], c3)
+    z, q, alive = kernel_test_bunch(1e-3, 1e-9, 400)
+    params = CSRParams(n_bin = 40, ds_step = 0.05)
+    e = Species("electron")
+    @test_throws "equal lengths" csr_bin_particles(z, q[1:end-1], alive, params)
+    @test_throws "equal lengths" csr_kick!(zeros(length(z) - 1), z, q, alive, geom, 3, 0.1, 200.0, e, params)
+    z2 = copy(z)
+    z2[findfirst(alive)] = NaN
+    @test_throws "non-finite" csr_bin_particles(z2, q, alive, params)
+    z2[findfirst(alive)] = Inf
+    @test_throws "non-finite" csr_bin_particles(z2, q, alive, params)
+    z3 = copy(z)
+    a3 = copy(alive)
+    z3[1] = NaN
+    a3[1] = false
+    @test csr_bin_particles(z3, q, a3, params) isa CSR.CSRBins
+
+    ele = Branch([Marker(E_ref = 1e5, species_ref = LC_E), lc_cavity(L = 0.3, tracking_method = SaganCavity(),
+                  dE_ref = 2LC_E0)]).beamlines[2].line[1]
+    @test_throws "not above the rest energy" CSR.slice_element(ele, 0.0, 0.1, true, false)
+    sl = CSR.slice_element(lc_in_branch(lc_cavity(L = 0.3, tracking_method = SaganCavity())), 0.2, 0.1, false, true)
+    @test sl.q_gradient isa Float64
   end
 
   # Keep last: Descriptor(...) changes GTPSA.desc_current.

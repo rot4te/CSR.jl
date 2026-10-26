@@ -92,3 +92,15 @@ Pages = ["src/reference.jl", "src/interface.jl"]
 ```@autodocs
 Modules = [Base.get_extension(CSR, :CSRBeamTrackingBeamlinesExt)]
 ```
+
+## ChainRulesCore extension
+
+```@autodocs
+Modules = [Base.get_extension(CSR, :CSRChainRulesCoreExt)]
+```
+
+## GTPSA extension
+
+```@autodocs
+Modules = [Base.get_extension(CSR, :CSRGTPSAExt)]
+```

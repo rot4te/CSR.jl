@@ -5,7 +5,8 @@
 
 Bin the live particles (`alive[i] == true`) with longitudinal positions `z` [m] and charges `q` [C].
 Each particle is spread as a triangle of base `particle_bin_span * dz`. The grid is centered on the
-live-particle z range, with empty padding bins at both ends.
+live-particle z range, with empty padding bins at both ends. Errors if the array lengths differ or a live particle has a
+non-finite `z`.
 
 Runs as KernelAbstractions kernels on the backend of `z`. The deposit uses atomic adds for `Float32`/`Float64`
 charges, so the summation order (and the last bits of the bin charges) can vary between runs with several
@@ -16,6 +17,8 @@ Duals only `charge` and `edge_dcharge_density_dz` carry derivatives, and the gri
 """
 function csr_bin_particles(z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool}, params::CSRParams)
   check_descriptors("csr_bin_particles"; z, q)
+  length(z) == length(q) == length(alive) ||
+    error("csr_bin_particles: z, q, alive must have equal lengths (got $(length(z)), $(length(q)), $(length(alive))))")
   n_bin = params.n_bin
   pbs = params.particle_bin_span
   n_bin_eff = n_bin - 2 - (pbs + 1)
@@ -24,6 +27,7 @@ function csr_bin_particles(z::AbstractVector, q::AbstractVector, alive::Abstract
   any(alive) || error("csr_bin_particles: no live particles")
   z_maxval = primal(mapreduce((zi, a) -> a ? zi : oftype(zi, -Inf), max, z, alive))
   z_minval = primal(mapreduce((zi, a) -> a ? zi : oftype(zi, Inf), min, z, alive))
+  isfinite(z_maxval) && isfinite(z_minval) || error("csr_bin_particles: non-finite z of a live particle")
   z_maxval > z_minval || error("csr_bin_particles: longitudinal width of beam is zero")
 
   # 1.0000001 prevents round-off problems (Bmad). Grid in the particles' float type (no Float64 on some GPUs).

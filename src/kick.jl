@@ -41,6 +41,9 @@ One work item per particle, on the backend of `pz`.
 """
 function csr_apply_kicks!(pz::AbstractVector, z::AbstractVector, alive::AbstractVector{Bool}, bins::CSRBins, kick::AbstractVector;
                           pz_scale = 1)
+  length(pz) == length(z) == length(alive) ||
+    error("csr_apply_kicks!: pz, z, alive must have equal lengths (got $(length(pz)), $(length(z)), $(length(alive))))")
+  length(kick) == length(bins.z_center) || error("csr_apply_kicks!: kick and bins.z_center must have equal lengths")
   apply_kicks_outside!(pz, z, alive, bins.z_center, kick, bins.dz, pz_scale) == 0 ||
     error("csr_apply_kicks!: particle outside the bin range (internal error)")
   return pz
@@ -136,7 +139,8 @@ end
     csr_kick!(pz, z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor = 1.0,
               pz_scale = 1.0, test_particles = nothing) -> CSRStepResult
 
-Apply one 1D CSR kick at reference position `s_kick` [m] from the entrance of element `ix_ele_kick`.
+Apply one 1D CSR kick at reference position `s_kick` [m] from the entrance of element `ix_ele_kick`. Errors if the
+array lengths differ or a live particle has a non-finite `z`.
 
 - `pz`, `z`: particle coordinates (`pz` is modified). `pz` must hold the kick's number type: with `Dual` or TPS
   inputs, a `pz` of that element type, or use `csr_kick_pz`.

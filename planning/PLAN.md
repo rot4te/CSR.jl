@@ -365,7 +365,9 @@ weakdeps, or new extensions silently do not load.
   fails exact equality on Julia 1.10.12 (env `<scratchpad>/env110_full`, spec `stage04-review-fixes.md` Section 10);
   passes on 1.13.2 (suite on 4 threads, file alone on 1). Pre-existing, not caused by Stage 04. Cause unknown; possibly
   atomic-deposit order (not verified; line 160 already uses a tolerance for that reason). Thread count of the 1.10 run
-  not recorded.
+  not recorded. **Also on 1.13.2 (2026-10-26):** the same testset (`lcavity_test.jl:163`) failed 1 of 2 assertions in
+  about 1 of 12 one-file runs (Stage 08 implementer, `-t 4`); which assertion was not recorded. So it is a flake on
+  1.13 too, not 1.10-specific.
 - V2, V3: decided 2026-10-15 (D39, D40). The seam is removed in default mode (D41).
 - Seam/V4: closed by the rerun of `image_kernel_exact.jl` after D41 (2026-10-15): y = 3 mm, lag −3 mm now
   −1.111111e-3 vs exact −1.111111e-3 (was −1.3e-4). Lag 0 at y = 3 mm is still 0.945 of exact, but the absolute error

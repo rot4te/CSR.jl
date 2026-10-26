@@ -81,6 +81,12 @@ end
 
 # Tangent{CSRGeometry} from a vector in the order of geometry_to_vector, and back. bmad_compat (a Bool) is left out
 # of the Tangent (absent properties are zero).
+"""
+    geometry_tangent(geom, v) -> Tangent{CSRGeometry}
+
+Tangent of `geom` built from the vector `v`, in the order of `geometry_to_vector`. `bmad_compat` is left out of the
+Tangent (absent properties are zero).
+"""
 function geometry_tangent(geom::CSRGeometry, v::AbstractVector)
   FT = typeof(geom.start)
   ftan(i) = Tangent{FT}(r = SVector(v[i], v[i+1], v[i+2]), theta = v[i+3])
@@ -94,6 +100,12 @@ function geometry_tangent(geom::CSRGeometry, v::AbstractVector)
   return Tangent{typeof(geom)}(start = ftan(1), ele = ele)
 end
 
+"""
+    geometry_vector(t, n_ele) -> Vector
+
+Vector of length `4 + N_ELE_PARAMS * n_ele` in the order of `geometry_to_vector`, from the Tangent `t` of a
+`CSRGeometry` (inverse of `geometry_tangent`). Entries of `t` that are zero (`AbstractZero`) stay zero.
+"""
 function geometry_vector(t, n_ele::Integer)
   v = zeros(4 + N_ELE_PARAMS * n_ele)
   setv!(i, x) = (x isa AbstractZero || (v[i] = x); nothing)

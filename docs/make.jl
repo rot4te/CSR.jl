@@ -1,13 +1,15 @@
 using CSR
-using BeamTracking, Beamlines, ChainRulesCore   # load the package extensions
+using BeamTracking, Beamlines, ChainRulesCore, GTPSA   # load the package extensions
 using Documenter
 
 const CSRBeamTrackingBeamlinesExt = Base.get_extension(CSR, :CSRBeamTrackingBeamlinesExt)
+const CSRChainRulesCoreExt = Base.get_extension(CSR, :CSRChainRulesCoreExt)
+const CSRGTPSAExt = Base.get_extension(CSR, :CSRGTPSAExt)
 
 DocMeta.setdocmeta!(CSR, :DocTestSetup, :(using CSR); recursive = true)
 
 makedocs(;
-  modules = [CSR, CSRBeamTrackingBeamlinesExt],
+  modules = [CSR, CSRBeamTrackingBeamlinesExt, CSRChainRulesCoreExt, CSRGTPSAExt],
   authors = "Alexander M. Coxe and contributors",
   sitename = "CSR.jl",
   checkdocs = :all,

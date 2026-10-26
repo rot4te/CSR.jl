@@ -185,6 +185,13 @@ struct CSRStepResult{Z<:AbstractVector,C<:AbstractVector,K<:AbstractVector,I<:Ab
 end
 
 """
+    N_BIN_QUAD
+
+Simpson intervals per bin in `u^(1/3)` for `all_bin_quadrature` (9 nodes per bin).
+"""
+const N_BIN_QUAD = 8
+
+"""
     CSRParams(; n_bin = 40, particle_bin_span = 2, ds_step = 0.0, n_shield_images = 0, beam_chamber_height = 0.0,
               image_sum_order = 8, all_bin_quadrature = true, bmad_compat = false)
 
@@ -205,8 +212,8 @@ Parameters for the 1D CSR calculation. Names follow Bmad's `space_charge_com` co
     Default 8: with `M ≥ 32` the steady-state kick agrees with a 1024-layer reference to ~1e-6
     (docs, "Physics decisions", D24). Use `M` of 32–64 when the chamber height is comparable to or smaller than the
     bunch length. Ignored with `bmad_compat = true` (Bmad: plain sum).
-- `all_bin_quadrature`: Integrate the kick integrand over every bin by quadrature (Simpson in `u^(1/3)`, 8 intervals (9 nodes) per
-    bin), instead of the trapezoid `(I_csr[i] + I_csr[i-1]) dz / 2` for bins `i ≥ 2`. Default `true`
+- `all_bin_quadrature`: Integrate the kick integrand over every bin by quadrature (Simpson in `u^(1/3)`, 8 intervals
+    (9 nodes) per bin), instead of the trapezoid `(I_csr[i] + I_csr[i-1]) dz / 2` for bins `i ≥ 2`. Default `true`
     (docs, "Physics decisions", V5). `false` integrates by quadrature over the first bin only. Ignored with
     `bmad_compat = true` (Bmad: trapezoid).
 - `bmad_compat`: If `true`, reproduce Bmad expressions that CSR.jl replaces, for like-for-like comparison with

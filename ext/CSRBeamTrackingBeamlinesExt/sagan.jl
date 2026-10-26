@@ -22,19 +22,48 @@ Slice `[s0, s1]` of a SaganCavity element of length `L` (`csr_n_step` slicing), 
 BeamTracking computes for the whole element. `ele` holds the slice length, alignment, aperture and multipoles.
 `TE`: number type of the energy fields (`E0`, `dE_ref`, `P0c0`, `p_over_q_ref`); `T`: RF and length fields
 (promoted from the cavity's parameters; TPS or `Dual` with knobs).
+
+## Properties
+- `ele`: Slice element (`LineElement`) with the slice length, alignment, aperture and multipoles.
+- `tm`: The cavity's SaganCavity tracking method.
+- `species`: Species of the beamline's reference particle.
+- `mass`: Rest energy [eV] of the species.
+- `q`: Charge of the species (`chargeof`).
+- `a`: Gyromagnetic anomaly of the species.
+- `traveling_wave`: Whether the RF is a traveling wave (from the cavity's `RFParams`).
+- `E0`: Reference energy at the cavity entrance, `E_ref - dE_ref` [eV].
+- `dE_ref`: Reference energy gain across the whole cavity [eV].
+- `P0c0`: Reference momentum at the cavity entrance [eV].
+- `p_over_q_ref`: Reference `p_over_q` of the beamline (exit energy).
+- `rf_omega`: RF angular frequency (`rf_omega_calc`).
+- `t_phi0`: RF phase at the entrance, as a time (`rf_phi0_calc / rf_omega`).
+- `q_gradient`: `q * voltage / L_active` (zero if `L_active` is not positive).
+- `q_voltage`: `q * voltage` of the whole cavity.
+- `n_cells`: Number of RF cells (`rf_step_calc`); 0 selects the two-half branch of `sagan_dt_ref`.
+- `L_active`: Active length of the whole cavity (`rf_step_calc`).
+- `L`: Length of the whole cavity.
+- `m_order`: Multipole orders of the cavity's `BMultipoleParams` (empty if inactive).
+- `Bn`: Normal multipole field strengths (`Kn * p_over_q` at the entrance energy, as BeamTracking).
+- `Bs`: Skew multipole field strengths (`Ks * p_over_q` at the entrance energy, as BeamTracking).
+- `has_mult`: Whether `m_order` is non-empty.
+- `has_sol`: Whether the first multipole order is 0 (solenoid term).
+- `s0`: Slice start within the cavity.
+- `s1`: Slice end within the cavity (`L` for the last slice).
+- `first`: Whether this is the element's first slice.
+- `last`: Whether this is the element's last slice.
 """
 Base.@kwdef struct SaganSlice{E,TM,M,K,TE<:Number,T<:Number}
   ele::E
-  tm::TM                  # The cavity's SaganCavity
+  tm::TM
   species::Species
   mass::Float64
   q::Float64
-  a::Float64              # Gyromagnetic anomaly
+  a::Float64
   traveling_wave::Bool
-  E0::TE                  # Reference energy at the cavity entrance (E_ref - dE_ref)
+  E0::TE
   dE_ref::TE
-  P0c0::TE                # Reference momentum at the cavity entrance [eV]
-  p_over_q_ref::TE        # Reference p_over_q of the cavity's beamline (exit energy)
+  P0c0::TE
+  p_over_q_ref::TE
   rf_omega::T
   t_phi0::T
   q_gradient::T
@@ -43,7 +72,7 @@ Base.@kwdef struct SaganSlice{E,TM,M,K,TE<:Number,T<:Number}
   L_active::T
   L::T
   m_order::M
-  Bn::K                   # Multipole field strengths (BeamTracking: Kn * p_over_q at the entrance energy)
+  Bn::K
   Bs::K
   has_mult::Bool
   has_sol::Bool
@@ -232,7 +261,8 @@ end
 
 SaganCavity slice `[s0, s0 + L_slice]`, with the cavity constants computed for the whole element as BeamTracking does
 (RF frequency and phase, cells, gradient, multipoles at the entrance energy), alignment per slice and apertures at
-the ends. The last slice ends at `L` exactly.
+the ends. The last slice ends at `L` exactly. Errors if the entrance energy `E_ref - dE_ref` is not above the rest
+energy.
 """
 function slice_sagan(ele::LineElement, up, s0, L_slice, first, last, context)
   bte = bt_ext()
@@ -255,6 +285,9 @@ function slice_sagan(ele::LineElement, up, s0, L_slice, first, last, context)
   E1 = R_to_E(species, p_over_q_ref)
   dE_ref = float(lp.dE_ref)
   E0 = E1 - dE_ref
+  CSR.primal(E0) > mass || error("slice_element: SaganCavity entrance energy E_ref - dE_ref = $(CSR.primal(E0)) eV " *
+    "is not above the rest energy $mass eV (E_ref = $(CSR.primal(E1)) eV, dE_ref = $(CSR.primal(dE_ref)) eV): " *
+    "dE_ref is inconsistent with p_over_q_ref")
   rf_omega = bte.rf_omega_calc(rp, lp)
   t_phi0 = bte.rf_phi0_calc(rp, species) / rf_omega
   n_cells, L_active = bte.rf_step_calc(tm.n_cells, tm.L_active, rf_omega, L)
@@ -282,7 +315,8 @@ function slice_sagan(ele::LineElement, up, s0, L_slice, first, last, context)
     isnothing(dps) || (s.ApertureParams = dps)
   end
 
-  q_gradient = CSR.primal(L_active) > 0 ? q * rp.voltage / L_active : 0.0
+  Tg = float(promote_type(typeof(q), typeof(rp.voltage), typeof(L_active)))
+  q_gradient = CSR.primal(L_active) > 0 ? q * rp.voltage / L_active : zero(Tg)
   ve = (float(E0), dE_ref, sqrt(E0^2 - mass^2), float(p_over_q_ref))
   TE = float(promote_type(map(typeof, ve)...))
   vt = (float(rf_omega), float(t_phi0), q_gradient, float(q * rp.voltage), float(L_active), L, float(s0),
@@ -317,7 +351,8 @@ track_slice!(bunch, s::LineElement, p_over_q_ref) = track!(bunch, s; _p_over_q_r
 Track `bunch` through a SaganCavity slice: entrance alignment/aperture, `sagan_slice_kernel!`, exit
 alignment/aperture, with BeamTracking's `KernelChain`/`launch!`. Adds the slice's reference time to `bunch.t_ref`, so
 that after the last slice it is the entrance `t_ref` plus the whole-cavity `dt_ref` (as BeamTracking ≥ 0.8.7; to
-round-off).
+round-off). The third argument is accepted for a common call with `LineElement` slices and ignored: the slice uses
+`c.p_over_q_ref`.
 """
 function track_slice!(bunch, c::SaganSlice, p_over_q_ref = c.p_over_q_ref)
   bte = bt_ext()
@@ -331,7 +366,7 @@ function track_slice!(bunch, c::SaganSlice, p_over_q_ref = c.p_over_q_ref)
 
   t_enter = bunch.t_ref
   bg = R_to_beta_gamma(c.species, c.p_over_q_ref)
-  t_exit = t_enter - sagan_dt_ref(c, c.s0) + sagan_dt_ref(c, c.last ? c.L : c.s1)
+  t_exit = t_enter - sagan_dt_ref(c, c.s0) + sagan_dt_ref(c, c.s1)
   kc = BeamTracking.KernelChain(Val{10}(), BeamTracking.RefState{eltype(coords.v)}(; t_enter, beta_gamma_enter = bg,
                                 t_exit, beta_gamma_exit = bg, L = L_slice, g = (0, 0), ds_step = L_slice))
 

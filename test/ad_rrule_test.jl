@@ -137,12 +137,12 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry, msg = ""; kw...)
   # ChainRulesTestUtils (finite differences). Small bunch to keep the number of FD directions down. z is held fixed
   # (wrapper, rrule via `rrule_f`): the bin grid moves with the extreme particles; ad_test.jl checks z by hand.
   # Steps capped at 1e-6 (chosen when FD at h = 1e-4 was off by ~10% in start.r[3] and L_chord of element 1; since D44
-  # those columns are ≤ 1e-8 at 1e-4 in free space, planning/diagnostics/flake_geom_steps.jl).
+  # those columns are ≤ 1e-8 at 1e-4 in free space, diagnostics/flake_geom_steps.jl).
   # γ enters as γ/Γ: the step cap is absolute, and a step of 1e-6 in γ = 200 is lost in the source-root noise (FD
   # error of ∂kick/∂γ 4e-3 with images in compat, so ȳ⋅∂kick/∂γ failed rtol 1e-2 for ~23% of random ȳ; with Γ = 1e5,
   # 1.6e-6 and ~1e-4 of ȳ).
   # rtol, atol per case, from failure rates over 20000 random ȳ with test_approx's grouping (each scalar field of the
-  # geometry Tangent alone; planning/diagnostics/d32_flake.jl, test_rrule_seeds.jl): free space 0 at (1e-6, 1e-9),
+  # geometry Tangent alone; diagnostics/d32_flake.jl, test_rrule_seeds.jl): free space 0 at (1e-6, 1e-9),
   # 1.5e-3 at (1e-6, 1e-10), 0.42 at 1e-7; compat 0 at (3e-3, 1e-8), 5.5e-4 at (3e-3, 1e-10). The rest is an absolute
   # FD error (~1e-8 in compat) when ȳ⋅column of one scalar cancels (element 2 L_chord). atol is ≤ 1e-7 of the median
   # cotangent, but bounds element 2's g and ref_floor0.theta in free space (atol/|cotangent| ~8.5e-5, 5e-6). The
