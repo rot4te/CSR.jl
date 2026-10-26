@@ -42,7 +42,7 @@ One work item per particle, on the backend of `pz`.
 function csr_apply_kicks!(pz::AbstractVector, z::AbstractVector, alive::AbstractVector{Bool}, bins::CSRBins, kick::AbstractVector;
                           pz_scale = 1)
   length(pz) == length(z) == length(alive) ||
-    error("csr_apply_kicks!: pz, z, alive must have equal lengths (got $(length(pz)), $(length(z)), $(length(alive))))")
+    error("csr_apply_kicks!: pz, z, alive must have equal lengths (got $(length(pz)), $(length(z)), $(length(alive)))")
   length(kick) == length(bins.z_center) || error("csr_apply_kicks!: kick and bins.z_center must have equal lengths")
   apply_kicks_outside!(pz, z, alive, bins.z_center, kick, bins.dz, pz_scale) == 0 ||
     error("csr_apply_kicks!: particle outside the bin range (internal error)")
