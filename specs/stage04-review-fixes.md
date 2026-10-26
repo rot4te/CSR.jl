@@ -388,7 +388,10 @@ GPU backends when called directly."
   zeros(5))` and `b.coords.v == v0`.
 - `track_csr!(b, bl; params = CSRParams(n_bin = 40, ds_step = 0.05), centroid_start = zeros(6))` runs.
 - The error messages contain `"ds_step"` and `"centroid_start"` respectively (`@test_throws` with a check on
-  `sprint(showerror, err)`, or `try`/`catch`).
+  `sprint(showerror, err)`, or `try`/`catch`). The `ds_step` message also contains `"must be > 0"` (the C.3 text):
+  without the C.3 check, `csr_n_step` (`src/utils/kick_setup.jl`) raises "csr_n_step: params.ds_step must be set"
+  later in the loop, which contains `"ds_step"` but not `"must be > 0"`. Sensitivity (scratch, `@eval`): with the C.3
+  checks removed, the `"ds_step"` assertions pass (the later error matches) and only the `"must be > 0"` check fails.
 
 ### 6.D Cleanup (sub-stage D)
 
@@ -618,3 +621,4 @@ None affecting implementation.
 | 2026-10-25 | 6.B.5.2.0 reason: "Julia ≥ 1.12 accepts the redefinition, Julia 1.10 does not (coordinator, from memory; verify)" replaced by "Julia 1.13.2 accepts ..., Julia 1.10.12 does not (checked 2026-10-25 ...; Julia 1.12 not checked)". | Task 4a scratch script (`redef_S_110.jl`): Julia 1.10.12 `ERROR: invalid redefinition of constant Main.S`; Julia 1.13.2 accepts (supertype `B`). | Applied (clarification; verified; no requirement changed) |
 | 2026-10-25 | PROPOSED — Section 10: add a Julia 1.10 env for the B tests. New line after the criterion 1d env: `julia +lts --project=<scratchpad>/env110_full -e 'using Pkg; Pkg.develop(path = expanduser("~/.julia/dev/CSR.jl")); Pkg.add([PackageSpec(name = "BeamTracking", version = "0.8.7"), PackageSpec(name = "Beamlines", version = "0.11.0")]); Pkg.add(["Test", "StaticArrays", "AbstractFFTs", "ChainRulesCore", "ChainRulesTestUtils", "GTPSA", "AtomicAndPhysicalConstants", "KernelAbstractions", "Atomix", "ForwardDiff", "DelimitedFiles"]); Pkg.resolve()'`. | The criterion 1d env (4 packages) cannot run `review_fixes_test.jl` (needs BeamTracking, Beamlines, the Section 10 deps). This env resolved and precompiled on 1.10.12 (2026-10-25). | Approved by the user (2026-10-25) |
 | 2026-10-25 | 6.C.2 clarified: strict `runtests.jl` order, grouping only of adjacent files, `tps_test.jl`/`track_tps_test.jl` row split, rows reordered. "About 2500 checks" kept. | spec-implementer stopped: the existing grouped tps row joins non-adjacent files and the table was not in `runtests.jl` order. | Decided by the user |
+| 2026-10-25 | 6.C.5: the `ds_step` error message must also contain `"must be > 0"` (the C.3 text); sensitivity expectation added to 6.C.5. | Sensitivity run (tester, scratch `@eval` removing the C.3 checks, Julia 1.13.2): the `"ds_step"` assertions still pass, because `csr_n_step` (`src/utils/kick_setup.jl`) raises "csr_n_step: params.ds_step must be set" later in `track_csr_line!`; the centroid_start assertions fail (DimensionMismatch). | Applied (added detail that follows from C.3's message text; the repo test does not check it yet, see the tester report) |
