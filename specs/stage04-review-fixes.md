@@ -393,6 +393,19 @@ GPU backends when called directly."
   later in the loop, which contains `"ds_step"` but not `"must be > 0"`. Sensitivity (scratch, `@eval`): with the C.3
   checks removed, the `"ds_step"` assertions pass (the later error matches) and, among the `ds_step` assertions, only the `"must be > 0"` check fails. The `centroid_start` assertions also fail (`DimensionMismatch` from `centroid_bunch`, observed 2026-10-25: the `@test_throws ErrorException` and the message check).
 
+**C.6 Review fixes (sub-stage C review, approved by the user 2026-10-26: W1, W2, S1).**
+
+1. (W1) `track_csr!` docstring (`ext/CSRBeamTrackingBeamlinesExt/track.jl`): "(`ds_step > 0` required; error
+   otherwise)." → "(`ds_step > 0` required; error otherwise, for a non-empty line)." The checks stay in
+   `track_csr_line!` (an empty `Beamline`/`Branch` returns before them).
+2. (W2) Rewrap to ≤ 120 characters, text unchanged: the C.4 paragraph in the `track_csr!` docstring (break after
+   "Each kick uses", so the second line starts with `` `csr_kick!` ``), and in `test/review_fixes_test.jl` the
+   `centroid_start = zeros(5)` `@test_throws` line (break before `centroid_start = zeros(5))`, aligned under the
+   first argument of `track_csr!`). Do not rewrap any other line.
+3. (S1) `test/review_fixes_test.jl`, S2 testset: the positive case becomes
+   `@test track_csr!(b, bl; params = CSRParams(n_bin = 40, ds_step = 0.05), centroid_start = zeros(6)) === b`
+   (wrapped to ≤ 120 characters as in item 2).
+
 ### 6.D Cleanup (sub-stage D)
 
 **D.1 (S3)** `src/kernels/adjoint.jl`: rename `kick_cell(zp, zc1, z_center, dz)` (definition, its docstring signature,
@@ -620,6 +633,7 @@ None affecting implementation.
 | 2026-10-25 | Section 10, one-file command: `include("binning_test.jl")` added before `include("<file>")` (old: `...include("lcavity_test.jl"); include("<file>")'`; new: `...include("lcavity_test.jl"); include("binning_test.jl"); include("<file>")'`). | 6.B.5.2.0 directs this; Section 10 was not updated. `NoFloat64Backend` is defined only in `binning_test.jl`. Used by the 1.13 and 1.10 one-file runs (34/34). | Applied (editorial, directed by 6.B.5.2.0) |
 | 2026-10-25 | 6.B.5.2.0 reason: "Julia ≥ 1.12 accepts the redefinition, Julia 1.10 does not (coordinator, from memory; verify)" replaced by "Julia 1.13.2 accepts ..., Julia 1.10.12 does not (checked 2026-10-25 ...; Julia 1.12 not checked)". | Task 4a scratch script (`redef_S_110.jl`): Julia 1.10.12 `ERROR: invalid redefinition of constant Main.S`; Julia 1.13.2 accepts (supertype `B`). | Applied (clarification; verified; no requirement changed) |
 | 2026-10-25 | PROPOSED — Section 10: add a Julia 1.10 env for the B tests. New line after the criterion 1d env: `julia +lts --project=<scratchpad>/env110_full -e 'using Pkg; Pkg.develop(path = expanduser("~/.julia/dev/CSR.jl")); Pkg.add([PackageSpec(name = "BeamTracking", version = "0.8.7"), PackageSpec(name = "Beamlines", version = "0.11.0")]); Pkg.add(["Test", "StaticArrays", "AbstractFFTs", "ChainRulesCore", "ChainRulesTestUtils", "GTPSA", "AtomicAndPhysicalConstants", "KernelAbstractions", "Atomix", "ForwardDiff", "DelimitedFiles"]); Pkg.resolve()'`. | The criterion 1d env (4 packages) cannot run `review_fixes_test.jl` (needs BeamTracking, Beamlines, the Section 10 deps). This env resolved and precompiled on 1.10.12 (2026-10-25). | Approved by the user (2026-10-25) |
+| 2026-10-26 | 6.C.6 added: `track_csr!` docstring "for a non-empty line" (W1); rewrap of the C.4 paragraph and one test line (W2); positive S2 case tests `=== b` (S1). | code-reviewer, sub-stage C review. | Approved by the user. Declined (not selected): S2 (usage.md/CSRParams docstring wording), S3 (`centroid_start isa AbstractVector`), S4 (string `@test_throws`). |
 | 2026-10-25 | 6.C.2 clarified: strict `runtests.jl` order, grouping only of adjacent files, `tps_test.jl`/`track_tps_test.jl` row split, rows reordered. "About 2500 checks" kept. | spec-implementer stopped: the existing grouped tps row joins non-adjacent files and the table was not in `runtests.jl` order. | Decided by the user |
 | 2026-10-25 | 6.C.5: the `ds_step` error message must also contain `"must be > 0"` (the C.3 text); sensitivity expectation added to 6.C.5. | Sensitivity run (tester, scratch `@eval` removing the C.3 checks, Julia 1.13.2): the `"ds_step"` assertions still pass, because `csr_n_step` (`src/utils/kick_setup.jl`) raises "csr_n_step: params.ds_step must be set" later in `track_csr_line!`; the centroid_start assertions fail (DimensionMismatch). | Applied (added detail that follows from C.3's message text; the repo test does not check it yet, see the tester report) |
 | 2026-10-25 | 6.C.5 sensitivity sentence: the `centroid_start` assertions are stated to fail too (observed `DimensionMismatch`); "only" is scoped to the `ds_step` assertions. | Sub-stage C tester run (scratch `@eval`, Julia 1.13.2, S2 testset as in `test/review_fixes_test.jl`): 4 pass, 3 fail (the `"must be > 0"` message; both `centroid_start` assertions). The `ds_step` assertions pass. The sentence as written implied only the `"must be > 0"` check fails. | Applied (clarification; observed result; no expectation weakened) |
