@@ -1,7 +1,7 @@
-# Stage 04 review fixes (2026-10-18), sub-stage B (W3, W4, W5): shifted_to_slice number types, device number types
-# (backends without Float64), gamma > 1 checks. Uses TC_EXT, TC_E, tc_pq (track_csr_test.jl), kernel_test_bunch
-# (kernels_test.jl) and NoFloat64Backend (binning_test.jl), included before this file. NoFloat64Backend is not defined
-# here (binning_test.jl defines it with supertype CSR.KernelAbstractions.GPU).
+# Stage 04 review fixes (2026-10-18), sub-stage B (W3, W4, W5) and sub-stage C (S2): shifted_to_slice number types,
+# device number types (backends without Float64), gamma > 1 checks, track_csr! entry checks. Uses TC_EXT, TC_E, tc_pq
+# (track_csr_test.jl), kernel_test_bunch (kernels_test.jl) and NoFloat64Backend (binning_test.jl), included before this
+# file. NoFloat64Backend is not defined here (binning_test.jl defines it with supertype CSR.KernelAbstractions.GPU).
 
 import KernelAbstractions
 
@@ -83,6 +83,7 @@ import KernelAbstractions
       e
     end
     @test err isa ErrorException && occursin("ds_step", sprint(showerror, err))
+    @test err isa ErrorException && occursin("must be > 0", sprint(showerror, err))
 
     @test_throws ErrorException track_csr!(b, bl; params = CSRParams(n_bin = 40, ds_step = 0.05), centroid_start = zeros(5))
     @test b.coords.v == v0
