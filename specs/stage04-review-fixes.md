@@ -531,6 +531,117 @@ ForwardDiff.Dual && ForwardDiff.value(r) == 0.3`; `r2 = @inferred TC_EXT.slice_e
    false)`, `CSR.widen_source_range(3, 3, false, false, 5, 4) == (3, 4, false, true)`,
    `CSR.widen_source_range(3, 3, false, false, 2, 4) == (2, 3, false, false)`.
 
+### 6.E Final whole-codebase review fixes (sub-stage D branch; approved by the user 2026-10-26)
+
+Findings of the final `code-reviewer` run: C1, W1, W2 (as decided below), W3, S1 (docstring), S2, S4/S5. Float64
+results stay bitwise unchanged. New tests go in `test/review_fixes_test.jl`, in one new testset
+`"Final review fixes"` placed before `"TPS cases"` (except E.3's, which may need its own element setup; same file,
+same testset).
+
+**E.1 (C1) Input checks before the kernels.**
+- `csr_bin_particles` (`src/binning.jl`): directly after `check_descriptors(...)` add
+  `length(z) == length(q) == length(alive) || error("csr_bin_particles: z, q, alive must have equal lengths (got
+  $(length(z)), $(length(q)), $(length(alive))))")`. Replace the line `z_maxval > z_minval || error(...)` by
+  ```julia
+  isfinite(z_maxval) && isfinite(z_minval) || error("csr_bin_particles: non-finite z of a live particle")
+  z_maxval > z_minval || error("csr_bin_particles: longitudinal width of beam is zero")
+  ```
+- `csr_apply_kicks!` (`src/kick.jl`): as its first statements
+  ```julia
+  length(pz) == length(z) == length(alive) ||
+    error("csr_apply_kicks!: pz, z, alive must have equal lengths (got $(length(pz)), $(length(z)), $(length(alive))))")
+  length(kick) == length(bins.z_center) || error("csr_apply_kicks!: kick and bins.z_center must have equal lengths")
+  ```
+- Docstrings of `csr_bin_particles` and `csr_kick!`: add "Errors if the array lengths differ or a live particle has a
+  non-finite `z`."
+- Tests (`geom` as 6.B.4 item 2; `z, q, alive = kernel_test_bunch(1e-3, 1e-9, 400)`; `params = CSRParams(n_bin = 40,
+  ds_step = 0.05)`; `e = Species("electron")`):
+  `@test_throws "equal lengths" csr_bin_particles(z, q[1:end-1], alive, params)`;
+  `@test_throws "equal lengths" csr_kick!(zeros(length(z) - 1), z, q, alive, geom, 3, 0.1, 200.0, e, params)`;
+  with `z2 = copy(z); z2[findfirst(alive)] = NaN`: `@test_throws "non-finite" csr_bin_particles(z2, q, alive, params)`;
+  same with `Inf`; with a dead particle at NaN (`z3 = copy(z); a3 = copy(alive); z3[1] = NaN; a3[1] = false`):
+  `@test csr_bin_particles(z3, q, a3, params) isa CSR.CSRBins`. If `csr_bin_particles` or `csr_kick!` is not
+  reachable under these names in the test namespace, use `CSR.`-qualified names.
+
+**E.2 (W1) Docs cover all extensions with docstrings.**
+- `ext/CSRChainRulesCoreExt/CSRChainRulesCoreExt.jl`: add docstrings to `geometry_tangent` and `geometry_vector`
+  (one or two sentences each, from what the code does; no "## Properties" needed for functions).
+- `docs/Project.toml`: add `GTPSA` to `[deps]` (via `Pkg.add("GTPSA")` in the docs env; no compat entry).
+- `docs/make.jl`: `using BeamTracking, Beamlines, ChainRulesCore, GTPSA`; define
+  `const CSRChainRulesCoreExt = Base.get_extension(CSR, :CSRChainRulesCoreExt)` and
+  `const CSRGTPSAExt = Base.get_extension(CSR, :CSRGTPSAExt)` next to the existing const; `modules = [CSR,
+  CSRBeamTrackingBeamlinesExt, CSRChainRulesCoreExt, CSRGTPSAExt]`.
+- `docs/src/internals.md`: after the "BeamTracking + Beamlines extension" section, add sections
+  "## ChainRulesCore extension" and "## GTPSA extension", each with an `@autodocs` block
+  `Modules = [Base.get_extension(CSR, :CSR...Ext)]` as the existing one.
+- The docs build must complete with no warnings beyond the two existing ones. If it reports other missing or
+  unincluded docstrings, stop and report the list (do not add further docstrings without approval).
+
+**E.3 (W2, user decision: clear error) SaganCavity entrance energy.** In `slice_sagan`
+(`ext/CSRBeamTrackingBeamlinesExt/sagan.jl`), directly after `E0 = E1 - dE_ref`:
+```julia
+CSR.primal(E0) > mass || error("slice_element: SaganCavity entrance energy E_ref - dE_ref = $(CSR.primal(E0)) eV " *
+  "is not above the rest energy $mass eV (E_ref = $(CSR.primal(E1)) eV, dE_ref = $(CSR.primal(dE_ref)) eV): " *
+  "dE_ref is inconsistent with p_over_q_ref")
+```
+and replace `q_gradient = CSR.primal(L_active) > 0 ? q * rp.voltage / L_active : 0.0` by
+```julia
+Tg = float(promote_type(typeof(q), typeof(rp.voltage), typeof(L_active)))
+q_gradient = CSR.primal(L_active) > 0 ? q * rp.voltage / L_active : zero(Tg)
+```
+No physics change (the formulas are unchanged; only an error path and a zero's type). Docstring of `slice_sagan`:
+add "Errors if the entrance energy `E_ref - dE_ref` is not above the rest energy." Test: build a cavity element with
+`E_ref - dE_ref ≤ mass` (e.g. `Beamline([lc_cavity(L = 0.3, tracking_method = SaganCavity(), dE_ref = 2LC_E0)];
+E_ref = LC_E0, species_ref = LC_E).line[1]`, or another construction through Beamlines) and
+`@test_throws "not above the rest energy" CSR.slice_element(ele, 0.0, 0.1, true, false)`. If Beamlines cannot
+produce such an element (it errors first, or `E_ref - dE_ref` is always above the mass), do not add the test; report
+how Beamlines responds. Also `@test` that `slice_element` of `lc_in_branch(lc_cavity(L = 0.3, tracking_method =
+SaganCavity()))` still gives `q_gradient isa Float64`.
+
+**E.4 (W3) Stale test descriptions.** `docs/src/validation.md`, `review_fixes_test.jl` row: append "Sub-stage D: last
+SaganCavity slice ends at `L`, `csr_apply_kicks_reference!` range test, `SaganSlice` keyword construction,
+`widen_source_range`, `slice_end` types; final review: input-length and non-finite checks." Update the header comment
+of `test/review_fixes_test.jl` to name sub-stages B, C, D and the final review fixes.
+
+**E.5 (S1) `track_csr!` docstring**: after the C.4 CPU paragraph add "An error raised during tracking (e.g. `gamma ≤
+1` at a kick, too few live particles, a particle outside the bin range) leaves the bunch tracked up to that point."
+
+**E.6 (S2) One quadrature constant.** In `src/types.jl` (before `CSRParams`) add
+```julia
+"""
+    N_BIN_QUAD
+
+Simpson intervals per bin in `u^(1/3)` for `all_bin_quadrature` (9 nodes per bin).
+"""
+const N_BIN_QUAD = 8
+```
+and use it for the literal `8` in `csr_bin_quadrature_kernel!(...)` (`src/tables.jl`), `n_q = 8` (`src/param_adjoint.jl`,
+keep the local name `n_q`, comment "as csr_wake_table" may go), and `I_csr_quadrature(..., 8)` (`src/reference.jl`).
+Change no other `8`.
+
+**E.7 (S4/S5) Style and stale references.**
+- Rewrap to ≤ 120 characters, text unchanged: the docstring lines touched by this stage at `src/utils/spline.jl`
+  (the "The result type is the same in both modes" line), `src/types.jl` (the `all_bin_quadrature` line),
+  `src/tables.jl` (the "Simpson in `u^(1/3)` with 8 intervals (9 nodes) per" line). No other lines.
+- `SaganSlice` docstring: add a "## Properties" section listing every field (name and one-line meaning; reuse the
+  existing field comments, which may then be removed from the struct body).
+- `track_slice!(bunch, c::SaganSlice, p_over_q_ref = c.p_over_q_ref)`: keep the signature (callers pass three
+  arguments for every slice type); add to its docstring "The third argument is accepted for a common call with
+  `LineElement` slices and ignored: the slice uses `c.p_over_q_ref`." Rename the argument to `_` is not required.
+- `track_slice!` for `SaganSlice`: `sagan_dt_ref(c, c.last ? c.L : c.s1)` → `sagan_dt_ref(c, c.s1)` (with D.10 the
+  last slice has `s1 === L`; Float64 bitwise unchanged).
+- Comments `planning/diagnostics/` → `diagnostics/` in `test/ad_rrule_test.jl` (two), `test/track_tps_test.jl`,
+  `test/wake_test.jl` (comment text only; this is the only permitted change to pre-existing test files).
+- `src/interface.jl:15` and `ext/CSRBeamTrackingBeamlinesExt/slicing.jl` (lines 4 and 36): leave the "0.8.4" wording
+  unless the statement is no longer true at 0.8.7 — check `PLAN.md` Section 7b; if 7b says the mirrored code is
+  unchanged at 0.8.7, change "BeamTracking 0.8.4" to "BeamTracking 0.8.4 (unchanged at 0.8.7)" (and likewise for the
+  other two); if 7b does not say, leave them and report.
+
+**E.8 Acceptance.** Full suite on `-t 4` and `-t 1` pass; docs build with only the two existing warnings; sensitivity
+(scratch): without E.1's length check in `csr_apply_kicks!`, the short-`pz` test does not raise the "equal lengths"
+error; without the finiteness check, the NaN test raises the "width of beam is zero" error or none. Float64 bitwise:
+the E.6 and E.7 `sagan_dt_ref` changes give `===` results on a sample (scratch comparison).
+
 ## 7. Data formats
 
 No change.
@@ -665,3 +776,4 @@ None affecting implementation.
 | 2026-10-25 | 6.C.5 sensitivity sentence: the `centroid_start` assertions are stated to fail too (observed `DimensionMismatch`); "only" is scoped to the `ds_step` assertions. | Sub-stage C tester run (scratch `@eval`, Julia 1.13.2, S2 testset as in `test/review_fixes_test.jl`): 4 pass, 3 fail (the `"must be > 0"` message; both `centroid_start` assertions). The `ds_step` assertions pass. The sentence as written implied only the `"must be > 0"` check fails. | Applied (clarification; observed result; no expectation weakened) |
 | 2026-10-26 | PROPOSED — needs user approval: 6.D.7 `slice_sagan`: type the slice end as one type, e.g. `float(promote_type(typeof(L), typeof(s0 + L_slice))(last ? L : s0 + L_slice))`, instead of `float(last ? L : s0 + L_slice)`. The `vt` tuple last element is then concrete in every case. | Tester, sub-stage D (D.7 type check, scratch, Julia 1.13.2): with `L` a Dual and `s0`, `L_slice` Float64, `float(last ? L : s0 + L_slice)` infers `Union{Float64, Dual}` (`Base.return_types`); the proposed form infers `Dual`. Values and Float64 bits unchanged. In `slice_sagan` the union is hidden because `vt[8]` is already `Any` (`code_warntype`). The in-tree path (`csr_slice`) gives `s0`, `L_slice` the same type as `L`, so the mixed case needs a direct `slice_element` call with mismatched types. | Approved by the user (2026-10-26); written as 6.D.10 (helper `slice_end`, with tests) |
 | 2026-10-26 | Section 6.D.4: `diagnostics/base` was a gitlink (nested repository at commit `9211f86`, not in CSR.jl's history), not tracked files; its deletion with `rm -r` removed that repository. | Found by the coordinator after D.4 ran. | User accepted the loss (2026-10-26); gitlink removal committed with Stage 08 |
+| 2026-10-26 | 6.E added (final whole-codebase review: C1 input checks, W1 docs for all extensions, W2 SaganCavity entrance-energy error and `zero(Tg)`, W3 stale test descriptions, S1 docstring, S2 `N_BIN_QUAD`, S4/S5 style and stale references). | code-reviewer, final whole-codebase review. | Approved by the user. W2: user chose a clear error (no physics change). Declined (not selected): S3 (test helpers to `utils.jl`), S6 (pin BeamTracking `=0.8.7`; ForwardDiff floor), S1 pre-pass check. |
