@@ -487,6 +487,32 @@ working-tree edit); replace it the same way. Change nothing else in these files 
 paths in run-instruction comments stay). **Do not run or test these scripts** (user's instruction); no test or
 acceptance criterion covers D.9.
 
+**D.10 (D.7 type, user 2026-10-26).** In `ext/CSRBeamTrackingBeamlinesExt/sagan.jl` add a top-level helper next to
+`slice_sagan`:
+
+```julia
+"""
+    slice_end(L, s0, L_slice, last)
+
+End of a SaganCavity slice: `L` for the last slice, else `s0 + L_slice`, as one floating-point type (the promoted
+type of `L` and `s0 + L_slice`) so the result is inferable for mixed `Float64`/`Dual`/TPS arguments.
+"""
+function slice_end(L, s0, L_slice, last::Bool)
+  s1 = s0 + L_slice
+  T = promote_type(typeof(L), typeof(s1))
+  return float(last ? convert(T, L) : convert(T, s1))
+end
+```
+
+and in `slice_sagan` replace `float(last ? L : s0 + L_slice)` by `slice_end(L, s0, L_slice, last)`. For `Float64`
+arguments the result is bitwise the same as D.7. Tests (D.8, new testset `"D.10 slice_end types"`, before
+`"TPS cases"`): `@test TC_EXT.slice_end(0.3, 0.2, 0.1, true) === 0.3`; `@test TC_EXT.slice_end(0.3, 0.2, 0.1, false)
+=== 0.2 + 0.1`; `r = @inferred TC_EXT.slice_end(0.3, ForwardDiff.Dual(0.2, 1.0), 0.1, true)`, `@test r isa
+ForwardDiff.Dual && ForwardDiff.value(r) == 0.3`; `r2 = @inferred TC_EXT.slice_end(ForwardDiff.Dual(0.3, 1.0), 0.2,
+0.1, false)`, `@test r2 isa ForwardDiff.Dual && ForwardDiff.value(r2) == 0.2 + 0.1`. In `"TPS cases"` add
+`@test (@inferred TC_EXT.slice_end(0.3, 0.2 + x[1], 0.1, true)) isa TPS` with `scalar(...) == 0.3`. If a name
+`slice_end` already exists in the extension, stop and report.
+
 **D.8 Tests** (`test/review_fixes_test.jl`):
 1. `@testset "S10 last SaganCavity slice"`: `ele = lc_in_branch(lc_cavity(L = 0.3, tracking_method =
    SaganCavity()))`; `@test 0.2 + 0.1 != 0.3` (precondition); `sl = CSR.slice_element(ele, 0.2, 0.1, false, true)`:
@@ -637,4 +663,5 @@ None affecting implementation.
 | 2026-10-25 | 6.C.2 clarified: strict `runtests.jl` order, grouping only of adjacent files, `tps_test.jl`/`track_tps_test.jl` row split, rows reordered. "About 2500 checks" kept. | spec-implementer stopped: the existing grouped tps row joins non-adjacent files and the table was not in `runtests.jl` order. | Decided by the user |
 | 2026-10-25 | 6.C.5: the `ds_step` error message must also contain `"must be > 0"` (the C.3 text); sensitivity expectation added to 6.C.5. | Sensitivity run (tester, scratch `@eval` removing the C.3 checks, Julia 1.13.2): the `"ds_step"` assertions still pass, because `csr_n_step` (`src/utils/kick_setup.jl`) raises "csr_n_step: params.ds_step must be set" later in `track_csr_line!`; the centroid_start assertions fail (DimensionMismatch). | Applied (added detail that follows from C.3's message text; the repo test does not check it yet, see the tester report) |
 | 2026-10-25 | 6.C.5 sensitivity sentence: the `centroid_start` assertions are stated to fail too (observed `DimensionMismatch`); "only" is scoped to the `ds_step` assertions. | Sub-stage C tester run (scratch `@eval`, Julia 1.13.2, S2 testset as in `test/review_fixes_test.jl`): 4 pass, 3 fail (the `"must be > 0"` message; both `centroid_start` assertions). The `ds_step` assertions pass. The sentence as written implied only the `"must be > 0"` check fails. | Applied (clarification; observed result; no expectation weakened) |
-| 2026-10-26 | PROPOSED — needs user approval: 6.D.7 `slice_sagan`: type the slice end as one type, e.g. `float(promote_type(typeof(L), typeof(s0 + L_slice))(last ? L : s0 + L_slice))`, instead of `float(last ? L : s0 + L_slice)`. The `vt` tuple last element is then concrete in every case. | Tester, sub-stage D (D.7 type check, scratch, Julia 1.13.2): with `L` a Dual and `s0`, `L_slice` Float64, `float(last ? L : s0 + L_slice)` infers `Union{Float64, Dual}` (`Base.return_types`); the proposed form infers `Dual`. Values and Float64 bits unchanged. In `slice_sagan` the union is hidden because `vt[8]` is already `Any` (`code_warntype`). The in-tree path (`csr_slice`) gives `s0`, `L_slice` the same type as `L`, so the mixed case needs a direct `slice_element` call with mismatched types. | Proposed (no runtime failure found; inference only) |
+| 2026-10-26 | PROPOSED — needs user approval: 6.D.7 `slice_sagan`: type the slice end as one type, e.g. `float(promote_type(typeof(L), typeof(s0 + L_slice))(last ? L : s0 + L_slice))`, instead of `float(last ? L : s0 + L_slice)`. The `vt` tuple last element is then concrete in every case. | Tester, sub-stage D (D.7 type check, scratch, Julia 1.13.2): with `L` a Dual and `s0`, `L_slice` Float64, `float(last ? L : s0 + L_slice)` infers `Union{Float64, Dual}` (`Base.return_types`); the proposed form infers `Dual`. Values and Float64 bits unchanged. In `slice_sagan` the union is hidden because `vt[8]` is already `Any` (`code_warntype`). The in-tree path (`csr_slice`) gives `s0`, `L_slice` the same type as `L`, so the mixed case needs a direct `slice_element` call with mismatched types. | Approved by the user (2026-10-26); written as 6.D.10 (helper `slice_end`, with tests) |
+| 2026-10-26 | Section 6.D.4: `diagnostics/base` was a gitlink (nested repository at commit `9211f86`, not in CSR.jl's history), not tracked files; its deletion with `rm -r` removed that repository. | Found by the coordinator after D.4 ran. | User accepted the loss (2026-10-26); gitlink removal committed with Stage 08 |
