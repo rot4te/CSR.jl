@@ -99,6 +99,42 @@ import KernelAbstractions
     @test track_csr!(b, bl; params = CSRParams(n_bin = 40, ds_step = 0.05), centroid_start = zeros(6)) === b
   end
 
+  @testset "S10 last SaganCavity slice" begin
+    ele = lc_in_branch(lc_cavity(L = 0.3, tracking_method = SaganCavity()))
+    @test 0.2 + 0.1 != 0.3
+    sl = CSR.slice_element(ele, 0.2, 0.1, false, true)
+    @test sl.s1 == 0.3
+    @test sl.s1 == sl.L
+    sm = CSR.slice_element(ele, 0.2, 0.1, false, false)
+    @test sm.s1 == 0.2 + 0.1
+  end
+
+  @testset "S10 reference range test" begin
+    z, q, alive = kernel_test_bunch(1e-3, 1e-9, 400)
+    params = CSRParams(n_bin = 40)
+    bins = csr_bin_particles(z, q, alive, params)
+    kick = zeros(40)
+    for zf in (bins.z_center[end] + 10bins.dz, bins.z_center[1] - 10bins.dz)
+      @test_throws ErrorException CSR.csr_apply_kicks_reference!([0.0], [zf], [true], bins, kick)
+    end
+  end
+
+  @testset "S7 SaganSlice keywords" begin
+    ele = lc_in_branch(lc_cavity(L = 0.3, tracking_method = SaganCavity()))
+    sl = CSR.slice_element(ele, 0.2, 0.1, false, true)
+    sl2 = TC_EXT.SaganSlice(; (f => getfield(sl, f) for f in fieldnames(typeof(sl)))...)
+    @test all(f -> getfield(sl, f) == getfield(sl2, f), filter(f -> f ∉ (:ele, :tm), fieldnames(typeof(sl))))
+  end
+
+  @testset "S9 no boxed state" begin
+    geom = CSRGeometry(L3, [0.0, 1.5, 0.0], c3)
+    params = CSRParams(n_bin = 40, ds_step = 0.05, n_shield_images = 2, beam_chamber_height = 0.02)
+    @test (@inferred CSR.geometry_active_indices(geom, 3, 0.1, 200.0, params, 1e-4)) isa Vector{Int}
+    @test CSR.widen_source_range(3, 3, false, false, 0, 4) == (1, 3, true, false)
+    @test CSR.widen_source_range(3, 3, false, false, 5, 4) == (3, 4, false, true)
+    @test CSR.widen_source_range(3, 3, false, false, 2, 4) == (2, 3, false, false)
+  end
+
   # Keep last: Descriptor(...) changes GTPSA.desc_current.
   @testset "TPS cases" begin
     d = Descriptor(1, 1)

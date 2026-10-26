@@ -1,6 +1,6 @@
 using CSR, Printf, AtomicAndPhysicalConstants
 using CSR: CSRKickPoint, CSRKick1, s_source_calc, I_csr_calc, I_csr_value, I_csr_integral
-include(joinpath(@__DIR__, "..", "..", "test", "utils.jl"))
+include(joinpath(@__DIR__, "..", "test", "utils.jl"))
 e = Species("electron")
 gam = 42e6 / massof(e); pc = sqrt(42e6^2 - massof(e)^2); rho2 = pc / C_LIGHT / 0.17
 sig2 = 0.000899377

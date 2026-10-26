@@ -61,6 +61,15 @@ end
 geometry_base(j) = 4 + N_ELE_PARAMS * (j - 1)
 
 """
+    widen_source_range(lo, hi, up, down, ix, n) -> (lo, hi, up, down)
+
+Element range `lo:hi` and the upstream/downstream infinite-drift flags after a source search ended in element `ix`
+(`0`: upstream of the lattice, `> n`: past its end), for `geometry_active_indices`.
+"""
+widen_source_range(lo, hi, up, down, ix, n) =
+  (ix == 0 ? 1 : min(lo, ix), ix > n ? n : max(hi, ix), up || ix == 0, down || ix > n)
+
+"""
     geometry_active_indices(geom, ix_ele_kick, s_kick, gamma, params, dz; kick_factor = 1.0,
                             lag = params.n_bin * dz, n_images = params.n_shield_images) -> Vector{Int}
 
@@ -78,20 +87,14 @@ function geometry_active_indices(geom::CSRGeometry, ix_ele_kick::Integer, s_kick
   n = length(geom.ele)
   lo = hi = ix_ele_kick
   up = down = false
-  function visit(kp, u)
-    k, _ = s_source_calc(CSRKick1(geom, kp; dz_particles = u), geom, kp)
-    ix = k.ix_ele_source
-    ix == 0 ? (up = true; lo = 1) : (lo = min(lo, ix))
-    ix > n ? (down = true; hi = n) : (hi = max(hi, ix))
-    return nothing
-  end
+  src_ix(kp, u) = s_source_calc(CSRKick1(geom, kp; dz_particles = u), geom, kp)[1].ix_ele_source
   kp = CSRKickPoint(geom, ix_ele_kick, s_kick, gamma; kick_factor)
-  visit(kp, lag)
+  lo, hi, up, down = widen_source_range(lo, hi, up, down, src_ix(kp, lag), n)
   primal(kp.s_chord_kick) == 0 && ix_ele_kick > 1 && (lo = min(lo, ix_ele_kick - 1))
   for ns in 1:n_images
     kp_ns = CSRKickPoint(geom, ix_ele_kick, s_kick, gamma; y_source = ns * params.beam_chamber_height, kick_factor)
-    visit(kp_ns, (params.n_bin + 1) * dz)
-    visit(kp_ns, -(params.n_bin + 1) * dz)
+    lo, hi, up, down = widen_source_range(lo, hi, up, down, src_ix(kp_ns, (params.n_bin + 1) * dz), n)
+    lo, hi, up, down = widen_source_range(lo, hi, up, down, src_ix(kp_ns, -(params.n_bin + 1) * dz), n)
   end
 
   idx = Int[]
@@ -382,7 +385,7 @@ function first_bin_adjoint!(grad, w, geom0, ix_ele_kick, s_kick, gamma, params, 
 end
 
 """
-    hat_nodes(geom0, kp0, dz, n_bin, Wimg) -> Vector{Tuple{Float64,Float64}}
+    hat_nodes(geom0, kp0, dz, n_bin, Wimg) -> Vector{Pair{Float64,Float64}}
 
 Lags and weights of the hat-weighted image table's kernel evaluations (`csr_image_table` with `bin_integrate`) in
 `Σ_l Wimg[l] image[l]`: the accepted adaptive-Simpson intervals of each lag interval (Boole's rule on 5 nodes),

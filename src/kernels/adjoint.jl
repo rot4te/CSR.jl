@@ -15,11 +15,11 @@ d/dzp of triangle_overlap(zp, dz_particle, zb0, zb1) = f(zb0 − zp) − f(zb1 �
 end
 
 """
-    kick_cell(zp, zc1, z_center, dz)
+    adjoint_kick_cell(zp, zc1, z_center, dz)
 
 Interpolation cell of a particle, as in csr_apply_kicks_kernel!.
 """
-@inline function kick_cell(zp, zc1, z_center, dz)
+@inline function adjoint_kick_cell(zp, zc1, z_center, dz)
   i0 = trunc(Int, (zp - zc1) / dz) + 1
   return i0, (zp - z_center[i0]) / dz
 end
@@ -31,7 +31,7 @@ Adjoint of the kick application for one particle: kick cotangent scattered to th
 slope of the interpolated kick.
 """
 @inline function kick_adjoint_particle!(add!, kbar, zbar, i, ybar, z, z_center, kick, dz, pz_scale)
-  i0, r1 = kick_cell(z[i], z_center[1], z_center, dz)
+  i0, r1 = adjoint_kick_cell(z[i], z_center[1], z_center, dz)
   s = pz_scale * ybar[i]
   add!(kbar, i0, (1 - r1) * s)
   add!(kbar, i0 + 1, r1 * s)

@@ -3,7 +3,7 @@
 # Run from the CSR.jl root: julia --project=. planning/diagnostics/first_bin_vs_quadrature.jl
 using CSR, Printf
 using CSR: CSRKickPoint, CSRKick1, s_source_calc, I_csr_calc
-include(joinpath(@__DIR__, "..", "..", "test", "utils.jl"))
+include(joinpath(@__DIR__, "..", "test", "utils.jl"))
 rho = 10.0; L_ele = 0.1; n_ele = 80; gamma = 1e4
 geoms = (CSRGeometry(circle_lattice(rho, L_ele, n_ele)...),
          CSRGeometry(circle_lattice(rho, L_ele, n_ele)...; bmad_compat = true))

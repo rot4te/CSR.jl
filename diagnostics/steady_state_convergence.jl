@@ -1,5 +1,5 @@
 using CSR, Printf, AtomicAndPhysicalConstants
-include(joinpath(@__DIR__, "..", "..", "test", "utils.jl"))
+include(joinpath(@__DIR__, "..", "test", "utils.jl"))
 e = Species("electron")
 sigma = 1e-3; Q = 1e-9
 z, q, alive = gaussian_line_bunch(sigma, Q, 40001)

@@ -75,11 +75,10 @@ function csr_apply_kicks_reference!(pz::AbstractVector, z::AbstractVector, alive
     alive[i] || continue
     zp = z[i]
     i0 = trunc(Int, (zp - zc1) / dz) + 1   # Fortran int() truncates toward zero
+    (i0 < 1 || i0 >= n_bin) && error("csr_apply_kicks!: particle outside the bin range (internal error)")
     r1 = (zp - bins.z_center[i0]) / dz
     r0 = 1 - r1
-    if r1 < -0.01 || r1 > 1.01 || i0 < 1 || i0 >= n_bin
-      error("csr_apply_kicks!: particle outside the bin range (internal error)")
-    end
+    (r1 < -0.01 || r1 > 1.01) && error("csr_apply_kicks!: particle outside the bin range (internal error)")
     pz[i] += r0 * kick[i0] + r1 * kick[i0+1]
   end
   return pz
