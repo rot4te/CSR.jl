@@ -1,8 +1,9 @@
 """
     ModularCSR
 
-1D (line-charge) coherent synchrotron radiation for the SciBmad ecosystem, ported from Bmad's
-`csr_method = one_dim`, with optional shielding by parallel plates (image charges). The core works on plain
+1D (line-charge) coherent synchrotron radiation for the SciBmad
+ecosystem, ported from Bmad's `csr_method = one_dim`, with optional
+shielding by parallel plates (image charges). The core works on plain
 particle arrays with KernelAbstractions kernels.
 """
 module ModularCSR
@@ -15,8 +16,10 @@ import ForwardDiff
 using ForwardDiff: Dual, Partials, value, partials
 import Beamlines
 
-export CSRParams, FloorPosition, CSRGeometry, CSRElementInfo, CSRBins, CSRKickPoint, CSRStepResult
-export planar_survey, csr_bin_particles, csr_kick!, csr_kick_pz, csr_kick_coef, dspline_len
+export CSRParams, FloorPosition, CSRGeometry, CSRElementInfo, CSRBins,
+    CSRKickPoint, CSRStepResult
+export planar_survey, csr_bin_particles, csr_kick!, csr_kick_pz,
+    csr_kick_coef, dspline_len
 
 include("types.jl")
 

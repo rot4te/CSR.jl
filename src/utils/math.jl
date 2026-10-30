@@ -1,11 +1,14 @@
 # Small math helpers.
 
-# Fortran nint (round half away from zero). The fallback is exact: x - trunc(x) has no rounding error.
+# Fortran nint (round half away from zero). The fallback is exact: x -
+# trunc(x) has no rounding error.
 """
     nint(x)
 
-Nearest integer, half away from zero (Fortran `nint`, used by Bmad's binning). Exact for any real type; hardware
-floats use `RoundNearestTiesAway`, other types (e.g. `BigFloat`, which lacks that mode) a `trunc`-based fallback.
+Nearest integer, half away from zero (Fortran `nint`, used by Bmad's
+binning). Exact for any real type; hardware floats use
+`RoundNearestTiesAway`, other types (e.g. `BigFloat`, which lacks that
+mode) a `trunc`-based fallback.
 """
 nint(x::Union{Float32,Float64}) = round(Int, x, RoundNearestTiesAway)
 
@@ -24,14 +27,17 @@ function modulo2(x, amp)
   return m >= amp ? m - 2amp : m
 end
 
-# Fold the value only; the derivative of the fold is 1 (ForwardDiff's `mod` gives NaN partials at a value of exactly 0).
+# Fold the value only; the derivative of the fold is 1 (ForwardDiff's
+# `mod` gives NaN partials at a value of exactly 0).
 # ModularCSRGTPSAExt adds a TPS method (GTPSA has no `mod`).
-modulo2(x::Dual{T}, amp) where {T} = Dual{T}(modulo2(value(x), amp), partials(x))
+modulo2(x::Dual{T}, amp) where {T} = Dual{T}(modulo2(value(x), amp),
+    partials(x))
 
 """
     cube_root(x)
 
-Real cube root, `cbrt(x)`. ModularCSRGTPSAExt adds a TPS method (GTPSA has no `cbrt`).
+Real cube root, `cbrt(x)`. ModularCSRGTPSAExt adds a TPS method (GTPSA
+has no `cbrt`).
 """
 cube_root(x) = cbrt(x)
 
@@ -40,7 +46,9 @@ cube_root(x) = cbrt(x)
 
 Cross product of two 3-vectors (indexable), as an `SVector`.
 """
-cross3(a, b) = SVector(a[2] * b[3] - a[3] * b[2], a[3] * b[1] - a[1] * b[3], a[1] * b[2] - a[2] * b[1])
+cross3(a, b) = SVector(a[2] * b[3] - a[3] * b[2],
+                       a[3] * b[1] - a[1] * b[3],
+                       a[1] * b[2] - a[2] * b[1])
 
 """
     dot3(a, b)

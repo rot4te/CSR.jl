@@ -7,7 +7,8 @@ include("utils.jl")
 
 @testset "ModularCSR" begin
   @testset "Package extensions load" begin
-    for ext in (:ModularCSRAbstractFFTsExt, :ModularCSRChainRulesCoreExt, :ModularCSRGTPSAExt)
+    for ext in (:ModularCSRAbstractFFTsExt,
+                :ModularCSRChainRulesCoreExt, :ModularCSRGTPSAExt)
       @test !isnothing(Base.get_extension(ModularCSR, ext))
     end
   end
