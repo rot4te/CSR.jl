@@ -24,7 +24,7 @@ Reference floor position after an element of length `L` and reference curvature 
 """
 function advance_floor(f::FloorPosition, L, g)
   angle = g * L
-  if primal(angle) == 0
+  if Beamlines.scalarize_all(angle) == 0
     # Expansion about angle 0 (values exact; derivatives w.r.t. g and L correct to second order)
     dx = -L * angle / 2
     dz = L * (1 - angle^2 / 6)

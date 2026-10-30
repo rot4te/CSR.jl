@@ -19,16 +19,16 @@ elements strictly between the source and kick elements (`add_mid`; used by `csr_
   L_vec = kp.floor_k.r - rs
   L2 = L_vec[1]^2 + L_vec[2]^2 + L_vec[3]^2
   Lp2 = L_vec[1]^2 + L_vec[3]^2
-  if primal(Lp2) == 0
+  if Beamlines.scalarize_all(Lp2) == 0
     # Source exactly above or below the kick point (image charges in compat mode): TPS atan/sqrt abort at 0 and
     # Dual derivatives are not finite there; take the primal direction and a zero horizontal length.
-    theta_L = convert(typeof(Lp2), atan(primal(L_vec[1]), primal(L_vec[3])))
+    theta_L = convert(typeof(Lp2), atan(Beamlines.scalarize_all(L_vec[1]), Beamlines.scalarize_all(L_vec[3])))
     Lp = zero(Lp2)
   else
     theta_L = atan(L_vec[1], L_vec[3])
     Lp = sqrt(Lp2)
   end
-  L = primal(L2) == 0 ? zero(L2) : sqrt(L2)
+  L = Beamlines.scalarize_all(L2) == 0 ? zero(L2) : sqrt(L2)
 
   s0 = s_chord_source
   s1 = kp.s_chord_kick
@@ -41,7 +41,7 @@ elements strictly between the source and kick elements (`add_mid`; used by `csr_
       dtheta_L = sp[2] + sp[3] * (2s0 + ds) + sp[4] * (3s0^2 + 3s0 * ds + ds^2)
       dL = path_excess(s0, s1, sp, dtheta_L; bmad_compat = bc)   # = Ls - L
       # Ls is negative if the source point is ahead of the kick point (ds < 0), but L is always positive.
-      primal(ds) < 0 && (dL += 2ds)
+      Beamlines.scalarize_all(ds) < 0 && (dL += 2ds)
       theta_sl = spline_d1(sp, s0) - dtheta_L
       theta_lk = dtheta_L - spline_d1(sp, s1)
       # For a source ahead of the kick point L_vec points backwards, and this is the source direction + π
@@ -54,7 +54,7 @@ elements strictly between the source and kick elements (`add_mid`; used by `csr_
       dL = path_excess(s0, s1, sp, dtheta_L)
       # Source ahead: Ls = -(excess + L_plane), so dL = Ls - L = -(excess + 2 L_plane) (as for downstream sources;
       # Bmad's 2ds is the chord-coordinate difference).
-      primal(ds) < 0 && (dL -= 2Lp)
+      Beamlines.scalarize_all(ds) < 0 && (dL -= 2Lp)
       theta_sl = spline_d1(sp, s0) - dtheta_L
       theta_lk = dtheta_L - spline_d1(sp, s1)
       theta_s = spline_d1(sp, s0) + es.theta_chord
@@ -83,7 +83,7 @@ elements strictly between the source and kick elements (`add_mid`; used by `csr_
   end
 
   # The dL calculation above neglects y_source, so correct for it.
-  primal(kp.y_source) != 0 && (dL -= L - Lp)
+  Beamlines.scalarize_all(kp.y_source) != 0 && (dL -= L - Lp)
   k = with_fields(k; L_vec, L, theta_L, theta_sl, theta_lk, dL, s_chord_source, floor_s = FloorPosition(rs, theta_s))
   # Retardation Ls - βL = dL + L(1 - β). Bmad: L(1 - β) ≈ L/(2γ²) (error L/(8γ⁴)); the exact form matches the
   # infinite drifts outside the lattice, so ddz is continuous at the lattice ends.
@@ -164,53 +164,53 @@ past the end). Bmad does not do this; `geom.bmad_compat` restores Bmad's behavio
 end
 
 """
-    PrimalSearch(geom, kp)
+    ScalarizeAllSearch(geom, kp)
 
-Primal copies (`primal`) of a geometry and kick point, in which `s_source_calc(k, geom, kp, search)` searches the
+Primal copies (`Beamlines.scalarize_all`) of a geometry and kick point, in which `s_source_calc(k, geom, kp, search)` searches the
 source before evaluating it once in the number types of `geom` and `kp` (e.g. `Dual`s): the search's evaluations
-are not differentiated. Built by `primal_search`.
+are not differentiated. Built by `scalarize_all_search`.
 """
-struct PrimalSearch{G<:CSRGeometry,K<:CSRKickPoint}
+struct ScalarizeAllSearch{G<:CSRGeometry,K<:CSRKickPoint}
   geom::G
   kp::K
 end
 
 """
-    primal_search(geom, kp, T) -> PrimalSearch or nothing
+    scalarize_all_search(geom, kp, T) -> ScalarizeAllSearch or nothing
 
-`PrimalSearch(primal(geom), primal(kp))` for tables in number type `T <: Dual` or a non-`Real` `T` (GTPSA TPS), else
+`ScalarizeAllSearch(Beamlines.scalarize_all(geom), Beamlines.scalarize_all(kp))` for tables in number type `T <: Dual` or a non-`Real` `T` (GTPSA TPS), else
 `nothing` (search and evaluate in the same number type).
 """
-primal_search(geom::CSRGeometry, kp::CSRKickPoint, ::Type{T}) where {T} =
-  (T <: Dual || !(T <: Real)) ? PrimalSearch(primal(geom), primal(kp)) : nothing
+scalarize_all_search(geom::CSRGeometry, kp::CSRKickPoint, ::Type{T}) where {T} =
+  (T <: Dual || !(T <: Real)) ? ScalarizeAllSearch(Beamlines.scalarize_all(geom), Beamlines.scalarize_all(kp)) : nothing
 
 """
     s_source_calc(k, geom, kp, search) -> (k, s_chord_source)
 
-`s_source_calc(k, geom, kp)` for `search === nothing`. With a `PrimalSearch`, the source is searched in its primal
+`s_source_calc(k, geom, kp)` for `search === nothing`. With a `ScalarizeAllSearch`, the source is searched in its primal
 geometry (`s_source_walk`, from element `k.ix_ele_source`) and evaluated in `geom` and `kp` (`s_source_eval`); same
 result, as the search decides on primal values only.
 """
 @inline s_source_calc(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint, ::Nothing) = s_source_calc(k, geom, kp)
 
-@inline function s_source_calc(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint, search::PrimalSearch)
-  k0 = CSRKick1(; ix_ele_source = k.ix_ele_source, dz_particles = primal(k.dz_particles))
+@inline function s_source_calc(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint, search::ScalarizeAllSearch)
+  k0 = CSRKick1(; ix_ele_source = k.ix_ele_source, dz_particles = Beamlines.scalarize_all(k.dz_particles))
   _, _, o = s_source_walk(k0, search.geom, search.kp)
   return s_source_eval(o, k, geom, kp, nothing, search)
 end
 
 """
-    primal_slope(search, k, s)
+    scalarize_all_slope(search, k, s)
 
-`∂ddz/∂s` at chord position `s` of the source element `k.ix_ele_source`, in the primal geometry of a `PrimalSearch`
+`∂ddz/∂s` at chord position `s` of the source element `k.ix_ele_source`, in the primal geometry of a `ScalarizeAllSearch`
 (`ForwardDiff` with one partial); `nothing` without one (`root_tangent` then uses `root_slope`). The middle-element
 offset `dmid` is constant in `s` and left out.
 """
-primal_slope(::Nothing, k, s) = nothing
-function primal_slope(search::PrimalSearch, k::CSRKick1, s)
-  f(x) = last(ddz_calc_csr(CSRKick1{typeof(x)}(; ix_ele_source = k.ix_ele_source, dz_particles = primal(k.dz_particles)),
+scalarize_all_slope(::Nothing, k, s) = nothing
+function scalarize_all_slope(search::ScalarizeAllSearch, k::CSRKick1, s)
+  f(x) = last(ddz_calc_csr(CSRKick1{typeof(x)}(; ix_ele_source = k.ix_ele_source, dz_particles = Beamlines.scalarize_all(k.dz_particles)),
                            x, search.geom, search.kp))
-  return ForwardDiff.derivative(f, primal(s))
+  return ForwardDiff.derivative(f, Beamlines.scalarize_all(s))
 end
 
 """
@@ -303,8 +303,8 @@ end
 
 Source at the root `s_root` of `ddz_calc_csr` in element `k.ix_ele_source` (found from primal values), with the
 root's derivatives with respect to the parameters attached by Newton steps from the root (`root_tangent`), so that
-zbrent's iterations are not differentiated. With a `PrimalSearch`, the slope `∂ddz/∂s` is computed in its primal
-geometry (`primal_slope`). Bmad leaves `k` describing zbrent's last evaluation `s_last`, not the
+zbrent's iterations are not differentiated. With a `ScalarizeAllSearch`, the slope `∂ddz/∂s` is computed in its primal
+geometry (`scalarize_all_slope`). Bmad leaves `k` describing zbrent's last evaluation `s_last`, not the
 returned root. These differ by up to the tolerance, or completely when the root is an endpoint with ddz exactly 0
 (zbrent then returns without evaluating there). CSR.jl evaluates at the root unless compat (docs, "Physics decisions", V7).
 With derivatives, `k` is evaluated again with the root's derivatives attached.
@@ -314,7 +314,7 @@ With derivatives, `k` is evaluated again with the root's derivatives attached.
   dr = mid_root(dmid)
   k, ddz_root = ddz_calc_csr(k, s_root, geom, kp, dr)
   s_source = root_tangent(s -> last(ddz_calc_csr(csr_kick1_like(kk, s), s, geom, kp, dr)), s_root, ddz_root,
-                          primal_slope(search, kk, s_root))
+                          scalarize_all_slope(search, kk, s_root))
   if geom.bmad_compat || !(s_source isa typeof(s_root))
     k, _ = ddz_calc_csr(k, (geom.bmad_compat ? s_last : s_root) + (s_source - s_root), geom, kp, mid_eval(dmid))
   end
@@ -336,7 +336,7 @@ function s_source_walk(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
     if k.ix_ele_source == 0
       k1, ds_source = upstream_drift_source(k, geom, kp, nothing)
       # A search warm-started here (another lag) may belong inside the lattice: go back and walk.
-      if primal(ds_source) > 0 && last_step == 0
+      if Beamlines.scalarize_all(ds_source) > 0 && last_step == 0
         k = with_fields(k; ix_ele_source = 1)
         continue
       end
@@ -347,7 +347,7 @@ function s_source_walk(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
     if k.ix_ele_source > length(geom.ele)
       k1, t = downstream_drift_source(k, geom, kp, nothing)
       # A search warm-started here (previous lag) may belong inside the lattice: go back and walk.
-      if primal(t) < 0 && last_step == 0
+      if Beamlines.scalarize_all(t) < 0 && last_step == 0
         k = with_fields(k; ix_ele_source = length(geom.ele))
         continue
       end
@@ -361,7 +361,7 @@ function s_source_walk(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
     # Branch decisions on primal values: ForwardDiff orders Duals with equal values by their partials.
     k, ddz0 = ddz_calc_csr(k, 0.0, geom, kp)
     k, ddz1 = ddz_calc_csr(k, es.L_chord, geom, kp)
-    ddz0, ddz1 = primal(ddz0), primal(ddz1)
+    ddz0, ddz1 = Beamlines.scalarize_all(ddz0), Beamlines.scalarize_all(ddz1)
 
     if last_step == -1 && ddz1 > 0   # Round-off error makes ddz1 positive
       k, r = source_at(k, es.L_chord, geom, kp, nothing)
@@ -383,7 +383,7 @@ function s_source_walk(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
       # Source beyond this element. Beyond the kick element it is ahead of the kick point, which needs dz < 0
       # (image charges). Bmad ignores it there (k is left describing the source at the end of the kick element);
       # CSR.jl continues downstream (PLAN.md, V8).
-      if ix == kp.ix_ele_kick && (geom.bmad_compat || primal(dz) >= 0)
+      if ix == kp.ix_ele_kick && (geom.bmad_compat || Beamlines.scalarize_all(dz) >= 0)
         return with_fields(k; s_chord_source = 0.0), zero(number_type(k)), SourceOutcome(SRC_BEYOND, ix, 0.0, 0.0)
       end
       last_step == -1 && break
@@ -394,7 +394,7 @@ function s_source_walk(k::CSRKick1, geom::CSRGeometry, kp::CSRKickPoint)
 
     # Root is bracketed. The search uses primal values (root_source attaches the root's derivatives).
     kk = k
-    s_root, ok, s_last = zbrent(s -> primal(last(ddz_calc_csr(kk, s, geom, kp))), 0.0, primal(es.L_chord), 1e-12, 1e-8)
+    s_root, ok, s_last = zbrent(s -> Beamlines.scalarize_all(last(ddz_calc_csr(kk, s, geom, kp))), 0.0, Beamlines.scalarize_all(es.L_chord), 1e-12, 1e-8)
     ok || error("s_source_calc: root finder failed in element $ix")
     k, s_source = root_source(k, s_root, s_last, geom, kp, nothing)
     return k, s_source, SourceOutcome(SRC_ROOT, ix, s_root, s_last)

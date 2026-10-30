@@ -6,12 +6,12 @@ uniform_field(dz, y, gamma) = gamma * dz / (gamma^2 * dz^2 + y^2)^1.5
 
 # Image kick for lags dz (increasing, warm-started as in csr_image_table)
 function image_kicks(geom, kp, dzs)
-  k = CSR.CSRKick1(; ix_ele_source = kp.ix_ele_kick)
+  k = ModularCSR.CSRKick1(; ix_ele_source = kp.ix_ele_kick)
   out = Float64[]; ixs = Int[]
   for dz in dzs
-    k = CSR.with_fields(k; dz_particles = dz)
-    k, _ = CSR.s_source_calc(k, geom, kp)
-    push!(out, CSR.image_charge_kick(k, geom, kp))
+    k = ModularCSR.with_fields(k; dz_particles = dz)
+    k, _ = ModularCSR.s_source_calc(k, geom, kp)
+    push!(out, ModularCSR.image_charge_kick(k, geom, kp))
     push!(ixs, k.ix_ele_source)
   end
   return out, ixs
@@ -31,9 +31,10 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) * (r.z_center[2] - r.z_ce
     # Without images the chamber height is ignored
     z, q, alive = gaussian_line_bunch(1e-3, 1e-9, 401)
     geom = CSRGeometry(circle_lattice(10.0, 0.1, 10)...)
-    r1 = csr_kick!(zeros(401), z, q, alive, geom, 10, 0.05, 1e3, electron, CSRParams(n_bin = 40, ds_step = 0.1))
-    r2 = csr_kick!(zeros(401), z, q, alive, geom, 10, 0.05, 1e3, electron,
-                   CSRParams(n_bin = 40, ds_step = 0.1, beam_chamber_height = 0.01))
+    ds = 0.1 / max(1, round(Int, Beamlines.scalarize_all(0.1) / 0.1, RoundNearestTiesAway))
+    r1 = csr_kick!(zeros(401), z, q, alive, geom, 10, ds, 0.05, 1e3, electron, CSRParams(n_bin = 40))
+    r2 = csr_kick!(zeros(401), z, q, alive, geom, 10, ds, 0.05, 1e3, electron,
+                   CSRParams(n_bin = 40, beam_chamber_height = 0.01))
     @test r1.kick_per_meter == r2.kick_per_meter
   end
 
@@ -48,7 +49,7 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) * (r.z_center[2] - r.z_ce
     peak = 0.385 / y^2   # maximum of uniform_field over dz
     dzs = range(-0.04, 0.04; length = 161)
     geom = CSRGeometry(L, zeros(length(L)), zeros(length(L) + 1, 6))
-    kp = CSR.CSRKickPoint(geom, ix, s_kick, gamma; y_source = y)
+    kp = ModularCSR.CSRKickPoint(geom, ix, s_kick, gamma; y_source = y)
     img, ixs = image_kicks(geom, kp, dzs)
     # Tolerance: Bmad's retardation z = L/(2γ²) + dL inside elements (error ~ L/(8γ⁴); 3e-5 of the peak at
     # dz = 0 in the one-element case)
@@ -56,7 +57,7 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) * (r.z_center[2] - r.z_ce
     length(L) > 1 && @test maximum(ixs) > ix   # some sources are downstream of the kick element
     # bmad_compat: no downstream search, and the source direction is reversed for sources ahead (V8)
     geom_c = CSRGeometry(L, zeros(length(L)), zeros(length(L) + 1, 6); bmad_compat = true)
-    img_c, ixs_c = image_kicks(geom_c, CSR.CSRKickPoint(geom_c, ix, s_kick, gamma; y_source = y), dzs)
+    img_c, ixs_c = image_kicks(geom_c, ModularCSR.CSRKickPoint(geom_c, ix, s_kick, gamma; y_source = y), dzs)
     @test maximum(ixs_c) == ix
     # At dz = -0.03 the source is ahead of the kick point: Bmad's field is several times off (wrong direction of
     # the source, or the source left at the end of the kick element)
@@ -69,13 +70,13 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) * (r.z_center[2] - r.z_ce
   @testset "V8: source direction for a source ahead in the kick element" begin
     for g in (0.0, 0.5), bc in (false, true)
       geom = CSRGeometry([1.0], [g], zeros(2, 6); bmad_compat = bc)
-      kp = CSR.CSRKickPoint(geom, 1, 0.3, 100.0; y_source = 0.01)
-      k = CSR.CSRKick1(; ix_ele_source = 1, dz_particles = -0.05)
-      k, s = CSR.s_source_calc(k, geom, kp)
+      kp = ModularCSR.CSRKickPoint(geom, 1, 0.3, 100.0; y_source = 0.01)
+      k = ModularCSR.CSRKick1(; ix_ele_source = 1, dz_particles = -0.05)
+      k, s = ModularCSR.s_source_calc(k, geom, kp)
       @test s > kp.s_chord_kick   # ahead, in the kick element
       e = geom.ele[1]
-      true_theta = e.theta_chord + CSR.spline_d1(e.spline, s)
-      d = CSR.modulo2(k.floor_s.theta - true_theta, pi)
+      true_theta = e.theta_chord + ModularCSR.spline_d1(e.spline, s)
+      d = ModularCSR.modulo2(k.floor_s.theta - true_theta, pi)
       @test abs(bc ? abs(d) - pi : d) < 1e-3
     end
   end
@@ -85,20 +86,20 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) * (r.z_center[2] - r.z_ce
     for g in (0.0, 2.0)
       geom = CSRGeometry([0.1, 0.05], [0.0, g], zeros(3, 6))
       gamma = 50.0; y = 0.02
-      kp = CSR.CSRKickPoint(geom, 2, 0.03, gamma; y_source = y)
-      k = CSR.CSRKick1(; ix_ele_source = 2, dz_particles = -0.08)
-      k, t = CSR.s_source_calc(k, geom, kp)
+      kp = ModularCSR.CSRKickPoint(geom, 2, 0.03, gamma; y_source = y)
+      k = ModularCSR.CSRKick1(; ix_ele_source = 2, dz_particles = -0.08)
+      k, t = ModularCSR.s_source_calc(k, geom, kp)
       @test k.ix_ele_source == 3
       @test t > 0
       beta = sqrt(1 - 1 / gamma^2)
       @test (k.L + k.dL) - beta * k.L ≈ -0.08 rtol = 1e-10   # Ls - βL = dz, Ls < 0
       @test k.floor_s.theta == geom.ele[end].floor1.theta
-      @test CSR.source_s(geom, k.ix_ele_source, t) ≈ 0.15 + t
+      @test ModularCSR.source_s(geom, k.ix_ele_source, t) ≈ 0.15 + t
       # A search warm-started past the lattice end walks back when the source is inside the lattice
-      k = CSR.with_fields(k; dz_particles = -0.001)
-      k, _ = CSR.s_source_calc(k, geom, kp)
-      k2 = CSR.CSRKick1(; ix_ele_source = 2, dz_particles = -0.001)
-      k2, _ = CSR.s_source_calc(k2, geom, kp)
+      k = ModularCSR.with_fields(k; dz_particles = -0.001)
+      k, _ = ModularCSR.s_source_calc(k, geom, kp)
+      k2 = ModularCSR.CSRKick1(; ix_ele_source = 2, dz_particles = -0.001)
+      k2, _ = ModularCSR.s_source_calc(k2, geom, kp)
       @test k.ix_ele_source == k2.ix_ele_source <= 2
       @test k.floor_s == k2.floor_s
     end
@@ -107,16 +108,16 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) * (r.z_center[2] - r.z_ce
   @testset "Upstream infinite drift: warm start walks back" begin
     for g in (0.0, 2.0)
       geom = CSRGeometry([0.05, 0.1], [g, 0.0], zeros(3, 6))
-      kp = CSR.CSRKickPoint(geom, 2, 0.07, 50.0; y_source = 0.02)
-      k = CSR.CSRKick1(; ix_ele_source = 2, dz_particles = 0.08)
-      k, _ = CSR.s_source_calc(k, geom, kp)
+      kp = ModularCSR.CSRKickPoint(geom, 2, 0.07, 50.0; y_source = 0.02)
+      k = ModularCSR.CSRKick1(; ix_ele_source = 2, dz_particles = 0.08)
+      k, _ = ModularCSR.s_source_calc(k, geom, kp)
       @test k.ix_ele_source == 0
       # A search warm-started upstream of the lattice walks back when the source is inside the lattice
       for dz in (-0.002, -0.03)   # sources in element 1, and ahead of the kick point
-        k = CSR.with_fields(k; ix_ele_source = 0, dz_particles = dz)
-        k, _ = CSR.s_source_calc(k, geom, kp)
-        k2 = CSR.CSRKick1(; ix_ele_source = 2, dz_particles = dz)
-        k2, _ = CSR.s_source_calc(k2, geom, kp)
+        k = ModularCSR.with_fields(k; ix_ele_source = 0, dz_particles = dz)
+        k, _ = ModularCSR.s_source_calc(k, geom, kp)
+        k2 = ModularCSR.CSRKick1(; ix_ele_source = 2, dz_particles = dz)
+        k2, _ = ModularCSR.s_source_calc(k2, geom, kp)
         @test k.ix_ele_source == k2.ix_ele_source >= 1
         @test k.floor_s == k2.floor_s
       end
@@ -133,12 +134,12 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) * (r.z_center[2] - r.z_ce
       (100.0, 0.01, 2e-4), (1e4, 3e-3, 1e-4))
     n_bin = 40
     geom = CSRGeometry([10.0], [0.0], zeros(2, 6))
-    kp = CSR.CSRKickPoint(geom, 1, 5.0, gamma; y_source = y)
-    hat, _ = CSR.csr_image_table(geom, kp, dz, n_bin, CSR.CPU(); bin_integrate = true)
+    kp = ModularCSR.CSRKickPoint(geom, 1, 5.0, gamma; y_source = y)
+    hat, _ = ModularCSR.csr_image_table(geom, kp, dz, n_bin, ModularCSR.CPU(); bin_integrate = true)
     ana = [hat_uniform_field(l, dz, y, gamma) for l in -n_bin:n_bin]
     @test maxrel(hat, ana) < 1e-4
     # Point sampling misses the structure when dz ≫ y/γ
-    point, _ = CSR.csr_image_table(geom, kp, dz, n_bin, CSR.CPU())
+    point, _ = ModularCSR.csr_image_table(geom, kp, dz, n_bin, ModularCSR.CPU())
     gamma * dz > 10y && @test maxrel(point, ana) > 0.5
   end
 
@@ -155,28 +156,29 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) * (r.z_center[2] - r.z_ce
     ("kick near the lattice end, sources past it", 3, 0.195, 0.002),
   )
   @testset "csr_kick! vs reference: $name, bmad_compat = $bc" for (name, ix, s_kick, h) in cases, bc in (false, true)
-    p = CSRParams(n_bin = 120, ds_step = 0.1, n_shield_images = 3, beam_chamber_height = h, bmad_compat = bc)
+    p = CSRParams(n_bin = 120, n_shield_images = 3, beam_chamber_height = h, bmad_compat = bc)
     geom = CSRGeometry(L3, g3, c3; bmad_compat = bc)
+    ds = L3[ix] / max(1, round(Int, Beamlines.scalarize_all(L3[ix]) / 0.1, RoundNearestTiesAway))
     pz1 = zeros(length(z)); pz2 = zeros(length(z))
-    r1 = csr_kick!(pz1, z, q, alive, geom, ix, s_kick, 200.0, electron, p; kick_factor = 0.5)
-    r2 = CSR.csr_kick_reference!(pz2, z, q, alive, geom, ix, s_kick, 200.0, electron, p; kick_factor = 0.5)
+    r1 = csr_kick!(pz1, z, q, alive, geom, ix, ds, s_kick, 200.0, electron, p; kick_factor = 0.5)
+    r2 = ModularCSR.csr_kick_reference!(pz2, z, q, alive, geom, ix, ds, s_kick, 200.0, electron, p; kick_factor = 0.5)
     @test maxrel(r1.kick_per_meter, r2.kick_per_meter) < 1e-12
     @test maxrel(pz1, pz2) < 1e-12
     # Images change the kick
-    r0 = csr_kick!(zeros(length(z)), z, q, alive, geom, ix, s_kick, 200.0, electron,
-                   CSRParams(n_bin = 120, ds_step = 0.1, bmad_compat = bc); kick_factor = 0.5)
+    r0 = csr_kick!(zeros(length(z)), z, q, alive, geom, ix, ds, s_kick, 200.0, electron,
+                   CSRParams(n_bin = 120, bmad_compat = bc); kick_factor = 0.5)
     @test maxrel(r1.kick_per_meter, r0.kick_per_meter) > 1e-3
   end
 
   @testset "Image table independent of the lag blocking" begin
     for bc in (false, true)
       geom = CSRGeometry(L3, g3, c3; bmad_compat = bc)
-      kp = CSR.CSRKickPoint(geom, 3, 0.195, 200.0; y_source = 0.002, kick_factor = -2.0)
-      tables = [CSR.csr_image_table(geom, kp, 1e-4, 120, CSR.CPU(); n_block) for n_block in (1, 7, 241)]
+      kp = ModularCSR.CSRKickPoint(geom, 3, 0.195, 200.0; y_source = 0.002, kick_factor = -2.0)
+      tables = [ModularCSR.csr_image_table(geom, kp, 1e-4, 120, ModularCSR.CPU(); n_block) for n_block in (1, 7, 241)]
       @test tables[2] == tables[1]
       @test tables[3] == tables[1]
       bc || @test maximum(tables[1][2]) > sum(L3)   # sources past the lattice end are reached
-      hats = [CSR.csr_image_table(geom, kp, 1e-4, 120, CSR.CPU(); n_block, bin_integrate = true)
+      hats = [ModularCSR.csr_image_table(geom, kp, 1e-4, 120, ModularCSR.CPU(); n_block, bin_integrate = true)
               for n_block in (1, 7, 241)]
       @test hats[2] == hats[1]
       @test hats[3] == hats[1]
@@ -190,12 +192,13 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) * (r.z_center[2] - r.z_ce
     N = 40001
     zb, qb, aliveb = gaussian_line_bunch(1e-3, 1e-9, N)
     geom = CSRGeometry(circle_lattice(10.0, 0.1, 80)...)
-    kick(p) = csr_kick!(zeros(N), zb, qb, aliveb, geom, 80, 0.05, 1e4, electron, p)
-    r0 = kick(CSRParams(n_bin = 480, ds_step = 0.1))
+    ds = 0.1 / max(1, round(Int, Beamlines.scalarize_all(0.1) / 0.1, RoundNearestTiesAway))
+    kick(p) = csr_kick!(zeros(N), zb, qb, aliveb, geom, 80, ds, 0.05, 1e4, electron, p)
+    r0 = kick(CSRParams(n_bin = 480))
     @test eloss(r0) < 0
     ratio = Dict{Float64,Float64}()
     for h in (0.01, 0.03, 0.1, 1.0, 10.0)
-      r = kick(CSRParams(n_bin = 480, ds_step = 0.1, n_shield_images = 32, beam_chamber_height = h))
+      r = kick(CSRParams(n_bin = 480, n_shield_images = 32, beam_chamber_height = h))
       ratio[h] = eloss(r) / eloss(r0)
       h >= 1 && @test maxrel(r.kick_per_meter, r0.kick_per_meter) < 1e-3   # free-space limit
     end
@@ -206,11 +209,11 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) * (r.z_center[2] - r.z_ce
     # h = 3 mm: the image kernel's structure is much finer than a bin. The hat-weighted table gives the same
     # result for coarse and fine bins (fixed layer count, plain sum); point sampling (bmad_compat) does not.
     geom_c = CSRGeometry(circle_lattice(10.0, 0.1, 80)...; bmad_compat = true)
-    kick3(p) = csr_kick!(zeros(N), zb, qb, aliveb, p.bmad_compat ? geom_c : geom, 80, 0.05, 1e4, electron, p)
+    kick3(p) = csr_kick!(zeros(N), zb, qb, aliveb, p.bmad_compat ? geom_c : geom, 80, ds, 0.05, 1e4, electron, p)
     ratio3(n_bin; bc = false) =
-      eloss(kick3(CSRParams(n_bin = n_bin, ds_step = 0.1, n_shield_images = 16, beam_chamber_height = 0.003,
+      eloss(kick3(CSRParams(n_bin = n_bin, n_shield_images = 16, beam_chamber_height = 0.003,
                             image_sum_order = 0, bmad_compat = bc))) /
-      eloss(kick3(CSRParams(n_bin = n_bin, ds_step = 0.1, bmad_compat = bc)))
+      eloss(kick3(CSRParams(n_bin = n_bin, bmad_compat = bc)))
     @test ratio3(60) ≈ ratio3(480) rtol = 0.03
     @test !isapprox(ratio3(60; bc = true), ratio3(480; bc = true); rtol = 0.5)
   end
@@ -219,7 +222,7 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) * (r.z_center[2] - r.z_ce
     @test CSRParams().image_sum_order == 8
     @test_throws ErrorException CSRParams(image_sum_order = -1)
     @test_throws ErrorException CSRParams(image_sum_order = 61)
-    w(M, k; bc = false) = [CSR.image_layer_weight(n, CSRParams(n_shield_images = M, beam_chamber_height = 0.01,
+    w(M, k; bc = false) = [ModularCSR.image_layer_weight(n, CSRParams(n_shield_images = M, beam_chamber_height = 0.01,
                                                                image_sum_order = k, bmad_compat = bc)) for n in 1:M]
     @test all(==(1), w(20, 0))
     @test all(==(1), w(20, 8; bc = true))
@@ -241,8 +244,9 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) * (r.z_center[2] - r.z_ce
     N = 20001
     zb, qb, aliveb = gaussian_line_bunch(1e-3, 1e-9, N)
     geom = CSRGeometry(circle_lattice(10.0, 0.1, 400)...)
-    kick(M, k) = csr_kick!(zeros(N), zb, qb, aliveb, geom, 400, 0.05, 1e4, electron,
-                           CSRParams(n_bin = 120, ds_step = 0.1, n_shield_images = M, beam_chamber_height = 0.003,
+    ds = 0.1 / max(1, round(Int, Beamlines.scalarize_all(0.1) / 0.1, RoundNearestTiesAway))
+    kick(M, k) = csr_kick!(zeros(N), zb, qb, aliveb, geom, 400, ds, 0.05, 1e4, electron,
+                           CSRParams(n_bin = 120, n_shield_images = M, beam_chamber_height = 0.003,
                                      image_sum_order = k)).kick_per_meter
     k32, k64 = kick(32, 8), kick(64, 8)
     @test maxrel(k32, k64) < 1e-4

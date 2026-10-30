@@ -1,37 +1,37 @@
-module CSRChainRulesCoreExt
+module ModularCSRChainRulesCoreExt
 
-using CSR, ChainRulesCore, StaticArrays, ForwardDiff
-using CSR: CSRGeometry, CSRElementInfo, FloorPosition, N_ELE_PARAMS, geometry_to_vector, geometry_from_vector
+using ModularCSR, ChainRulesCore, StaticArrays, ForwardDiff
+using ModularCSR: CSRGeometry, CSRElementInfo, FloorPosition, N_ELE_PARAMS, geometry_to_vector, geometry_from_vector
 
 # Pullback of csr_kick_pz: pz, z and q by explicit adjoint kernels (src/adjoint.jl, src/kernels/adjoint.jl), the
 # bin grid held constant; geometry, s_kick and gamma by ForwardDiff through the kick tables (csr_kick_param_adjoint).
-# Keyword arguments (kick_factor, pz_scale) get no cotangents.
+# Keyword arguments (kick_factor, pz_scale) get no cotangents; the step ds gets dsbar from csr_kick_param_adjoint.
 function ChainRulesCore.rrule(::typeof(csr_kick_pz), pz::AbstractVector, z::AbstractVector, q::AbstractVector,
-                              alive::AbstractVector{Bool}, geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma,
+                              alive::AbstractVector{Bool}, geom::CSRGeometry, ix_ele_kick::Integer, ds, s_kick, gamma,
                               species, params::CSRParams; kick_factor = 1.0, pz_scale = 1.0)
-  st = CSR.csr_binned_kick(z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor)
-  backend = CSR.get_backend(pz)
-  pz_new = similar(pz, CSR.device_number_type(backend, promote_type(eltype(pz), eltype(z), eltype(q),
-                                              CSR.number_type(geom), typeof(s_kick), typeof(gamma), typeof(kick_factor),
-                                              typeof(pz_scale))))
+  st = ModularCSR.csr_binned_kick(z, q, alive, geom, ix_ele_kick, ds, s_kick, gamma, species, params; kick_factor)
+  backend = ModularCSR.get_backend(pz)
+  pz_new = similar(pz, ModularCSR.device_number_type(backend, promote_type(eltype(pz), eltype(z), eltype(q),
+                                                     ModularCSR.number_type(geom), typeof(ds), typeof(s_kick),
+                                                     typeof(gamma), typeof(kick_factor), typeof(pz_scale))))
   copyto!(pz_new, pz)
-  CSR.csr_apply_kicks!(pz_new, z, alive, st.bins, st.kick; pz_scale = CSR.device_scalar(backend, pz_scale))
+  ModularCSR.csr_apply_kicks!(pz_new, z, alive, st.bins, st.kick; pz_scale = ModularCSR.device_scalar(backend, pz_scale))
 
   function csr_kick_pz_pullback(ybar)
     ybar = unthunk(ybar)
     if ybar isa AbstractZero
       pzbar, zbar, qbar = ybar, ybar, ybar
-      geombar, s_kickbar, gammabar = ybar, ybar, ybar
+      geombar, dsbar, s_kickbar, gammabar = ybar, ybar, ybar, ybar
     else
-      CSR.csr_float_type(backend) === Float64 ||
+      ModularCSR.csr_float_type(backend) === Float64 ||
         error("csr_kick_pz pullback: needs a backend with Float64 (the CPU); the forward pass ran on $(typeof(backend))")
-      pzbar, zbar, qbar, kbar = CSR.csr_kick_adjoint(ybar, z, q, alive, st, params; pz_scale)
-      gv, s_kickbar, gammabar = CSR.csr_kick_param_adjoint(kbar, st.bins, geom, ix_ele_kick, s_kick, gamma, species,
-                                                           params; kick_factor)
+      pzbar, zbar, qbar, kbar = ModularCSR.csr_kick_adjoint(ybar, z, q, alive, st, params; pz_scale)
+      gv, s_kickbar, gammabar, dsbar = ModularCSR.csr_kick_param_adjoint(kbar, st.bins, geom, ix_ele_kick, ds, s_kick,
+                                                                         gamma, species, params; kick_factor)
       geombar = geometry_tangent(geom, gv)
     end
-    return (NoTangent(), pzbar, zbar, qbar, NoTangent(), geombar, NoTangent(), s_kickbar, gammabar, NoTangent(),
-            NoTangent())
+    return (NoTangent(), pzbar, zbar, qbar, NoTangent(), geombar, NoTangent(), dsbar, s_kickbar, gammabar,
+            NoTangent(), NoTangent())
   end
   return pz_new, csr_kick_pz_pullback
 end

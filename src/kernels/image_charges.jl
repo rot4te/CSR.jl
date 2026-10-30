@@ -87,7 +87,7 @@ function image_simpson(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol, h_min, depth,
   h = b - a
   S1 = h / 6 * (g(a, fa) + 4g(m, fm) + g(b, fb))
   S2 = h / 12 * (g(a, fa) + 4g((a + m) / 2, fl) + 2g(m, fm) + 4g((m + b) / 2, fr) + g(b, fb))
-  if depth <= 0 || h <= h_min || maximum(abs, primal.(S2 - S1)) <= 15primal(tol)
+  if depth <= 0 || h <= h_min || maximum(abs, Beamlines.scalarize_all.(S2 - S1)) <= 15Beamlines.scalarize_all(tol)
     leaf === nothing || leaf(a, b)
     return k, S2 + (S2 - S1) / 15
   end

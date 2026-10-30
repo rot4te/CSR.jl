@@ -1,4 +1,4 @@
-using CSR: FloorPosition, planar_survey, chord_spline, spline_val, spline_d1, dspline_len, CSRGeometry,
+using ModularCSR: FloorPosition, planar_survey, chord_spline, spline_val, spline_d1, dspline_len, CSRGeometry,
            s_ref_to_s_chord, modulo2, CSRKickPoint, advance_floor, x_axis, z_axis
 
 @testset "Geometry" begin
@@ -57,15 +57,15 @@ using CSR: FloorPosition, planar_survey, chord_spline, spline_val, spline_d1, ds
     # reference loses ~1e-11 to cancellation in √(1 + x′²) - 1 for small slopes.
     for (c, s0, s1, rtol) in ((SVector(0.0, 0.01, 0.02, 0.03), 0.0, 0.1, 1e-10),
                               (SVector(0.0, 0.05, -0.3, 0.2), 0.1, 0.4, 1e-7)), dth in (0.0, 0.01, 0.3, -0.8)
-      xp(s) = CSR.spline_d1(c, s)
+      xp(s) = ModularCSR.spline_d1(c, s)
       quad = simpson(s -> sqrt(1 + xp(s)^2) - cos(dth) - xp(s) * sin(dth), s0, s1, 2000)
-      @test CSR.path_excess(s0, s1, c, dth) ≈ quad rtol = rtol
-      @test CSR.path_excess(s1, s0, c, dth) ≈ -CSR.path_excess(s0, s1, c, dth) rtol = 1e-14
-      @test CSR.path_excess(s0, s1, c, dth; bmad_compat = true) == dspline_len(s0, s1, c, dth; bmad_compat = true)
+      @test ModularCSR.path_excess(s0, s1, c, dth) ≈ quad rtol = rtol
+      @test ModularCSR.path_excess(s1, s0, c, dth) ≈ -ModularCSR.path_excess(s0, s1, c, dth) rtol = 1e-14
+      @test ModularCSR.path_excess(s0, s1, c, dth; bmad_compat = true) == dspline_len(s0, s1, c, dth; bmad_compat = true)
     end
     # Small angles: agrees with the small-angle form
     c = SVector(0.0, 1e-4, 2e-4, -1e-4)
-    @test CSR.path_excess(0.0, 0.1, c, 1e-4) ≈ dspline_len(0.0, 0.1, c, 1e-4) rtol = 1e-6
+    @test ModularCSR.path_excess(0.0, 0.1, c, 1e-4) ≈ dspline_len(0.0, 0.1, c, 1e-4) rtol = 1e-6
   end
 
   @testset "CSRGeometry, on-axis bend" begin

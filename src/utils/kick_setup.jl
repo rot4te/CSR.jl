@@ -1,4 +1,4 @@
-# Per-step constants: kick coefficient, reference-energy ramp, number of steps.
+# Per-step constants: kick coefficient and reference-energy ramp.
 
 """
     csr_kick_coef(species, gamma, ds; bmad_compat = false)
@@ -11,7 +11,7 @@ Default: `Δpz = ΔE / (β² E)` with `ΔE = |q| e E_z ds` and `E_z = (1/4πε�
 times the default (docs, "Physics decisions", V2). Errors unless `gamma > 1` (primal value; NaN fails).
 """
 function csr_kick_coef(species::Species, gamma, ds; bmad_compat::Bool = false)
-  primal(gamma) > 1 || error("csr_kick_coef: gamma must be > 1 (got $(primal(gamma)))")
+  Beamlines.scalarize_all(gamma) > 1 || error("csr_kick_coef: gamma must be > 1 (got $(Beamlines.scalarize_all(gamma)))")
   rel_mass = massof(species) / M_ELECTRON
   q = chargeof(species)
   q == 0 && error("csr_kick_coef: species has zero charge")
@@ -35,16 +35,4 @@ CSR.jl follows the fixed version in both modes.
 function csr_ref_energy(E_start, E_end, s, L)
   f1 = s / L
   return (1 - f1) * E_start + f1 * E_end
-end
-
-"""
-    csr_n_step(L, params) -> (n_step, ds_step)
-
-Number of CSR steps in an element of length `L` and the true step length, as in Bmad:
-`n_step = max(1, round(L / ds_step))`, `ds_step = L / n_step` (`n_step` from the primal value of `L`).
-"""
-function csr_n_step(L, params::CSRParams)
-  params.ds_step > 0 || error("csr_n_step: params.ds_step must be set")
-  n_step = max(1, round(Int, primal(L) / params.ds_step, RoundNearestTiesAway))
-  return n_step, L / n_step
 end

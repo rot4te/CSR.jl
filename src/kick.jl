@@ -126,24 +126,25 @@ function csr_apply_test_kicks!(pz_t::AbstractVector, z_t::AbstractVector, alive_
   cpu(A) = A isa Array ? A : Array(A)
   backend = get_backend(pz_t)
   zc, k = backend isa CPU ? (cpu(bins.z_center), cpu(kick)) : (bins.z_center, kick)
-  dz = primal(bins.dz)
+  dz = Beamlines.scalarize_all(bins.dz)
   n = count_outside(backend, z_t, alive_t, zc, dz)
   n == 0 || error("csr_apply_test_kicks!: $n test particle(s) outside the bunch's bin range " *
-                  "[$(primal(first(zc)) - primal(bins.dz) / 100), $(primal(last(zc))))")
+                  "[$(Beamlines.scalarize_all(first(zc)) - Beamlines.scalarize_all(bins.dz) / 100), $(Beamlines.scalarize_all(last(zc))))")
   apply_kicks_outside!(pz_t, z_t, alive_t, zc, k, dz, pz_scale) == 0 ||
     error("csr_apply_test_kicks!: test particle outside the bin range (internal error)")
   return pz_t
 end
 
 """
-    csr_kick!(pz, z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor = 1.0,
+    csr_kick!(pz, z, q, alive, geom, ix_ele_kick, ds, s_kick, gamma, species, params; kick_factor = 1.0,
               pz_scale = 1.0, test_particles = nothing) -> CSRStepResult
 
 Apply one 1D CSR kick at reference position `s_kick` [m] from the entrance of element `ix_ele_kick`. Errors if the
-array lengths differ or a live particle has a non-finite `z`.
+array lengths differ or a live particle has a non-finite `z`, or unless `scalarize_all(ds) > 0`.
 
 - `pz`, `z`: particle coordinates (`pz` is modified). `pz` must hold the kick's number type: with `Dual` or TPS
   inputs, a `pz` of that element type, or use `csr_kick_pz`.
+- `ds`: step length [m] the kick covers (`> 0`).
 - `q`: macroparticle charges [C]. `alive`: live-particle mask.
 - `gamma`: Lorentz factor of the reference particle at the kick point.
 - `kick_factor`: `1/2` at the first and last step of an element, `1` otherwise.
@@ -159,7 +160,7 @@ array lengths differ or a live particle has a non-finite `z`.
   `pz_t` with a `Dual` kick) are not checked and fail inside the kick kernel, possibly after part of `pz` or `pz_t`
   has been kicked.
 
-The kick covers one step, `ds = L / n_step` (see `csr_n_step`) scaled by `L_chord / L`, as in Bmad.
+The kick covers one step of length `ds` scaled by `L_chord / L`, as in Bmad.
 
 With `params.n_shield_images > 0` the image-charge kicks of the shielding plates are added (Bmad's image part of
 `csr_bin_kicks`), with the layer sum averaged per `params.image_sum_order`. `kick_per_meter` includes them;
@@ -175,83 +176,87 @@ otherwise; test particles are checked only when the kick is TPS, before the kick
 `@vars` default) carry their Descriptor in the type and are not checked.
 """
 function csr_kick!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool},
-                   geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma, species::Species,
+                   geom::CSRGeometry, ix_ele_kick::Integer, ds, s_kick, gamma, species::Species,
                    params::CSRParams; kick_factor = 1.0, pz_scale = 1.0, test_particles = nothing)
-  check_descriptors("csr_kick!"; pz, z, q, geom, s_kick, gamma, kick_factor, pz_scale)
-  Tk = promote_type(eltype(z), eltype(q), number_type(geom), typeof(s_kick), typeof(gamma), typeof(kick_factor),
-                    typeof(pz_scale))
+  Beamlines.scalarize_all(ds) > 0 || error("csr_kick!: ds must be > 0 (got $ds)")
+  check_descriptors("csr_kick!"; pz, z, q, geom, ds, s_kick, gamma, kick_factor, pz_scale)
+  Tk = promote_type(eltype(z), eltype(q), number_type(geom), typeof(ds), typeof(s_kick), typeof(gamma),
+                    typeof(kick_factor), typeof(pz_scale))
   eltype(pz) <: AbstractFloat && !(Tk <: AbstractFloat) &&
     error("csr_kick!: pz has element type $(eltype(pz)), which cannot hold the kick in number type $Tk; " *
           "use csr_kick_pz, or a pz with element type $(promote_type(eltype(pz), Tk)).")
   test_particles === nothing || check_test_particles("csr_kick!", test_particles..., Tk, pz_scale)
-  st = csr_binned_kick(z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor)
+  st = csr_binned_kick(z, q, alive, geom, ix_ele_kick, ds, s_kick, gamma, species, params; kick_factor)
   test_particles === nothing || csr_apply_test_kicks!(test_particles..., st.bins, st.kick; pz_scale)
   csr_apply_kicks!(pz, z, alive, st.bins, st.kick; pz_scale = device_scalar(get_backend(pz), pz_scale))
   return csr_step_result(st)
 end
 
 """
-    csr_kick_pz(pz, z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor = 1.0,
+    csr_kick_pz(pz, z, q, alive, geom, ix_ele_kick, ds, s_kick, gamma, species, params; kick_factor = 1.0,
                 pz_scale = 1.0) -> pz_new
 
 Non-mutating `csr_kick!`: returns `pz` after the kick in a new vector (element type promoted with `z`, `q`, the
-geometry's number type, `s_kick`, `gamma`, `kick_factor` and `pz_scale`), leaving `pz` unchanged.
-On a backend without `Float64` (e.g. Metal) the returned vector has element type `Float32` (`CSR.csr_float_type`).
+geometry's number type, `ds`, `s_kick`, `gamma`, `kick_factor` and `pz_scale`), leaving `pz` unchanged.
+On a backend without `Float64` (e.g. Metal) the returned vector has element type `Float32` (`ModularCSR.csr_float_type`).
 The `rrule`'s pullback needs a backend with `Float64` (the CPU).
 
 Differentiable with ForwardDiff `Dual`s in any of these: the particles (`pz`, `z`, `q`), the geometry (built by
-`CSRGeometry` from `Dual` lengths, curvatures or centroid), `s_kick`, `gamma`, `kick_factor`, `pz_scale`. The kick
+`CSRGeometry` from `Dual` lengths, curvatures or centroid), `ds`, `s_kick`, `gamma`, `kick_factor`, `pz_scale`. The kick
 tables then carry derivatives; each retarded source point gets its derivatives by Newton steps from its primal
 root (`root_tangent`: implicit differentiation at first order; nested `Dual`s, e.g. Hessians, also work). Held
-constant: the bin grid (it depends on the extreme live particles) and the discrete choices (number of steps
-`csr_n_step`, the element a source lies in, the adaptive quadrature's subdivision). GTPSA TPS in the same arguments
-give the kick's expansion (one Newton step per order; computed on the calling thread). With ChainRulesCore loaded an
-`rrule` gives the pullback with respect to `pz`, `z`, `q`, `geom`, `s_kick` and `gamma` (not the keywords).
+constant: the bin grid (it depends on the extreme live particles) and the discrete choices (the element a source
+lies in, the adaptive quadrature's subdivision). GTPSA TPS in the same arguments give the kick's expansion (one
+Newton step per order; computed on the calling thread). With ChainRulesCore loaded an `rrule` gives the pullback
+with respect to `pz`, `z`, `q`, `geom`, `ds`, `s_kick` and `gamma` (not the keywords).
 
 Dynamic-descriptor TPS arguments (`@vars(d, dynamic = true)`) must all be in GTPSA's current Descriptor (error
 otherwise); static-descriptor TPS (the `@vars` default) carry their Descriptor in the type and are not checked.
 """
 function csr_kick_pz(pz::AbstractVector, z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool},
-                     geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma, species::Species,
+                     geom::CSRGeometry, ix_ele_kick::Integer, ds, s_kick, gamma, species::Species,
                      params::CSRParams; kick_factor = 1.0, pz_scale = 1.0)
-  check_descriptors("csr_kick_pz"; pz, z, q, geom, s_kick, gamma, kick_factor, pz_scale)
+  Beamlines.scalarize_all(ds) > 0 || error("csr_kick_pz: ds must be > 0 (got $ds)")
+  check_descriptors("csr_kick_pz"; pz, z, q, geom, ds, s_kick, gamma, kick_factor, pz_scale)
   pz_new = similar(pz, device_number_type(get_backend(pz), promote_type(eltype(pz), eltype(z), eltype(q),
-                                          number_type(geom), typeof(s_kick), typeof(gamma), typeof(kick_factor),
-                                          typeof(pz_scale))))
+                                          number_type(geom), typeof(ds), typeof(s_kick), typeof(gamma),
+                                          typeof(kick_factor), typeof(pz_scale))))
   copyto!(pz_new, pz)
-  csr_kick!(pz_new, z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor, pz_scale)
+  csr_kick!(pz_new, z, q, alive, geom, ix_ele_kick, ds, s_kick, gamma, species, params; kick_factor, pz_scale)
   return pz_new
 end
 
 """
-    csr_binned_kick(z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor = 1.0)
+    csr_binned_kick(z, q, alive, geom, ix_ele_kick, ds, s_kick, gamma, species, params; kick_factor = 1.0)
 
 Bin the particles and compute the binned kick (all of csr_kick! except applying it). Returns the intermediate
 quantities the adjoint needs: bins, kick, free-space tables (I_csr, I_int, s_source), image tables per layer,
 the kick coefficient and the step length.
 """
 function csr_binned_kick(z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool}, geom::CSRGeometry,
-                         ix_ele_kick::Integer, s_kick, gamma, species::Species, params::CSRParams; kick_factor = 1.0)
+                         ix_ele_kick::Integer, ds, s_kick, gamma, species::Species, params::CSRParams; kick_factor = 1.0)
+  Beamlines.scalarize_all(ds) > 0 || error("csr_binned_kick: ds must be > 0 (got $ds)")
   n_bin = params.n_bin
   params.bmad_compat == geom.bmad_compat || error("csr_kick!: params.bmad_compat and geom.bmad_compat differ")
   count(alive) >= n_bin || error("csr_kick!: number of live particles ($(count(alive))) is less than n_bin ($n_bin)")
   bins = csr_bin_particles(z, q, alive, params)
-  return csr_bins_kick(bins, get_backend(z), geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor)
+  return csr_bins_kick(bins, get_backend(z), geom, ix_ele_kick, ds, s_kick, gamma, species, params; kick_factor)
 end
 
 """
-    csr_bins_kick(bins, backend, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor = 1.0)
+    csr_bins_kick(bins, backend, geom, ix_ele_kick, ds, s_kick, gamma, species, params; kick_factor = 1.0)
 
 The part of `csr_binned_kick` after binning: kick tables, convolutions and kick per bin, for given `bins` (arrays on
 `backend`). Returns the same named tuple.
 """
-function csr_bins_kick(bins::CSRBins, backend, geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma,
+function csr_bins_kick(bins::CSRBins, backend, geom::CSRGeometry, ix_ele_kick::Integer, ds, s_kick, gamma,
                        species::Species, params::CSRParams; kick_factor = 1.0)
+  Beamlines.scalarize_all(ds) > 0 || error("csr_bins_kick: ds must be > 0 (got $ds)")
   n_bin = params.n_bin
   tb = table_backend(backend)
 
   e = geom.ele[ix_ele_kick]
-  _, ds_step = csr_n_step(e.L, params)
+  ds_step = ds
   actual_track_step = ds_step * (e.L_chord / e.L)
 
   kp = CSRKickPoint(geom, ix_ele_kick, s_kick, gamma; kick_factor)

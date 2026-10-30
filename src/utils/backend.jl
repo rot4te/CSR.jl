@@ -1,4 +1,4 @@
-# Number types, atomic adds and table placement per KernelAbstractions backend; primal values for AD.
+# Number types, atomic adds and table placement per KernelAbstractions backend.
 
 """
     csr_float_type(backend)
@@ -57,7 +57,7 @@ cpu_workgroupsize(n, T::Type...) = thread_safe_number(T...) ? nothing : n
 `true` if `x` (a number, an array, or a `FloorPosition`, `CSRElementInfo`, `CSRGeometry`, `CSRKickPoint`) holds a
 GTPSA TPS whose Descriptor is not GTPSA's current one. CSR.jl creates TPS constants from types (e.g. `zero(T)`),
 which GTPSA puts in the current Descriptor, so mixed Descriptors would reach GTPSA's C library. `false` for all
-other number types; CSRGTPSAExt adds the method for dynamic-descriptor TPS.
+other number types; ModularCSRGTPSAExt adds the method for dynamic-descriptor TPS.
 """
 descriptor_mismatch(x) = false
 descriptor_mismatch(A::AbstractArray) = eltype(A) <: Real ? false : any(descriptor_mismatch, A)
@@ -117,23 +117,3 @@ struct PlainAdd end
 element types (ForwardDiff `Dual`s, `BigFloat`, TPS) use the serial CPU deposit.
 """
 supports_atomic_add(A) = eltype(A) <: Union{Float32,Float64}
-
-"""
-    primal(x)
-
-Value of `x` without derivative parts (identity for plain numbers; the value of a ForwardDiff `Dual`, recursively).
-The bin grid is built from primal values, so derivatives treat it as constant.
-"""
-primal(x) = x
-primal(d::Dual) = primal(value(d))
-
-"""
-    primal_max(a, b)
-    primal_min(a, b)
-
-`max`/`min` decided on primal values (ForwardDiff orders `Dual`s with equal values by their partials, which would make
-the choice at a tie depend on the seeded directions). Same results as `max`/`min` for plain numbers except for signed
-zeros.
-"""
-@inline primal_max(a, b) = ((a, b) = promote(a, b); primal(a) >= primal(b) ? a : b)
-@inline primal_min(a, b) = ((a, b) = promote(a, b); primal(a) <= primal(b) ? a : b)

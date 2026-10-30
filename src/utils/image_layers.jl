@@ -21,7 +21,7 @@ end
 
 Finest lag scale resolved by the hat-weighted image table: 1% of y/γ, the width of the drift kernel's peak.
 """
-image_u_min(kp::CSRKickPoint) = 0.01 * abs(primal(kp.y_source)) / primal(kp.gamma)
+image_u_min(kp::CSRKickPoint) = 0.01 * abs(Beamlines.scalarize_all(kp.y_source)) / Beamlines.scalarize_all(kp.gamma)
 
 """
     image_hat_tol(geom, kp, image, dz, rtol, u_min)
@@ -40,5 +40,5 @@ function image_hat_tol(geom::CSRGeometry, kp::CSRKickPoint, image, dz, rtol, u_m
     K = max(K, abs(Kp), abs(Km))
     x /= 2
   end
-  return rtol * primal(K) * dz
+  return rtol * Beamlines.scalarize_all(K) * dz
 end

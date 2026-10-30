@@ -1,12 +1,11 @@
 """
-    CSR
+    ModularCSR
 
 1D (line-charge) coherent synchrotron radiation for the SciBmad ecosystem, ported from Bmad's
 `csr_method = one_dim`, with optional shielding by parallel plates (image charges). The core works on plain
-particle arrays with KernelAbstractions kernels; `track_csr!` (BeamTracking + Beamlines extension) tracks a bunch
-through a beamline with CSR kicks between element slices.
+particle arrays with KernelAbstractions kernels.
 """
-module CSR
+module ModularCSR
 
 using StaticArrays
 using AtomicAndPhysicalConstants
@@ -14,10 +13,10 @@ using KernelAbstractions
 import Atomix
 import ForwardDiff
 using ForwardDiff: Dual, Partials, value, partials
+import Beamlines
 
 export CSRParams, FloorPosition, CSRGeometry, CSRElementInfo, CSRBins, CSRKickPoint, CSRStepResult
-export planar_survey, csr_bin_particles, csr_kick!, csr_kick_pz, csr_kick_coef, csr_n_step, dspline_len
-export track_csr!
+export planar_survey, csr_bin_particles, csr_kick!, csr_kick_pz, csr_kick_coef, dspline_len
 
 include("types.jl")
 
@@ -37,7 +36,6 @@ include("kick.jl")
 include("adjoint.jl")
 include("param_adjoint.jl")
 include("reference.jl")
-include("interface.jl")
 
 include("kernels/binning.jl")
 include("kernels/source_point.jl")

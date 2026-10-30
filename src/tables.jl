@@ -16,7 +16,7 @@ workgroup each); a block reuses the previous lag's source element as the start o
 Default: 4 blocks per thread; always one block for TPS tables (`thread_safe_number`). CPU backend only: `CSRGeometry`
 is not isbits (its element vector), and the source search raises errors and recurses (adaptive quadrature). The tables
 are in `table_type(geom, kp, dz)` (`Float64`, or e.g. `Dual`s or TPS for derivatives with respect to the geometry,
-`s_kick` or `gamma`; the sources are then searched in primal values, `primal_search`).
+`s_kick` or `gamma`; the sources are then searched in primal values, `scalarize_all_search`).
 
 `I_int` for bins `i ≥ 2`: trapezoid in `I_csr`, or with `all_bin_quadrature` Simpson in `u^(1/3)` with 8 intervals
 (9 nodes) per bin (`I_csr_quadrature`; 9 source solves per bin, in blocks as above).
@@ -29,7 +29,7 @@ function csr_wake_table(geom::CSRGeometry, kp::CSRKickPoint, dz, n_bin, backend;
   I_int = KernelAbstractions.zeros(backend, T, n_bin)
   s_source = KernelAbstractions.zeros(backend, T, n_bin)
   n_lag = cld(n_bin, n_block)
-  search = primal_search(geom, kp, T)
+  search = scalarize_all_search(geom, kp, T)
   # Workgroup size passed at launch: a static size (`csr_wake_kernel!(backend, 1)`) is not inferred.
   csr_wake_kernel!(backend)(I_csr, I_int, s_source, geom, kp, dz, n_lag, search; ndrange = cld(n_bin, n_lag), workgroupsize = 1)
   KernelAbstractions.synchronize(backend)
@@ -68,14 +68,14 @@ function csr_image_table(geom::CSRGeometry, kp::CSRKickPoint, dz, n_bin, backend
   image = KernelAbstractions.zeros(backend, T, n)
   s_source = KernelAbstractions.zeros(backend, T, n)
   n_lag = cld(n, n_block)
-  search = primal_search(geom, kp, T)
+  search = scalarize_all_search(geom, kp, T)
   csr_image_kernel!(backend)(image, s_source, geom, kp, dz, n_lag, search; ndrange = cld(n, n_lag), workgroupsize = 1)
   KernelAbstractions.synchronize(backend)
   bin_integrate || return image, s_source
 
   u_min = image_u_min(kp)
   tol = search === nothing ? image_hat_tol(geom, kp, image, dz, rtol, u_min) :
-                             image_hat_tol(search.geom, search.kp, primal.(image), primal(dz), rtol, u_min)
+                             image_hat_tol(search.geom, search.kp, Beamlines.scalarize_all.(image), Beamlines.scalarize_all(dz), rtol, u_min)
   rise = KernelAbstractions.zeros(backend, T, n + 1)
   fall = KernelAbstractions.zeros(backend, T, n + 1)
   n_int = cld(n + 1, min(n + 1, n_block))

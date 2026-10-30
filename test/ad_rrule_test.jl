@@ -8,13 +8,13 @@ using ChainRulesTestUtils: FiniteDifferences
 # Finite differences perturb the numbers of a CSRGeometry, not its bmad_compat flag
 function FiniteDifferences.to_vec(g::CSRGeometry)
   n, bc = length(g.ele), g.bmad_compat
-  return CSR.geometry_to_vector(g), v -> CSR.geometry_from_vector(v, n, bc)
+  return ModularCSR.geometry_to_vector(g), v -> ModularCSR.geometry_from_vector(v, n, bc)
 end
 ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry, msg = ""; kw...) =
-  ChainRulesTestUtils.test_approx(CSR.geometry_to_vector(a), CSR.geometry_to_vector(b), msg; kw...)
+  ChainRulesTestUtils.test_approx(ModularCSR.geometry_to_vector(a), ModularCSR.geometry_to_vector(b), msg; kw...)
 
 @testset "rrule w.r.t. geometry, s_kick, gamma" begin
-  CE = Base.get_extension(CSR, :CSRChainRulesCoreExt)
+  CE = Base.get_extension(ModularCSR, :ModularCSRChainRulesCoreExt)
   electron = Species("electron")
   L3 = [0.2, 0.3, 0.2]
   g3 = [0.0, 1.5, 0.0]
@@ -25,10 +25,10 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry, msg = ""; kw...)
 
   @testset "geometry_to_vector round trip" begin
     geom = CSRGeometry(L3, g3, c3)
-    v = CSR.geometry_to_vector(geom)
+    v = ModularCSR.geometry_to_vector(geom)
     @test length(v) == 4 + 26 * 3
-    g2 = CSR.geometry_from_vector(v, 3, false)
-    @test CSR.geometry_to_vector(g2) == v
+    g2 = ModularCSR.geometry_from_vector(v, 3, false)
+    @test ModularCSR.geometry_to_vector(g2) == v
     @test g2.start == geom.start && g2.ele == geom.ele
     @test CE.geometry_vector(CE.geometry_tangent(geom, v), 3) == v
   end
@@ -43,25 +43,31 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry, msg = ""; kw...)
     ("images, bmad_compat", 2, true, false),
   )
   @testset "vs ForwardDiff: $name" for (name, n_img, bc, abq) in cases
-    p = CSRParams(n_bin = 40, ds_step = 0.1, n_shield_images = n_img, beam_chamber_height = n_img > 0 ? 0.01 : 0.0,
+    p = CSRParams(n_bin = 40, n_shield_images = n_img, beam_chamber_height = n_img > 0 ? 0.01 : 0.0,
                   bmad_compat = bc, all_bin_quadrature = abq)
     geom = CSRGeometry(L3, g3, c3; bmad_compat = bc)
-    f(gm, s, γ) = csr_kick_pz(pz, z, q, alive, gm, 2, s, γ, electron, p; kw...)
+    ds = L3[2] / max(1, round(Int, Beamlines.scalarize_all(L3[2]) / 0.1, RoundNearestTiesAway))
+    f(gm, s, γ) = csr_kick_pz(pz, z, q, alive, gm, 2, gm.ele[2].L / max(1, round(Int, Beamlines.scalarize_all(gm.ele[2].L) / 0.1, RoundNearestTiesAway)), s, γ, electron, p; kw...)
     ybar = cos.(1:n)
-    y, back = ChainRulesCore.rrule(csr_kick_pz, pz, z, q, alive, geom, 2, 0.17, 200.0, electron, p; kw...)
+    y, back = ChainRulesCore.rrule(csr_kick_pz, pz, z, q, alive, geom, 2, ds, 0.17, 200.0, electron, p; kw...)
     @test y == f(geom, 0.17, 200.0)
     t = back(ybar)
     @test t[6] isa Tangent{typeof(geom)}
-    v0 = CSR.geometry_to_vector(geom)
-    ref = ForwardDiff.gradient(v -> sum(ybar .* f(CSR.geometry_from_vector(v, 3, bc), 0.17, 200.0)), v0)
-    @test maxrel(CE.geometry_vector(t[6], 3), ref) < 1e-12
-    @test t[8] ≈ ForwardDiff.derivative(s -> sum(ybar .* f(geom, s, 200.0)), 0.17) rtol = 1e-12
-    @test t[9] ≈ ForwardDiff.derivative(γ -> sum(ybar .* f(geom, 0.17, γ)), 200.0) rtol = 1e-12
+    v0 = ModularCSR.geometry_to_vector(geom)
+    ref = ForwardDiff.gradient(v -> sum(ybar .* f(ModularCSR.geometry_from_vector(v, 3, bc), 0.17, 200.0)), v0)
+    # ds = L / n in f, so the ds cotangent reaches element 2's length with d ds / d L = 1 / n (n = 3 here)
+    n2 = round(Int, Beamlines.scalarize_all(L3[2]) / 0.1, RoundNearestTiesAway)
+    vadj = CE.geometry_vector(t[6], 3)
+    vadj[31] += t[8] / n2
+    tadj = CE.geometry_tangent(geom, vadj)
+    @test maxrel(vadj, ref) < 1e-12
+    @test t[9] ≈ ForwardDiff.derivative(s -> sum(ybar .* f(geom, s, 200.0)), 0.17) rtol = 1e-12
+    @test t[10] ≈ ForwardDiff.derivative(γ -> sum(ybar .* f(geom, 0.17, γ)), 200.0) rtol = 1e-12
 
     # Composed with the CSRGeometry rrule: cotangents of L, g, centroid. The L cotangent is a small difference of
     # large terms (an upstream length change moves the downstream geometry rigidly).
     _, gback = ChainRulesCore.rrule(CSRGeometry, L3, g3, c3; bmad_compat = bc)
-    tg = gback(t[6])
+    tg = gback(tadj)
     F(Lv, gv, cm) = sum(ybar .* f(CSRGeometry(Lv, gv, cm; bmad_compat = bc), 0.17, 200.0))
     @test maxrel(tg[2], ForwardDiff.gradient(Lv -> F(Lv, g3, c3), L3)) < 1e-6
     @test maxrel(tg[3], ForwardDiff.gradient(gv -> F(L3, gv, c3), g3)) < 1e-9
@@ -70,7 +76,7 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry, msg = ""; kw...)
     # Same through the CSRGeometry method with reference exit floor positions
     ref_exit = planar_survey(L3, g3)
     _, gback4 = ChainRulesCore.rrule(CSRGeometry, L3, g3, ref_exit, c3; bmad_compat = bc)
-    tg4 = gback4(t[6])
+    tg4 = gback4(tadj)
     @test maxrel(tg4[5], tg[4]) < 1e-9
     G4(fl) = sum(ybar .* f(CSRGeometry(L3, g3, fl, c3; bmad_compat = bc), 0.17, 200.0))
     x0 = reduce(vcat, [[f.r; f.theta] for f in ref_exit])
@@ -82,12 +88,13 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry, msg = ""; kw...)
   # Image kernel round-off (D43): with Bmad's 1 − N⋅β′ the s_kick derivatives at these kick points differed by 4e-11
   # and 4e-10 (round-off in both, ForwardDiff's spread under seed scaling as large; diagnostics/s_kick_residual.jl)
   @testset "s_kick with images, round-off (D43)" begin
-    p = CSRParams(n_bin = 40, ds_step = 0.1, n_shield_images = 1, beam_chamber_height = 0.01)
+    p = CSRParams(n_bin = 40, n_shield_images = 1, beam_chamber_height = 0.01)
     geom = CSRGeometry(L3, g3, c3)
+    ds = L3[2] / max(1, round(Int, Beamlines.scalarize_all(L3[2]) / 0.1, RoundNearestTiesAway))
     ybar = cos.(1:n)
     for s in (0.19, 0.23)
-      _, back = ChainRulesCore.rrule(csr_kick_pz, pz, z, q, alive, geom, 2, s, 200.0, electron, p)
-      @test back(ybar)[8] ≈ ForwardDiff.derivative(x -> sum(ybar .* csr_kick_pz(pz, z, q, alive, geom, 2, x, 200.0,
+      _, back = ChainRulesCore.rrule(csr_kick_pz, pz, z, q, alive, geom, 2, ds, s, 200.0, electron, p)
+      @test back(ybar)[9] ≈ ForwardDiff.derivative(x -> sum(ybar .* csr_kick_pz(pz, z, q, alive, geom, 2, ds, x, 200.0,
                                                                                  electron, p)), s) rtol = 1e-11
     end
   end
@@ -108,16 +115,24 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry, msg = ""; kw...)
     c[:, 1] .= 1e-4 .* sin.(1:n_ele+1)
     c[:, 2] .= 1e-3 .* cos.(1:n_ele+1)
     geom = CSRGeometry(Lv, gv, c; bmad_compat = bc)
-    p = CSRParams(n_bin = 40, ds_step = 0.05, n_shield_images = n_img, beam_chamber_height = n_img > 0 ? 0.01 : 0.0,
+    p = CSRParams(n_bin = 40, n_shield_images = n_img, beam_chamber_height = n_img > 0 ? 0.01 : 0.0,
                   bmad_compat = bc, all_bin_quadrature = abq)
+    ds = Lv[ix] / max(1, round(Int, Beamlines.scalarize_all(Lv[ix]) / 0.05, RoundNearestTiesAway))
     zz, qq, aa = kernel_test_bunch(3e-3, 1e-9, 400)
-    st = CSR.csr_binned_kick(zz, qq, aa, geom, ix, sk, 100.0, electron, p; kick_factor = 0.5)
+    st = ModularCSR.csr_binned_kick(zz, qq, aa, geom, ix, ds, sk, 100.0, electron, p; kick_factor = 0.5)
     kbar = cos.(1:40)
-    g, s, γ = CSR.csr_kick_param_adjoint(kbar, st.bins, geom, ix, sk, 100.0, electron, p; kick_factor = 0.5)
+    g, s, γ, dsb = ModularCSR.csr_kick_param_adjoint(kbar, st.bins, geom, ix, ds, sk, 100.0, electron, p; kick_factor = 0.5)
     n_g = 4 + 26n_ele
-    phi(x) = sum(kbar .* CSR.csr_bins_kick(st.bins, CSR.CPU(), CSR.geometry_from_vector(view(x, 1:n_g), n_ele, bc), ix,
-                                           x[n_g+1], x[n_g+2], electron, p; kick_factor = 0.5).kick)
-    ref = ForwardDiff.gradient(phi, [CSR.geometry_to_vector(geom); sk; 100.0])
+    # ds = L / n in the reference: the ds cotangent reaches element ix's length (d ds / d L = 1 / n)
+    g = copy(g)
+    g[5 + 26(ix - 1)] += dsb / max(1, round(Int, Beamlines.scalarize_all(Lv[ix]) / 0.05, RoundNearestTiesAway))
+    function phi(x)
+      gx = ModularCSR.geometry_from_vector(view(x, 1:n_g), n_ele, bc)
+      dsx = gx.ele[ix].L / max(1, round(Int, Beamlines.scalarize_all(gx.ele[ix].L) / 0.05, RoundNearestTiesAway))
+      return sum(kbar .* ModularCSR.csr_bins_kick(st.bins, ModularCSR.CPU(), gx, ix, dsx, x[n_g+1], x[n_g+2], electron, p;
+                                                  kick_factor = 0.5).kick)
+    end
+    ref = ForwardDiff.gradient(phi, [ModularCSR.geometry_to_vector(geom); sk; 100.0])
     # Relative to the largest component: the s_kick derivative can be much smaller than the geometry's (cancellation)
     scale = maximum(abs, ref)
     @test maximum(abs, g .- ref[1:n_g]) <= 1e-10 * scale
@@ -126,9 +141,10 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry, msg = ""; kw...)
   end
 
   @testset "Zero cotangents" begin
-    p = CSRParams(n_bin = 40, ds_step = 0.1)
+    p = CSRParams(n_bin = 40)
     geom = CSRGeometry(L3, g3, c3)
-    _, back = ChainRulesCore.rrule(csr_kick_pz, pz, z, q, alive, geom, 2, 0.17, 200.0, electron, p)
+    ds = L3[2] / max(1, round(Int, Beamlines.scalarize_all(L3[2]) / 0.1, RoundNearestTiesAway))
+    _, back = ChainRulesCore.rrule(csr_kick_pz, pz, z, q, alive, geom, 2, ds, 0.17, 200.0, electron, p)
     @test all(x -> x isa AbstractZero, back(ZeroTangent()))
     _, gback = ChainRulesCore.rrule(CSRGeometry, L3, g3, c3)
     @test all(x -> x isa AbstractZero, gback(ZeroTangent()))
@@ -152,13 +168,22 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry, msg = ""; kw...)
   @testset "test_rrule: $name" for (name, n_img, bc, abq, rtol, atol) in (("free space", 0, false, true, 1e-6, 1e-9),
                                                                           ("images, bmad_compat", 2, true, false, 3e-3, 1e-8))
     zs, qs, as = kernel_test_bunch(1e-3, 1e-9, 60)
-    p = CSRParams(n_bin = 24, ds_step = 0.1, n_shield_images = n_img, beam_chamber_height = n_img > 0 ? 0.01 : 0.0,
+    p = CSRParams(n_bin = 24, n_shield_images = n_img, beam_chamber_height = n_img > 0 ? 0.01 : 0.0,
                   bmad_compat = bc, all_bin_quadrature = abq)
     geom = CSRGeometry(L3, g3, c3; bmad_compat = bc)
-    h(pz, q, gm, s, w) = csr_kick_pz(pz, zs, q, as, gm, 2, s, Γ * w, electron, p; kw...)
+    ds = L3[2] / max(1, round(Int, Beamlines.scalarize_all(L3[2]) / 0.1, RoundNearestTiesAway))
+    dsl(gm) = gm.ele[2].L / max(1, round(Int, Beamlines.scalarize_all(gm.ele[2].L) / 0.1, RoundNearestTiesAway))
+    h(pz, q, gm, s, w) = csr_kick_pz(pz, zs, q, as, gm, 2, dsl(gm), s, Γ * w, electron, p; kw...)
     function h_rrule(::RuleConfig, _, pz, q, gm, s, w)
-      y, back = ChainRulesCore.rrule(csr_kick_pz, pz, zs, q, as, gm, 2, s, Γ * w, electron, p; kw...)
-      h_pullback(ȳ) = (t = back(ȳ); (NoTangent(), t[2], t[4], t[6], t[8], Γ * t[9]))
+      nds = max(1, round(Int, Beamlines.scalarize_all(gm.ele[2].L) / 0.1, RoundNearestTiesAway))
+      y, back = ChainRulesCore.rrule(csr_kick_pz, pz, zs, q, as, gm, 2, dsl(gm), s, Γ * w, electron, p; kw...)
+      function h_pullback(ȳ)
+        t = back(ȳ)
+        # the ds cotangent reaches element 2's length with d ds / d L = 1 / n
+        vadj = CE.geometry_vector(t[6], 3)
+        vadj[31] += t[8] / nds
+        return (NoTangent(), t[2], t[4], CE.geometry_tangent(gm, vadj), t[9], Γ * t[10])
+      end
       return y, h_pullback
     end
     test_rrule(h ⊢ NoTangent(), 1e-4 .* sin.(1:60), qs, geom, 0.17, 200.0 / Γ;

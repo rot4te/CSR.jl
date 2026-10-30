@@ -11,12 +11,12 @@ function triangle_overlap(zp, dz_particle, zb0, zb1)
   zp1 = zp + dz_particle / 2
   inv_dz2 = 1 / dz_particle^2
   overlap = zero(zp * inv_dz2)
-  z1 = primal_max(zp0, zb0)
-  z2 = primal_min(zp, zb1)
-  primal(z2) > primal(z1) && (overlap += 2 * ((z2 - zp0)^2 - (z1 - zp0)^2) * inv_dz2)
-  z1 = primal_max(zp, zb0)
-  z2 = primal_min(zp1, zb1)
-  primal(z2) > primal(z1) && (overlap += 2 * ((z1 - zp1)^2 - (z2 - zp1)^2) * inv_dz2)
+  z1 = Beamlines.scalar_max(zp0, zb0)
+  z2 = Beamlines.scalar_min(zp, zb1)
+  Beamlines.scalarize_all(z2) > Beamlines.scalarize_all(z1) && (overlap += 2 * ((z2 - zp0)^2 - (z1 - zp0)^2) * inv_dz2)
+  z1 = Beamlines.scalar_max(zp, zb0)
+  z2 = Beamlines.scalar_min(zp1, zb1)
+  Beamlines.scalarize_all(z2) > Beamlines.scalarize_all(z1) && (overlap += 2 * ((z1 - zp1)^2 - (z2 - zp1)^2) * inv_dz2)
   return overlap
 end
 
@@ -25,7 +25,7 @@ end
 
 First bin a particle's triangle can overlap.
 """
-@inline deposit_ix0(zp, z_min, dz, dz_particle) = nint((primal(zp) - dz_particle / 2 - z_min) / dz)
+@inline deposit_ix0(zp, z_min, dz, dz_particle) = nint((Beamlines.scalarize_all(zp) - dz_particle / 2 - z_min) / dz)
 
 """
     deposit_particle!(add!, charge, n_particle, n_outside, zp, qp, z_min, dz, dz_particle, pbs)
@@ -40,7 +40,7 @@ Spread one particle over bins ix0 : ix0 + span + 1. Bins outside the grid are co
     if 1 <= ib <= n_bin
       zb0 = z_min + (ib - 1) * dz
       overlap = triangle_overlap(zp, dz_particle, zb0, zb0 + dz)
-      add!(n_particle, ib, primal(overlap))
+      add!(n_particle, ib, Beamlines.scalarize_all(overlap))
       add!(charge, ib, overlap * qp)
     else
       add!(n_outside, 1, one(eltype(n_outside)))

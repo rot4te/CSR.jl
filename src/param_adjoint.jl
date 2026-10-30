@@ -90,7 +90,7 @@ function geometry_active_indices(geom::CSRGeometry, ix_ele_kick::Integer, s_kick
   src_ix(kp, u) = s_source_calc(CSRKick1(geom, kp; dz_particles = u), geom, kp)[1].ix_ele_source
   kp = CSRKickPoint(geom, ix_ele_kick, s_kick, gamma; kick_factor)
   lo, hi, up, down = widen_source_range(lo, hi, up, down, src_ix(kp, lag), n)
-  primal(kp.s_chord_kick) == 0 && ix_ele_kick > 1 && (lo = min(lo, ix_ele_kick - 1))
+  Beamlines.scalarize_all(kp.s_chord_kick) == 0 && ix_ele_kick > 1 && (lo = min(lo, ix_ele_kick - 1))
   for ns in 1:n_images
     kp_ns = CSRKickPoint(geom, ix_ele_kick, s_kick, gamma; y_source = ns * params.beam_chamber_height, kick_factor)
     lo, hi, up, down = widen_source_range(lo, hi, up, down, src_ix(kp_ns, (params.n_bin + 1) * dz), n)
@@ -162,12 +162,12 @@ only through `theta_L`: first order exactly `M(θ₀) + M′(θ₀)(theta_L - θ
 """
 function middle_excess(acc, geom::CSRGeometry{LocalDual}, r, theta_L)
   isempty(r) && return acc
-  theta0 = primal(theta_L)
+  theta0 = Beamlines.scalarize_all(theta_L)
   t = Dual{MidTag}(theta0, 1.0)
   M = zero(t)
   for i in r
     ce = geom.ele[i]
-    M += path_excess(0.0, primal(ce.L_chord), primal.(ce.spline), modulo2(t - primal(ce.theta_chord), pi / 2);
+    M += path_excess(0.0, Beamlines.scalarize_all(ce.L_chord), Beamlines.scalarize_all.(ce.spline), modulo2(t - Beamlines.scalarize_all(ce.theta_chord), pi / 2);
                      bmad_compat = geom.bmad_compat)
   end
   return acc + (value(M) + partials(M, 1) * (theta_L - theta0))
@@ -362,7 +362,7 @@ end
 
 Add `w` times the gradient of the first bin's integral `I_int[1]` (`I_csr_calc` with `i_bin = 1`; its quadrature
 nodes move with the parameters) by ForwardDiff with the numbers of `geometry_active_indices` for lag `dz` seeded
-(sources searched in `geom0`, `PrimalSearch`).
+(sources searched in `geom0`, `ScalarizeAllSearch`).
 """
 function first_bin_adjoint!(grad, w, geom0, ix_ele_kick, s_kick, gamma, params, dz, kick_factor)
   w == 0 && return grad
@@ -371,7 +371,7 @@ function first_bin_adjoint!(grad, w, geom0, ix_ele_kick, s_kick, gamma, params, 
   idx = [geometry_active_indices(geom0, ix_ele_kick, s_kick, gamma, params, dz; kick_factor, lag = dz, n_images = 0);
          n_g + 1; n_g + 2]
   p0 = [geometry_to_vector(geom0); s_kick; gamma]
-  search = PrimalSearch(geom0, CSRKickPoint(geom0, ix_ele_kick, s_kick, gamma; kick_factor))
+  search = ScalarizeAllSearch(geom0, CSRKickPoint(geom0, ix_ele_kick, s_kick, gamma; kick_factor))
   function I_int1(x)
     p = Vector{eltype(x)}(p0)
     p[idx] = x
@@ -418,12 +418,13 @@ function hat_nodes(geom0::CSRGeometry, kp0::CSRKickPoint, dz, n_bin, Wimg)
 end
 
 """
-    csr_kick_param_adjoint(kbar, bins, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor = 1.0)
-        -> (geombar, s_kickbar, gammabar)
+    csr_kick_param_adjoint(kbar, bins, geom, ix_ele_kick, ds, s_kick, gamma, species, params; kick_factor = 1.0)
+        -> (geombar, s_kickbar, gammabar, dsbar)
 
-Cotangents of the geometry (as a vector in the order of `geometry_to_vector`), `s_kick` and `gamma` for the
+Cotangents of the geometry (as a vector in the order of `geometry_to_vector`), `s_kick`, `gamma` and the step `ds` for the
 cotangent `kbar` of the kick per bin (from `csr_kick_adjoint`), with the bins held constant: the gradient of
-`kbar ⋅ kick`, on the CPU.
+`kbar ⋅ kick`, on the CPU. The step `ds` enters the kick only through the kick coefficient (`csr_kick_coef` with
+`ds * L_chord / L`), so `dsbar` is the coefficient's derivative with respect to `ds`.
 
 The kick is `coef` times the tables convolved with the bins, and each table entry is a fixed linear combination of
 source evaluations at fixed lags (bin quadrature nodes, trapezoid, image lags, or the accepted intervals of the
@@ -435,15 +436,17 @@ the lattice start or end, and offsets of the path-length sums over the elements 
 parameters, is differentiated by ForwardDiff over its `geometry_active_indices` (`first_bin_adjoint!`). Exact up to
 round-off, like ForwardDiff through `csr_bins_kick`; cost a few primal kicks.
 """
-function csr_kick_param_adjoint(kbar::AbstractVector, bins::CSRBins, geom::CSRGeometry, ix_ele_kick::Integer, s_kick,
+function csr_kick_param_adjoint(kbar::AbstractVector, bins::CSRBins, geom::CSRGeometry, ix_ele_kick::Integer, ds, s_kick,
                                 gamma, species::Species, params::CSRParams; kick_factor = 1.0)
+  Beamlines.scalarize_all(ds) > 0 || error("csr_kick_param_adjoint: ds must be > 0 (got $ds)")
   cpu(A) = A isa Array ? A : Array(A)
-  bins0 = CSRBins(primal(bins.dz), cpu(bins.z0_edge), cpu(bins.z_center), primal.(cpu(bins.charge)),
-                  cpu(bins.n_particle), primal.(cpu(bins.edge_dcharge_density_dz)))
-  kb = primal.(cpu(kbar))
+  bins0 = CSRBins(Beamlines.scalarize_all(bins.dz), cpu(bins.z0_edge), cpu(bins.z_center), Beamlines.scalarize_all.(cpu(bins.charge)),
+                  cpu(bins.n_particle), Beamlines.scalarize_all.(cpu(bins.edge_dcharge_density_dz)))
+  kb = Beamlines.scalarize_all.(cpu(kbar))
   n_ele = length(geom.ele)
-  geom0 = primal(geom)
-  s_kick, gamma, kick_factor = primal(s_kick), primal(gamma), primal(kick_factor)
+  geom0 = Beamlines.scalarize_all(geom)
+  s_kick, gamma, kick_factor = Beamlines.scalarize_all(s_kick), Beamlines.scalarize_all(gamma), Beamlines.scalarize_all(kick_factor)
+  ds0 = Beamlines.scalarize_all(ds)
   ik = ix_ele_kick
   n_bin = params.n_bin
   dz = bins0.dz
@@ -451,13 +454,13 @@ function csr_kick_param_adjoint(kbar::AbstractVector, bins::CSRBins, geom::CSRGe
   grad = zeros(n_g + 2)
 
   # Coefficient: the kick is linear in coef.
-  st = csr_bins_kick(bins0, CPU(), geom0, ik, s_kick, gamma, species, params; kick_factor)
+  st = csr_bins_kick(bins0, CPU(), geom0, ik, ds0, s_kick, gamma, species, params; kick_factor)
   coef = st.coef
   e = geom0.ele[ik]
-  dcoef = ForwardDiff.gradient(x -> csr_kick_coef(species, x[1], csr_n_step(x[2], params)[2] * (x[3] / x[2]);
-                                                  params.bmad_compat),
-                               SVector(gamma, e.L, e.L_chord))
+  dcoef = ForwardDiff.gradient(x -> csr_kick_coef(species, x[1], x[4] * (x[3] / x[2]); params.bmad_compat),
+                               SVector(gamma, e.L, e.L_chord, ds0))
   c = sum(kb .* st.kick) / coef
+  dsbar = c * dcoef[4]
   grad[n_g+2] += c * dcoef[1]
   grad[geometry_base(ik)+1] += c * dcoef[2]
   grad[geometry_base(ik)+21] += c * dcoef[3]
@@ -503,5 +506,5 @@ function csr_kick_param_adjoint(kbar::AbstractVector, bins::CSRBins, geom::CSRGe
     end
     nodes_adjoint!(grad, geom0, ik, nodes, true, s_kick, gamma; y_source, kick_factor = kf)
   end
-  return grad[1:n_g], grad[n_g+1], grad[n_g+2]
+  return grad[1:n_g], grad[n_g+1], grad[n_g+2], dsbar
 end

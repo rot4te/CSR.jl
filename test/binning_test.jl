@@ -1,8 +1,8 @@
-using CSR: triangle_overlap
+using ModularCSR: triangle_overlap
 
 # Mock GPU backend without Float64 (as Metal), for the number-type helpers.
-struct NoFloat64Backend <: CSR.KernelAbstractions.GPU end
-CSR.KernelAbstractions.supports_float64(::NoFloat64Backend) = false
+struct NoFloat64Backend <: ModularCSR.KernelAbstractions.GPU end
+ModularCSR.KernelAbstractions.supports_float64(::NoFloat64Backend) = false
 
 @testset "Binning" begin
   @testset "triangle_overlap" begin
@@ -15,7 +15,7 @@ CSR.KernelAbstractions.supports_float64(::NoFloat64Backend) = false
   end
 
   @testset "csr_bin_particles" begin
-    params = CSRParams(n_bin = 30, particle_bin_span = 2, ds_step = 0.1)
+    params = CSRParams(n_bin = 30, particle_bin_span = 2)
     z, q, alive = gaussian_line_bunch(1e-3, 1e-9, 1001)
     alive[1:10] .= false
     bins = csr_bin_particles(z, q, alive, params)
@@ -41,15 +41,15 @@ CSR.KernelAbstractions.supports_float64(::NoFloat64Backend) = false
   end
 
   @testset "Backend number types" begin
-    @test CSR.csr_float_type(CSR.CPU()) == Float64
-    @test CSR.device_scalar(CSR.CPU(), 1.3) === 1.3
+    @test ModularCSR.csr_float_type(ModularCSR.CPU()) == Float64
+    @test ModularCSR.device_scalar(ModularCSR.CPU(), 1.3) === 1.3
     A = rand(4)
-    @test CSR.to_backend(CSR.CPU(), A) === A
-    @test CSR.table_backend(CSR.CPU()) === CSR.CPU()
+    @test ModularCSR.to_backend(ModularCSR.CPU(), A) === A
+    @test ModularCSR.table_backend(ModularCSR.CPU()) === ModularCSR.CPU()
     # A backend without Float64 (as Metal): Float32 scalars, tables computed on the CPU
-    @test CSR.csr_float_type(NoFloat64Backend()) == Float32
-    @test CSR.device_scalar(NoFloat64Backend(), 1.3) === 1.3f0
-    @test CSR.table_backend(NoFloat64Backend()) isa CSR.CPU
+    @test ModularCSR.csr_float_type(NoFloat64Backend()) == Float32
+    @test ModularCSR.device_scalar(NoFloat64Backend(), 1.3) === 1.3f0
+    @test ModularCSR.table_backend(NoFloat64Backend()) isa ModularCSR.CPU
   end
 
   @testset "CSRParams" begin

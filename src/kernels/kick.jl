@@ -10,7 +10,7 @@ truncation toward zero, as Bmad), and `inside = true` if `1 ≤ i0 < n_bin` and 
 (`csr_count_outside_kernel!`) and the kick agree for every number type.
 """
 @inline function kick_cell(zp, z_center, dz)
-  zpp = primal(zp)
+  zpp = Beamlines.scalarize_all(zp)
   u = (zpp - z_center[1]) / dz
   # NaN, Inf or far outside the table: outside (trunc(Int, ·) would throw)
   (isfinite(u) && abs(u) < length(z_center) + 1) || return 0, false

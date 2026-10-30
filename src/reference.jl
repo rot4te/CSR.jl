@@ -85,20 +85,21 @@ function csr_apply_kicks_reference!(pz::AbstractVector, z::AbstractVector, alive
 end
 
 """
-    csr_kick_reference!(pz, z, q, alive, geom, ix_ele_kick, s_kick, gamma, species, params; kick_factor = 1.0)
+    csr_kick_reference!(pz, z, q, alive, geom, ix_ele_kick, ds, s_kick, gamma, species, params; kick_factor = 1.0)
 
 Serial reference of `csr_kick!` (free space and image charges, same layer weights), without
 `pz_scale`. One warm-started source walk over the lags, as Bmad.
 """
 function csr_kick_reference!(pz::AbstractVector, z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool},
-                             geom::CSRGeometry, ix_ele_kick::Integer, s_kick, gamma, species::Species,
+                             geom::CSRGeometry, ix_ele_kick::Integer, ds, s_kick, gamma, species::Species,
                              params::CSRParams; kick_factor = 1.0)
+  Beamlines.scalarize_all(ds) > 0 || error("csr_kick_reference!: ds must be > 0 (got $ds)")
   n_bin = params.n_bin
   params.bmad_compat == geom.bmad_compat || error("csr_kick!: params.bmad_compat and geom.bmad_compat differ")
   count(alive) >= n_bin || error("csr_kick!: number of live particles ($(count(alive))) is less than n_bin ($n_bin)")
 
   e = geom.ele[ix_ele_kick]
-  _, ds_step = csr_n_step(e.L, params)
+  ds_step = ds
   actual_track_step = ds_step * (e.L_chord / e.L)
 
   bins = csr_bin_particles_reference(z, q, alive, params)

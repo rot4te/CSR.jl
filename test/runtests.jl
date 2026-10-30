@@ -1,14 +1,14 @@
-using CSR
+using ModularCSR
 using Test
 using StaticArrays
-using AbstractFFTs, BeamTracking, Beamlines, ChainRulesCore, ForwardDiff, GTPSA
+using AbstractFFTs, Beamlines, ChainRulesCore, ForwardDiff, GTPSA
 
 include("utils.jl")
 
-@testset "CSR.jl" begin
+@testset "ModularCSR" begin
   @testset "Package extensions load" begin
-    for ext in (:CSRAbstractFFTsExt, :CSRBeamTrackingBeamlinesExt, :CSRChainRulesCoreExt, :CSRGTPSAExt)
-      @test !isnothing(Base.get_extension(CSR, ext))
+    for ext in (:ModularCSRAbstractFFTsExt, :ModularCSRChainRulesCoreExt, :ModularCSRGTPSAExt)
+      @test !isnothing(Base.get_extension(ModularCSR, ext))
     end
   end
 
@@ -24,10 +24,5 @@ include("utils.jl")
   include("tps_test.jl")
   include("tps_collective_test.jl")
   include("type_stability_test.jl")
-  include("slicing_test.jl")
-  include("track_csr_test.jl")
-  include("lcavity_test.jl")
-  include("track_tps_test.jl")
-  include("track_tps_collective_test.jl")
   include("review_fixes_test.jl")
 end

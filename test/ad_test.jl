@@ -27,18 +27,19 @@
     ("kick in bend, images, bmad_compat", 2, 0.17, 2, true, false),
   )
   @testset "$name" for (name, ix, s_kick, n_img, bc, abq) in cases
-    p = CSRParams(n_bin = 40, ds_step = 0.1, n_shield_images = n_img, beam_chamber_height = n_img > 0 ? 0.01 : 0.0,
+    p = CSRParams(n_bin = 40, n_shield_images = n_img, beam_chamber_height = n_img > 0 ? 0.01 : 0.0,
                   bmad_compat = bc, all_bin_quadrature = abq)
     geom = CSRGeometry(L3, g3, c3; bmad_compat = bc)
+    ds = L3[ix] / max(1, round(Int, Beamlines.scalarize_all(L3[ix]) / 0.1, RoundNearestTiesAway))
     kw = (kick_factor = 0.5, pz_scale = 1.3)
-    f(pp, zz, qq) = csr_kick_pz(pp, zz, qq, alive, geom, ix, s_kick, 200.0, electron, p; kw...)
+    f(pp, zz, qq) = csr_kick_pz(pp, zz, qq, alive, geom, ix, ds, s_kick, 200.0, electron, p; kw...)
 
     # Non-mutating version == csr_kick!
     pz0 = copy(pz)
     y = f(pz, z, q)
     @test pz == pz0
     pz1 = copy(pz)
-    csr_kick!(pz1, z, q, alive, geom, ix, s_kick, 200.0, electron, p; kw...)
+    csr_kick!(pz1, z, q, alive, geom, ix, ds, s_kick, 200.0, electron, p; kw...)
     @test y == pz1
     @test maximum(abs, y .- pz) > 0
 
@@ -74,18 +75,18 @@
     end
 
     # rrule pullback == ForwardDiff J'ȳ
-    y2, back = ChainRulesCore.rrule(csr_kick_pz, pz, z, q, alive, geom, ix, s_kick, 200.0, electron, p; kw...)
+    y2, back = ChainRulesCore.rrule(csr_kick_pz, pz, z, q, alive, geom, ix, ds, s_kick, 200.0, electron, p; kw...)
     @test y2 == y
     for seed in 1:2
       ybar = sin.(seed .* (1:n) .+ 0.3)
       t = back(ybar)
-      @test length(t) == 11
+      @test length(t) == 12
       @test t[2] == ybar
       @test maxrel(t[3], Jz' * ybar) < 1e-12
       @test maxrel(t[4], Jq' * ybar) < 1e-12
       @test all(iszero, t[3][dead]) && all(iszero, t[4][dead])
-      @test all(x -> x isa NoTangent, t[[1, 5, 7, 10, 11]])
-      @test t[6] isa Tangent{typeof(geom)} && t[8] isa Real && t[9] isa Real   # checked in ad_rrule_test.jl
+      @test all(x -> x isa NoTangent, t[[1, 5, 7, 11, 12]])
+      @test t[6] isa Tangent{typeof(geom)} && t[8] isa Real && t[9] isa Real && t[10] isa Real   # checked in ad_rrule_test.jl
     end
     # Thunked and zero cotangents
     ybar = cos.(1:n)

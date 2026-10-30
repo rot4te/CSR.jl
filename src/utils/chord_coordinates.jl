@@ -12,8 +12,8 @@ spline crosses the reference normal plane at `s_ref` (`chord_normal_offset` = 0;
 coordinate (docs, "Physics decisions", V3).
 """
 function s_ref_to_s_chord(s_ref, e::CSRElementInfo; bmad_compat::Bool = false)
-  abs(primal(e.g)) > 1e-5 || return s_ref * e.L_chord / e.L
-  if bmad_compat || abs(primal(e.L_chord)) < 1e-8   # Zero-length chord: no spline (CSRGeometry), Bmad's formula
+  abs(Beamlines.scalarize_all(e.g)) > 1e-5 || return s_ref * e.L_chord / e.L
+  if bmad_compat || abs(Beamlines.scalarize_all(e.L_chord)) < 1e-8   # Zero-length chord: no spline (CSRGeometry), Bmad's formula
     rho = 1 / e.g
     dtheta = e.floor0.theta - e.ref_floor0.theta
     dr = e.ref_floor0.r - e.floor0.r
@@ -22,9 +22,9 @@ function s_ref_to_s_chord(s_ref, e::CSRElementInfo; bmad_compat::Bool = false)
     return abs(rho) * atan(s_ref * cos(dtheta), abs(rho + x + s_ref * sin(dtheta)))
   end
   ref = advance_floor(e.ref_floor0, s_ref, e.g)
-  e0, ref0 = primal(e), primal(ref)
+  e0, ref0 = Beamlines.scalarize_all(e), Beamlines.scalarize_all(ref)
   slope(u) = dot3(z_axis(e0.theta_chord) + spline_d1(e0.spline, u) * x_axis(e0.theta_chord), z_axis(ref0.theta))
-  s0 = primal(s_ref)
+  s0 = Beamlines.scalarize_all(s_ref)
   if s0 == 0
     u = 0.0
   elseif s0 == e0.L

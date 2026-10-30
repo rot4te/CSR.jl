@@ -12,7 +12,7 @@ Runs as KernelAbstractions kernels on the backend of `z`. The deposit uses atomi
 charges, so the summation order (and the last bits of the bin charges) can vary between runs with several
 threads. Other element types are deposited serially on the CPU.
 
-The grid (`dz`, `z0_edge`, `z_center`) and `n_particle` are built from primal values (`primal`): with ForwardDiff
+The grid (`dz`, `z0_edge`, `z_center`) and `n_particle` are built from primal values (`Beamlines.scalarize_all`): with ForwardDiff
 Duals only `charge` and `edge_dcharge_density_dz` carry derivatives, and the grid is held constant.
 """
 function csr_bin_particles(z::AbstractVector, q::AbstractVector, alive::AbstractVector{Bool}, params::CSRParams)
@@ -25,8 +25,8 @@ function csr_bin_particles(z::AbstractVector, q::AbstractVector, alive::Abstract
   backend = get_backend(z)
 
   any(alive) || error("csr_bin_particles: no live particles")
-  z_maxval = primal(mapreduce((zi, a) -> a ? zi : oftype(zi, -Inf), max, z, alive))
-  z_minval = primal(mapreduce((zi, a) -> a ? zi : oftype(zi, Inf), min, z, alive))
+  z_maxval = Beamlines.scalarize_all(mapreduce((zi, a) -> a ? zi : oftype(zi, -Inf), max, z, alive))
+  z_minval = Beamlines.scalarize_all(mapreduce((zi, a) -> a ? zi : oftype(zi, Inf), min, z, alive))
   isfinite(z_maxval) && isfinite(z_minval) || error("csr_bin_particles: non-finite z of a live particle")
   z_maxval > z_minval || error("csr_bin_particles: longitudinal width of beam is zero")
 
