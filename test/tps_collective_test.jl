@@ -24,22 +24,22 @@
   @testset "Helpers" begin
     d = Descriptor(2, 2)
     x = @vars(d)
-    @test ModularCSR.thread_safe_number(Float64,
+    @test CSR.thread_safe_number(Float64,
                                         ForwardDiff.Dual{Nothing,
         Float64,2})
-    @test !ModularCSR.thread_safe_number(Float64, typeof(x[1]))
-    @test ModularCSR.cpu_workgroupsize(100, Float64) === nothing
-    @test ModularCSR.cpu_workgroupsize(100, Float64,
+    @test !CSR.thread_safe_number(Float64, typeof(x[1]))
+    @test CSR.cpu_workgroupsize(100, Float64) === nothing
+    @test CSR.cpu_workgroupsize(100, Float64,
                                        typeof(x[1])) == 100
-    m = ModularCSR.modulo2(4.0 + 2x[1], pi / 2)
-    @test scalar(m) ≈ ModularCSR.modulo2(4.0,
+    m = CSR.modulo2(4.0 + 2x[1], pi / 2)
+    @test scalar(m) ≈ CSR.modulo2(4.0,
         pi / 2) && m[[1 => 1]] == 2
     for s in (8.0, -8.0)
-      r = ModularCSR.cube_root(s + x[1])
+      r = CSR.cube_root(s + x[1])
       @test scalar(r) ≈ cbrt(s) && r[[1 => 1]] ≈ 1 / (3 *
           cbrt(s)^2) && r[[1 => 2]] ≈ -1 / (9 * cbrt(s)^5)
     end
-    @test_throws ErrorException ModularCSR.cube_root(0.0 + x[1])
+    @test_throws ErrorException CSR.cube_root(0.0 + x[1])
   end
 
   # Knobs v: element 2's L and g, centroid x at the kick element's
@@ -281,17 +281,17 @@
     @test occursin("cannot hold the kick", errmsg(f2))
     @test all(iszero, pzbd) && pzt3 == zeros(3)
     # Float64 kick, TPS z_t, Float64 pz_t
-    st = ModularCSR.csr_binned_kick(z, q, alive, geom0, 2, ds0, 0.17,
+    st = CSR.csr_binned_kick(z, q, alive, geom0, 2, ds0, 0.17,
                                     200.0, electron, p)
-    f3 = () -> ModularCSR.csr_apply_test_kicks!(zeros(1),
+    f3 = () -> CSR.csr_apply_test_kicks!(zeros(1),
         [0.0 + x[2]], [true], st.bins, st.kick)
     @test_throws ErrorException f3()
     @test occursin("cannot hold the kick", errmsg(f3))
     # Float32 pz_t with a Float64 kick still runs
-    pz32 = ModularCSR.csr_apply_test_kicks!(zeros(Float32, 3), zt3,
+    pz32 = CSR.csr_apply_test_kicks!(zeros(Float32, 3), zt3,
         fill(true, 3), st.bins, st.kick)
     @test pz32 isa Vector{Float32}
-    @test pz32 == Float32.(ModularCSR.csr_apply_test_kicks!(zeros(3),
+    @test pz32 == Float32.(CSR.csr_apply_test_kicks!(zeros(3),
         zt3, fill(true, 3), st.bins, st.kick))
     @test any(!iszero, pz32)
   end
@@ -370,13 +370,13 @@
     y = @vars(d2, dynamic = true)
     @test length(csr_kick_pz(pz0, z, q .* (1 + y[1]), alive, geom0, 2,
                              ds0, 0.17, 200.0, electron, p)) == n
-    @test !ModularCSR.descriptor_mismatch(1.0)
-    @test !ModularCSR.descriptor_mismatch(zeros(3))
-    @test !ModularCSR.descriptor_mismatch(geom0)
-    @test ModularCSR.descriptor_mismatch(x[1])
-    @test ModularCSR.descriptor_mismatch(geom1)
-    @test !ModularCSR.descriptor_mismatch(y[1])
-    @test !ModularCSR.descriptor_mismatch(xs[1])
+    @test !CSR.descriptor_mismatch(1.0)
+    @test !CSR.descriptor_mismatch(zeros(3))
+    @test !CSR.descriptor_mismatch(geom0)
+    @test CSR.descriptor_mismatch(x[1])
+    @test CSR.descriptor_mismatch(geom1)
+    @test !CSR.descriptor_mismatch(y[1])
+    @test !CSR.descriptor_mismatch(xs[1])
     # Stage 2b: with a TPS kick, test particles are checked (pz_t
     # first, then z_t); nothing is kicked on error
     qy = q .* (1 + y[1])

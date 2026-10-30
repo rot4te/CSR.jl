@@ -1,5 +1,5 @@
-name = "ModularCSR"
-uuid = "afb20d36-cf06-4d39-9b97-30138d4696c6"
+name = "CSR"
+uuid = "1eba2385-4d7d-4910-a062-10b0fcd3038c"
 version = "0.1.0"
 authors = ["Alexander M. Coxe <rot4te@gmail.com>"]
 
@@ -17,9 +17,9 @@ ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
 GTPSA = "b27dd330-f138-47c5-815b-40db9dd9b6e8"
 
 [extensions]
-ModularCSRAbstractFFTsExt = "AbstractFFTs"
-ModularCSRChainRulesCoreExt = "ChainRulesCore"
-ModularCSRGTPSAExt = "GTPSA"
+CSRAbstractFFTsExt = "AbstractFFTs"
+CSRChainRulesCoreExt = "ChainRulesCore"
+CSRGTPSAExt = "GTPSA"
 
 [compat]
 AbstractFFTs = "1.5.0"

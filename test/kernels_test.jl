@@ -25,7 +25,7 @@ maxrel(a, b) = maximum(abs, a .- b) / maximum(abs, b)
 
   @testset "Binning" begin
     b = csr_bin_particles(z, q, alive, params)
-    r = ModularCSR.csr_bin_particles_reference(z, q, alive, params)
+    r = CSR.csr_bin_particles_reference(z, q, alive, params)
     @test b.dz == r.dz
     @test b.z0_edge == r.z0_edge
     @test b.z_center == r.z_center
@@ -42,24 +42,24 @@ maxrel(a, b) = maximum(abs, a .- b) / maximum(abs, b)
   end
 
   @testset "Convolution and kick application" begin
-    r = ModularCSR.csr_bin_particles_reference(z, q, alive, params)
+    r = CSR.csr_bin_particles_reference(z, q, alive, params)
     I_int = [sin(0.1i) / i for i in 1:params.n_bin]
     k1 = zeros(params.n_bin)
     k2 = zeros(params.n_bin)
-    ModularCSR.csr_convolve!(k1, I_int, r.edge_dcharge_density_dz,
+    CSR.csr_convolve!(k1, I_int, r.edge_dcharge_density_dz,
                              1.7)
-    ModularCSR.csr_convolve_reference!(k2, I_int,
+    CSR.csr_convolve_reference!(k2, I_int,
                                        r.edge_dcharge_density_dz, 1.7)
     @test k1 == k2
     pz1 = fill(1e-4, length(z))
     pz2 = copy(pz1)
-    ModularCSR.csr_apply_kicks!(pz1, z, alive, r, k1)
-    ModularCSR.csr_apply_kicks_reference!(pz2, z, alive, r, k2)
+    CSR.csr_apply_kicks!(pz1, z, alive, r, k1)
+    CSR.csr_apply_kicks_reference!(pz2, z, alive, r, k2)
     @test pz1 == pz2
     @test all(pz1[.!alive] .== 1e-4)
     # A particle outside the grid is an internal error
     zbad = copy(z); zbad[1] = 1.0
-    @test_throws ErrorException ModularCSR.csr_apply_kicks!(copy(pz1),
+    @test_throws ErrorException CSR.csr_apply_kicks!(copy(pz1),
         zbad, alive, r, k1)
   end
 
@@ -95,7 +95,7 @@ maxrel(a, b) = maximum(abs, a .- b) / maximum(abs, b)
     pz2 = zeros(length(z))
     r1 = csr_kick!(pz1, z, q, alive, geom, ix, ds, s_kick, gamma,
                    electron, p; kick_factor = 0.5)
-    r2 = ModularCSR.csr_kick_reference!(pz2, z, q, alive, geom, ix,
+    r2 = CSR.csr_kick_reference!(pz2, z, q, alive, geom, ix,
                                         ds, s_kick, gamma, electron,
                                         p; kick_factor = 0.5)
     @test r1.z_center == r2.z_center
@@ -113,14 +113,14 @@ maxrel(a, b) = maximum(abs, a .- b) / maximum(abs, b)
     for (L, g, cen, ix, s_kick) in ((circle_lattice(rho, L_ele,
         n_ele)..., n_ele, 0.05), (L3, g3, c3, 3, 0.0))
       geom = CSRGeometry(L, g, cen)
-      kp = ModularCSR.CSRKickPoint(geom, ix, s_kick, 200.0)
+      kp = CSR.CSRKickPoint(geom, ix, s_kick, 200.0)
       dz = 12sigma / 100
-      tables = [ModularCSR.csr_wake_table(geom, kp, dz, 120,
-          ModularCSR.CPU(); n_block) for n_block in (1, 7, 120)]
+      tables = [CSR.csr_wake_table(geom, kp, dz, 120,
+          CSR.CPU(); n_block) for n_block in (1, 7, 120)]
       @test tables[2] == tables[1]
       @test tables[3] == tables[1]
-      tables = [ModularCSR.csr_wake_table(geom, kp, dz, 120,
-          ModularCSR.CPU(); n_block,
+      tables = [CSR.csr_wake_table(geom, kp, dz, 120,
+          CSR.CPU(); n_block,
           all_bin_quadrature = true) for n_block in (1, 7, 120)]
       @test tables[2] == tables[1]
       @test tables[3] == tables[1]
@@ -140,7 +140,7 @@ maxrel(a, b) = maximum(abs, a .- b) / maximum(abs, b)
   @testset "Fortran nint" begin
     for x in (0.5, -0.5, 1.5, 2.4999999999999996, -2.5,
               0.49999999999999994, 3.0, -0.0)
-      @test ModularCSR.nint(big(x)) == ModularCSR.nint(x) ==
+      @test CSR.nint(big(x)) == CSR.nint(x) ==
           round(Int, x, RoundNearestTiesAway)
     end
   end
@@ -151,7 +151,7 @@ maxrel(a, b) = maximum(abs, a .- b) / maximum(abs, b)
                               Beamlines.scalarize_all(L3[2]) / 0.1,
                               RoundNearestTiesAway))
     pzr = zeros(length(z))
-    ref = ModularCSR.csr_kick_reference!(pzr, z, q, alive, geom, 2,
+    ref = CSR.csr_kick_reference!(pzr, z, q, alive, geom, 2,
         ds, 0.17, 200.0, electron, params)
 
     # Float32 particles (atomic deposit on the promoted charge type)
@@ -175,12 +175,12 @@ maxrel(a, b) = maximum(abs, a .- b) / maximum(abs, b)
   @testset "Work struct and geometry types are isbits (GPU-ready)" begin
     D = ForwardDiff.Dual{Nothing,Float64,3}
     for T in (Float64, Float32, D)
-      @test isbitstype(ModularCSR.CSRKick1{T})
+      @test isbitstype(CSR.CSRKick1{T})
       @test isbitstype(CSRKickPoint{T})
       @test isbitstype(CSRElementInfo{T})
     end
-    k = ModularCSR.CSRKick1(; ix_ele_source = 3, dz_particles = 1e-3)
-    k2 = ModularCSR.with_fields(k; L = 2, ix_ele_source = 1)
+    k = CSR.CSRKick1(; ix_ele_source = 3, dz_particles = 1e-3)
+    k2 = CSR.with_fields(k; L = 2, ix_ele_source = 1)
     @test k2.L === 2.0 && k2.ix_ele_source == 1 && k2.dz_particles ==
         1e-3 && k.L == 0
   end

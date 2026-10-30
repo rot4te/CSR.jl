@@ -1,12 +1,12 @@
 """
-    ModularCSR
+    CSR
 
 1D (line-charge) coherent synchrotron radiation for the SciBmad
 ecosystem, ported from Bmad's `csr_method = one_dim`, with optional
 shielding by parallel plates (image charges). The core works on plain
 particle arrays with KernelAbstractions kernels.
 """
-module ModularCSR
+module CSR
 
 using StaticArrays
 using AtomicAndPhysicalConstants

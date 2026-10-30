@@ -73,7 +73,7 @@ cpu_workgroupsize(n,
 whose Descriptor is not GTPSA's current one. CSR.jl creates TPS
 constants from types (e.g. `zero(T)`), which GTPSA puts in the current
 Descriptor, so mixed Descriptors would reach GTPSA's C library.
-`false` for all other number types; ModularCSRGTPSAExt adds the method
+`false` for all other number types; CSRGTPSAExt adds the method
 for dynamic-descriptor TPS.
 """
 descriptor_mismatch(x) = false

@@ -12,17 +12,17 @@ using ChainRulesTestUtils: FiniteDifferences
 # bmad_compat flag
 function FiniteDifferences.to_vec(g::CSRGeometry)
   n, bc = length(g.ele), g.bmad_compat
-  return (ModularCSR.geometry_to_vector(g),
-          v -> ModularCSR.geometry_from_vector(v, n, bc))
+  return (CSR.geometry_to_vector(g),
+          v -> CSR.geometry_from_vector(v, n, bc))
 end
 ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry,
                                 msg = ""; kw...) =
-  ChainRulesTestUtils.test_approx(ModularCSR.geometry_to_vector(a),
-                                  ModularCSR.geometry_to_vector(b),
+  ChainRulesTestUtils.test_approx(CSR.geometry_to_vector(a),
+                                  CSR.geometry_to_vector(b),
                                   msg; kw...)
 
 @testset "rrule w.r.t. geometry, s_kick, gamma" begin
-  CE = Base.get_extension(ModularCSR, :ModularCSRChainRulesCoreExt)
+  CE = Base.get_extension(CSR, :CSRChainRulesCoreExt)
   electron = Species("electron")
   L3 = [0.2, 0.3, 0.2]
   g3 = [0.0, 1.5, 0.0]
@@ -33,10 +33,10 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry,
 
   @testset "geometry_to_vector round trip" begin
     geom = CSRGeometry(L3, g3, c3)
-    v = ModularCSR.geometry_to_vector(geom)
+    v = CSR.geometry_to_vector(geom)
     @test length(v) == 4 + 26 * 3
-    g2 = ModularCSR.geometry_from_vector(v, 3, false)
-    @test ModularCSR.geometry_to_vector(g2) == v
+    g2 = CSR.geometry_from_vector(v, 3, false)
+    @test CSR.geometry_to_vector(g2) == v
     @test g2.start == geom.start && g2.ele == geom.ele
     @test CE.geometry_vector(CE.geometry_tangent(geom, v), 3) == v
   end
@@ -69,10 +69,10 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry,
     @test y == f(geom, 0.17, 200.0)
     t = back(ybar)
     @test t[6] isa Tangent{typeof(geom)}
-    v0 = ModularCSR.geometry_to_vector(geom)
+    v0 = CSR.geometry_to_vector(geom)
     ref = ForwardDiff.gradient(v -> sum(ybar .*
                                         f(
-        ModularCSR.geometry_from_vector(v, 3, bc), 0.17, 200.0)), v0)
+        CSR.geometry_from_vector(v, 3, bc), 0.17, 200.0)), v0)
     # ds = L / n in f, so the ds cotangent reaches element 2's length
     # with d ds / d L = 1 / n (n = 3 here)
     n2 = round(Int, Beamlines.scalarize_all(L3[2]) / 0.1,
@@ -175,11 +175,11 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry,
                                Beamlines.scalarize_all(Lv[ix]) / 0.05,
                                RoundNearestTiesAway))
     zz, qq, aa = kernel_test_bunch(3e-3, 1e-9, 400)
-    st = ModularCSR.csr_binned_kick(zz, qq, aa, geom, ix, ds, sk,
+    st = CSR.csr_binned_kick(zz, qq, aa, geom, ix, ds, sk,
                                     100.0, electron, p;
                                     kick_factor = 0.5)
     kbar = cos.(1:40)
-    g, s, γ, dsb = ModularCSR.csr_kick_param_adjoint(kbar, st.bins,
+    g, s, γ, dsb = CSR.csr_kick_param_adjoint(kbar, st.bins,
         geom, ix, ds, sk, 100.0, electron, p; kick_factor = 0.5)
     n_g = 4 + 26n_ele
     # ds = L / n in the reference: the ds cotangent reaches element
@@ -188,17 +188,17 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry,
     g[5 + 26(ix - 1)] += dsb / max(1, round(Int,
         Beamlines.scalarize_all(Lv[ix]) / 0.05, RoundNearestTiesAway))
     function phi(x)
-      gx = ModularCSR.geometry_from_vector(view(x, 1:n_g), n_ele, bc)
+      gx = CSR.geometry_from_vector(view(x, 1:n_g), n_ele, bc)
       dsx = gx.ele[ix].L / max(1, round(Int,
                                         Beamlines.scalarize_all(
           gx.ele[ix].L) / 0.05, RoundNearestTiesAway))
-      return sum(kbar .* ModularCSR.csr_bins_kick(st.bins,
-          ModularCSR.CPU(), gx, ix, dsx, x[n_g+1], x[n_g+2], electron,
+      return sum(kbar .* CSR.csr_bins_kick(st.bins,
+          CSR.CPU(), gx, ix, dsx, x[n_g+1], x[n_g+2], electron,
           p;
           kick_factor = 0.5).kick)
     end
     ref = ForwardDiff.gradient(phi,
-                               [ModularCSR.geometry_to_vector(geom);
+                               [CSR.geometry_to_vector(geom);
                                 sk; 100.0])
     # Relative to the largest component: the s_kick derivative can be
     # much smaller than the geometry's (cancellation)

@@ -1,15 +1,15 @@
-using ModularCSR
+using CSR
 using Test
 using StaticArrays
 using AbstractFFTs, Beamlines, ChainRulesCore, ForwardDiff, GTPSA
 
 include("utils.jl")
 
-@testset "ModularCSR" begin
+@testset "CSR.jl" begin
   @testset "Package extensions load" begin
-    for ext in (:ModularCSRAbstractFFTsExt,
-                :ModularCSRChainRulesCoreExt, :ModularCSRGTPSAExt)
-      @test !isnothing(Base.get_extension(ModularCSR, ext))
+    for ext in (:CSRAbstractFFTsExt,
+                :CSRChainRulesCoreExt, :CSRGTPSAExt)
+      @test !isnothing(Base.get_extension(CSR, ext))
     end
   end
 

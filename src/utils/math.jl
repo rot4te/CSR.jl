@@ -29,14 +29,14 @@ end
 
 # Fold the value only; the derivative of the fold is 1 (ForwardDiff's
 # `mod` gives NaN partials at a value of exactly 0).
-# ModularCSRGTPSAExt adds a TPS method (GTPSA has no `mod`).
+# CSRGTPSAExt adds a TPS method (GTPSA has no `mod`).
 modulo2(x::Dual{T}, amp) where {T} = Dual{T}(modulo2(value(x), amp),
     partials(x))
 
 """
     cube_root(x)
 
-Real cube root, `cbrt(x)`. ModularCSRGTPSAExt adds a TPS method (GTPSA
+Real cube root, `cbrt(x)`. CSRGTPSAExt adds a TPS method (GTPSA
 has no `cbrt`).
 """
 cube_root(x) = cbrt(x)

@@ -278,7 +278,7 @@ Non-mutating `csr_kick!`: returns `pz` after the kick in a new vector
 (element type promoted with `z`, `q`, the geometry's number type,
 `ds`, `s_kick`, `gamma`, `kick_factor` and `pz_scale`), leaving `pz`
 unchanged. On a backend without `Float64` (e.g. Metal) the returned
-vector has element type `Float32` (`ModularCSR.csr_float_type`). The
+vector has element type `Float32` (`CSR.csr_float_type`). The
 `rrule`'s pullback needs a backend with `Float64` (the CPU).
 
 Differentiable with ForwardDiff `Dual`s in any of these: the particles

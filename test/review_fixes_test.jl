@@ -3,11 +3,11 @@
 # fixes (input lengths and non-finite z). The BeamTracking-dependent
 # parts (W3, S2, S7, S10 SaganCavity, D.10, and the SaganCavity and
 # gamma-ramp checks of the final review fixes) are not here: per spec
-# 4.7.4 they go to ModularCSR's CSR-effect tests (stage S7).
+# 4.7.4 they go to CSR.jl's CSR-effect tests (stage S7).
 # test/MOVED.md lists them. Uses kernel_test_bunch (kernels_test.jl)
 # and NoFloat64Backend (binning_test.jl), included before this file.
 # NoFloat64Backend is not defined here (binning_test.jl defines it
-# with supertype ModularCSR.KernelAbstractions.GPU).
+# with supertype CSR.KernelAbstractions.GPU).
 
 import KernelAbstractions
 
@@ -19,14 +19,14 @@ import KernelAbstractions
   c3[:, 6] = [0.0, 1e-3, -2e-3, 0.0]
 
   @testset "W4 device_number_type" begin
-    @test (@inferred ModularCSR.device_number_type(NoFloat64Backend(),
+    @test (@inferred CSR.device_number_type(NoFloat64Backend(),
         Float64)) === Float32
-    @test (@inferred ModularCSR.device_number_type(NoFloat64Backend(),
+    @test (@inferred CSR.device_number_type(NoFloat64Backend(),
         Float32)) === Float32
-    @test (@inferred ModularCSR.device_number_type(NoFloat64Backend(),
+    @test (@inferred CSR.device_number_type(NoFloat64Backend(),
         ForwardDiff.Dual{Nothing,Float64,1})) ===
           ForwardDiff.Dual{Nothing,Float64,1}
-    @test (@inferred ModularCSR.device_number_type(
+    @test (@inferred CSR.device_number_type(
         KernelAbstractions.CPU(), Float64)) === Float64
 
     # CPU: csr_kick_pz keeps Float64 output for a Float32 pz
@@ -77,7 +77,7 @@ import KernelAbstractions
     for zf in (bins.z_center[end] + 10bins.dz,
                bins.z_center[1] - 10bins.dz)
       @test_throws(ErrorException,
-          ModularCSR.csr_apply_kicks_reference!(
+          CSR.csr_apply_kicks_reference!(
               [0.0], [zf], [true], bins, kick))
     end
   end
@@ -86,13 +86,13 @@ import KernelAbstractions
     geom = CSRGeometry(L3, [0.0, 1.5, 0.0], c3)
     params = CSRParams(n_bin = 40, n_shield_images = 2,
                        beam_chamber_height = 0.02)
-    @test (@inferred ModularCSR.geometry_active_indices(geom, 3, 0.1,
+    @test (@inferred CSR.geometry_active_indices(geom, 3, 0.1,
         200.0, params, 1e-4)) isa Vector{Int}
-    @test ModularCSR.widen_source_range(3, 3, false, false, 0,
+    @test CSR.widen_source_range(3, 3, false, false, 0,
                                         4) == (1, 3, true, false)
-    @test ModularCSR.widen_source_range(3, 3, false, false, 5,
+    @test CSR.widen_source_range(3, 3, false, false, 5,
                                         4) == (3, 4, false, true)
-    @test ModularCSR.widen_source_range(3, 3, false, false, 2,
+    @test CSR.widen_source_range(3, 3, false, false, 2,
                                         4) == (2, 3, false, false)
   end
 
@@ -117,7 +117,7 @@ import KernelAbstractions
     a3 = copy(alive)
     z3[1] = NaN
     a3[1] = false
-    @test csr_bin_particles(z3, q, a3, params) isa ModularCSR.CSRBins
+    @test csr_bin_particles(z3, q, a3, params) isa CSR.CSRBins
   end
 
   # Keep last: Descriptor(...) changes GTPSA.desc_current.

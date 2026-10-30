@@ -38,58 +38,58 @@
   for (name, g2, s_kick, gamma, lag) in cases
     @testset "$name" begin
       geom = CSRGeometry(L3, [0.0, g2, 0.0], c3)
-      T = ModularCSR.number_type(geom)
+      T = CSR.number_type(geom)
       kp = CSRKickPoint(geom, 3, s_kick, gamma)
-      search = ModularCSR.scalarize_all_search(geom, kp, T)
-      k0 = ModularCSR.CSRKick1(geom, kp; dz_particles = lag)
+      search = CSR.scalarize_all_search(geom, kp, T)
+      k0 = CSR.CSRKick1(geom, kp; dz_particles = lag)
 
-      @test (@inferred ModularCSR.path_excess(zero(s_kick), s_kick,
+      @test (@inferred CSR.path_excess(zero(s_kick), s_kick,
           geom.ele[2].spline, 0.01)) isa promote_type(T,
               typeof(s_kick))
-      @test (@inferred ModularCSR.path_excess(zero(s_kick), s_kick,
+      @test (@inferred CSR.path_excess(zero(s_kick), s_kick,
           geom.ele[2].spline, 0.01;
           bmad_compat = true)) isa promote_type(T, typeof(s_kick))
 
-      @test (@inferred ModularCSR.s_source_calc(k0, geom, kp,
+      @test (@inferred CSR.s_source_calc(k0, geom, kp,
           search)) isa Tuple
-      k1, s1 = ModularCSR.s_source_calc(k0, geom, kp, search)
-      @test k1 isa ModularCSR.CSRKick1
-      @test (@inferred ModularCSR.ddz_calc_csr(k1, s1, geom,
+      k1, s1 = CSR.s_source_calc(k0, geom, kp, search)
+      @test k1 isa CSR.CSRKick1
+      @test (@inferred CSR.ddz_calc_csr(k1, s1, geom,
           kp)) isa Any
-      @test (@inferred ModularCSR.I_csr_calc(k1, 1, lag, geom, kp,
+      @test (@inferred CSR.I_csr_calc(k1, 1, lag, geom, kp,
           0.0, search)) isa Any
-      @test (@inferred ModularCSR.I_csr_calc(k1, 2, lag, geom, kp,
+      @test (@inferred CSR.I_csr_calc(k1, 2, lag, geom, kp,
           0.0, search)) isa Any
-      @test (@inferred ModularCSR.with_fields(k0;
+      @test (@inferred CSR.with_fields(k0;
           dz_particles = 2 * lag)) isa Any
-      @test (@inferred ModularCSR.with_fields(k0;
+      @test (@inferred CSR.with_fields(k0;
           s_chord_source = 0.0)) isa Any
 
       kp_i = CSRKickPoint(geom, 3, s_kick, gamma; y_source = 0.01)
-      ki, _ = ModularCSR.s_source_calc(ModularCSR.CSRKick1(geom, kp_i;
+      ki, _ = CSR.s_source_calc(CSR.CSRKick1(geom, kp_i;
           dz_particles = lag), geom, kp_i,
-                                ModularCSR.scalarize_all_search(geom,
+                                CSR.scalarize_all_search(geom,
           kp_i, T))
       @test 1 <= ki.ix_ele_source <= 3
-      @test (@inferred ModularCSR.image_charge_kick(ki, geom,
+      @test (@inferred CSR.image_charge_kick(ki, geom,
           kp_i)) isa Any
 
       kp_u = CSRKickPoint(geom, 1, 0.05, gamma; y_source = 0.01)
-      ku, _ = ModularCSR.s_source_calc(ModularCSR.CSRKick1(geom, kp_u;
+      ku, _ = CSR.s_source_calc(CSR.CSRKick1(geom, kp_u;
           dz_particles = 1e-3), geom, kp_u,
-                                ModularCSR.scalarize_all_search(geom,
+                                CSR.scalarize_all_search(geom,
           kp_u, T))
       @test ku.ix_ele_source == 0
-      @test (@inferred ModularCSR.image_charge_kick(ku, geom,
+      @test (@inferred CSR.image_charge_kick(ku, geom,
           kp_u)) isa Any
     end
   end
 
   @testset "Float32 spline" begin
     c32 = SVector{4,Float32}(1f-3, 2f-3, -1f-3, 5f-4)
-    @test (@inferred ModularCSR.path_excess(0f0, 0.1f0, c32,
+    @test (@inferred CSR.path_excess(0f0, 0.1f0, c32,
         0.01f0)) isa Float64
-    @test (@inferred ModularCSR.path_excess(0f0, 0.1f0, c32, 0.01f0;
+    @test (@inferred CSR.path_excess(0f0, 0.1f0, c32, 0.01f0;
         bmad_compat = true)) isa Float64
   end
 end

@@ -1,4 +1,4 @@
-using ModularCSR: CSRKickPoint, CSRKick1, s_source_calc, ddz_calc_csr,
+using CSR: CSRKickPoint, CSRKick1, s_source_calc, ddz_calc_csr,
     I_csr_calc, zbrent
 
 @testset "Source point and kick integral" begin
@@ -124,11 +124,11 @@ using ModularCSR: CSRKickPoint, CSRKick1, s_source_calc, ddz_calc_csr,
     c3 = zeros(4, 6)
     c3[:, 1] = [0.0, 4e-4, 1.1e-3, 2e-3]; c3[:, 2] = [2e-3, 1.5e-3,
         3e-3, 3e-3]; c3[:, 6] = [0.0, 1e-3, -2e-3, 0.0]
-    v0 = ModularCSR.geometry_to_vector(CSRGeometry(L3, g3, c3))
+    v0 = CSR.geometry_to_vector(CSRGeometry(L3, g3, c3))
     c = 4 + 26 + 20   # theta_chord of element 2
     function I1(x)
       v = Vector{typeof(x)}(v0); v[c] = x
-      g = ModularCSR.geometry_from_vector(v, 3, false)
+      g = CSR.geometry_from_vector(v, 3, false)
       kpg = CSRKickPoint(g, 2, 0.17, 200.0)
       k, _ = s_source_calc(CSRKick1(g, kpg; dz_particles = 6e-4), g,
                            kpg)
@@ -160,12 +160,12 @@ using ModularCSR: CSRKickPoint, CSRKick1, s_source_calc, ddz_calc_csr,
     # evaluation. round-off level centroid angle, as from tracking
     c = zeros(3, 6); c[2, 2] = -1.7e-18
     geom = CSRGeometry([0.1, 0.1], [0.1, 0.1], c)
-    kp = ModularCSR.CSRKickPoint(geom, 2, 0.1, 1e4)
+    kp = CSR.CSRKickPoint(geom, 2, 0.1, 1e4)
     L = kp.s_chord_kick
-    _, zz = ModularCSR.ddz_calc_csr(ModularCSR.CSRKick1(;
+    _, zz = CSR.ddz_calc_csr(CSR.CSRKick1(;
         ix_ele_source = 2, dz_particles = 0.0), 0.0, geom, kp)
-    k = ModularCSR.CSRKick1(; ix_ele_source = 2, dz_particles = zz)
-    k, s = ModularCSR.s_source_calc(k, geom, kp)
+    k = CSR.CSRKick1(; ix_ele_source = 2, dz_particles = zz)
+    k, s = CSR.s_source_calc(k, geom, kp)
     @test k.ix_ele_source == 2 && s == 0
     @test k.L ≈ L rtol = 1e-6
     # Kick insensitive to the round-off centroid angle
@@ -186,7 +186,7 @@ using ModularCSR: CSRKickPoint, CSRKick1, s_source_calc, ddz_calc_csr,
     c3[:, 1] = [0.0, 4e-4, 1.1e-3, 2e-3]; c3[:, 2] = [2e-3, 1.5e-3,
         3e-3, 3e-3]; c3[:, 6] = [0.0, 1e-3, -2e-3, 0.0]
     ddz(geom, kp, j,
-        s) = last(ModularCSR.ddz_calc_csr(ModularCSR.CSRKick1(;
+        s) = last(CSR.ddz_calc_csr(CSR.CSRKick1(;
             ix_ele_source = j, dz_particles = 0.0), s, geom, kp))
     for y in (0.0, 0.01), s_kick in (0.03, 0.13, 0.17, 0.29)
       geom = CSRGeometry(L3, g3, c3)
@@ -201,13 +201,13 @@ using ModularCSR: CSRKickPoint, CSRKick1, s_source_calc, ddz_calc_csr,
       # Lattice ends: the source on the infinite drifts sits at the
       # end for the lag of the end point
       dz0 = ddz(geom, kp, 1, 0.0)
-      @test abs(last(ModularCSR.upstream_drift_source(
-          ModularCSR.CSRKick1(; ix_ele_source = 0,
+      @test abs(last(CSR.upstream_drift_source(
+          CSR.CSRKick1(; ix_ele_source = 0,
                               dz_particles = dz0), geom, kp,
           nothing))) < 1e-9
       dz1 = ddz(geom, kp, 3, e[3].L_chord)
-      @test abs(last(ModularCSR.downstream_drift_source(
-          ModularCSR.CSRKick1(; ix_ele_source = 4,
+      @test abs(last(CSR.downstream_drift_source(
+          CSR.CSRKick1(; ix_ele_source = 4,
                               dz_particles = dz1), geom, kp,
           nothing))) < 1e-9
       # Same source whatever element the search starts from, at lags
@@ -218,7 +218,7 @@ using ModularCSR: CSRKickPoint, CSRKick1, s_source_calc, ddz_calc_csr,
       lags = [z0 + d for z0 in zz, d in (-1e-9, -1e-12, 0.0, 1e-12,
           1e-9) if y != 0 || z0 + d >= 0]
       same = map(lags) do u
-        r = [first(ModularCSR.s_source_calc(ModularCSR.CSRKick1(;
+        r = [first(CSR.s_source_calc(CSR.CSRKick1(;
             ix_ele_source = j, dz_particles = u), geom,
             kp)).floor_s.r for j in 0:4]
         all(x -> maximum(abs, x - r[1]) < 1e-7, r)

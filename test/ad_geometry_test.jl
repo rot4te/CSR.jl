@@ -29,9 +29,9 @@
 
   @testset "advance_floor at g = 0" begin
     gd = ForwardDiff.Dual(0.0, 1.0)
-    f = ModularCSR.advance_floor(FloorPosition(), 0.3, gd)
+    f = CSR.advance_floor(FloorPosition(), 0.3, gd)
     @test ForwardDiff.value.(f.r) ==
-        ModularCSR.advance_floor(FloorPosition(), 0.3, 0.0).r
+        CSR.advance_floor(FloorPosition(), 0.3, 0.0).r
     # x = (cos(gL) - 1)/g → dx/dg = -L²/2, z = sin(gL)/g → dz/dg
     # = 0, θ = -gL
     @test ForwardDiff.partials(f.r[1], 1) ≈ -0.3^2 / 2
@@ -42,13 +42,13 @@
   @testset "modulo2 at a fold boundary" begin
     # ForwardDiff's mod gives NaN partials at exactly 0 (an on-axis
     # straight element, a source on an element boundary)
-    @test ModularCSR.modulo2(ForwardDiff.Dual(0.0, 1.0),
+    @test CSR.modulo2(ForwardDiff.Dual(0.0, 1.0),
                              pi / 2) == ForwardDiff.Dual(0.0, 1.0)
-    @test ModularCSR.modulo2(ForwardDiff.Dual(4.0, 2.0),
+    @test CSR.modulo2(ForwardDiff.Dual(4.0, 2.0),
                              pi / 2) ==
-                                 ForwardDiff.Dual(ModularCSR.modulo2(
+                                 ForwardDiff.Dual(CSR.modulo2(
                                      4.0, pi / 2), 2.0)
-    J = ForwardDiff.jacobian(Lv -> ModularCSR.geometry_to_vector(
+    J = ForwardDiff.jacobian(Lv -> CSR.geometry_to_vector(
         CSRGeometry(Lv, [0.0, 0.5], zeros(3, 6))), [0.2, 0.3])
     @test !any(isnan, J)
   end
@@ -58,16 +58,16 @@
                     bmad_compat = bc)
     kp = CSRKickPoint(G, 2, 0.17, ForwardDiff.Dual(200.0, 1.0))
     for dz in (2e-5, 3e-4, 1e-3)
-      k = ModularCSR.CSRKick1(G, kp; ix_ele_source = 2,
+      k = CSR.CSRKick1(G, kp; ix_ele_source = 2,
                               dz_particles = dz)
-      k, s = ModularCSR.s_source_calc(k, G, kp)
+      k, s = CSR.s_source_calc(k, G, kp)
       @test ForwardDiff.partials(s, 1) != 0
       # ddz at the Dual root: zero derivative (implicit function
       # theorem); at the primal root: not
-      k2 = ModularCSR.CSRKick1(G, kp; ix_ele_source = k.ix_ele_source,
+      k2 = CSR.CSRKick1(G, kp; ix_ele_source = k.ix_ele_source,
                                dz_particles = dz)
-      _, r_dual = ModularCSR.ddz_calc_csr(k2, s, G, kp)
-      _, r_fixed = ModularCSR.ddz_calc_csr(k2, ForwardDiff.value(s),
+      _, r_dual = CSR.ddz_calc_csr(k2, s, G, kp)
+      _, r_fixed = CSR.ddz_calc_csr(k2, ForwardDiff.value(s),
           G, kp)
       @test abs(ForwardDiff.partials(r_dual,
                                      1)) < 1e-10 *
@@ -86,12 +86,12 @@
         G = CSRGeometry(L3, g3 .+ t .* [0.1, 1.0, 0.0], c3;
                         bmad_compat = bc)
         kp = CSRKickPoint(G, 2, 0.17 + 0.05t, 200.0 + 50t)
-        k, s = ModularCSR.s_source_calc(ModularCSR.CSRKick1(G, kp;
+        k, s = CSR.s_source_calc(CSR.CSRKick1(G, kp;
             ix_ele_source = 2, dz_particles = dz), G, kp)
-        k2 = ModularCSR.CSRKick1(G, kp;
+        k2 = CSR.CSRKick1(G, kp;
                                  ix_ele_source = k.ix_ele_source,
                                  dz_particles = dz)
-        return last(ModularCSR.ddz_calc_csr(k2,
+        return last(CSR.ddz_calc_csr(k2,
             fixed ? Beamlines.scalarize_all(s) : s, G, kp))
       end
       d1(fixed) = ForwardDiff.derivative(t -> resid(t, fixed), 0.0)
@@ -112,18 +112,18 @@
     for (ix, y) in ((1, 0.0), (2, 0.0), (2, 0.01), (3, 0.01))
       kp = CSRKickPoint(G, ix, 0.17, ForwardDiff.Dual(200.0, 1.0,
           0.0); y_source = y)
-      search = ModularCSR.scalarize_all_search(G, kp,
-          ModularCSR.number_type(kp))
-      @test search isa ModularCSR.ScalarizeAllSearch
+      search = CSR.scalarize_all_search(G, kp,
+          CSR.number_type(kp))
+      @test search isa CSR.ScalarizeAllSearch
       for dz in (-0.5, -1e-3, -2e-5, 2e-5, 3e-4, 1e-3, 0.5)
-        k = ModularCSR.CSRKick1(G, kp; dz_particles = dz)
-        @test ModularCSR.s_source_calc(k, G, kp,
+        k = CSR.CSRKick1(G, kp; dz_particles = dz)
+        @test CSR.s_source_calc(k, G, kp,
                                        search) ==
-                                           ModularCSR.s_source_calc(k,
+                                           CSR.s_source_calc(k,
                                                G, kp)
       end
     end
-    @test ModularCSR.scalarize_all_search(Beamlines.scalarize_all(G),
+    @test CSR.scalarize_all_search(Beamlines.scalarize_all(G),
         Beamlines.scalarize_all(CSRKickPoint(G, 2, 0.17, 200.0)),
         Float64) === nothing
   end
@@ -134,8 +134,8 @@
       G = CSRGeometry(L3, gv, reshape(cv, 4, 6))
       kp = CSRKickPoint(G, 2, 0.17, 200.0; y_source = 0.01,
                         kick_factor = -1.0)
-      return first(ModularCSR.csr_image_table(G, kp, dz, 40,
-          ModularCSR.CPU(); bin_integrate = true, rtol = 1e-10))
+      return first(CSR.csr_image_table(G, kp, dz, 40,
+          CSR.CPU(); bin_integrate = true, rtol = 1e-10))
     end
     c = vec(c3)
     Jg = ForwardDiff.jacobian(gv -> tab(gv, c), g3)
@@ -259,8 +259,8 @@
       G = CSRGeometry(L3, [x[1], x[2], 0.0], c3)
       kp = CSRKickPoint(G, 2, x[3], x[4]; y_source = 0.01,
                         kick_factor = -1.0)
-      return sum(w .* first(ModularCSR.csr_image_table(G, kp, 1.3e-4,
-          40, ModularCSR.CPU(); bin_integrate = true, rtol = 1e-10)))
+      return sum(w .* first(CSR.csr_image_table(G, kp, 1.3e-4,
+          40, CSR.CPU(); bin_integrate = true, rtol = 1e-10)))
     end
     H, err = hessian_vs_fd(F, x0, sc)
     @test maxrel(H, H') < 1e-9

@@ -157,9 +157,9 @@
     @test werr(kick(400, false)) > 3e-2
 
     # all_bin_quadrature = false: trapezoid for bins ≥ 2
-    kp = ModularCSR.CSRKickPoint(g2, 1, 0.05, gam)
-    I_csr, I_int, _ = ModularCSR.csr_wake_table(g2, kp, 1e-4, 40,
-        ModularCSR.CPU(); all_bin_quadrature = false)
+    kp = CSR.CSRKickPoint(g2, 1, 0.05, gam)
+    I_csr, I_int, _ = CSR.csr_wake_table(g2, kp, 1e-4, 40,
+        CSR.CPU(); all_bin_quadrature = false)
     @test I_int[2:end] == (I_csr[2:end] .+ I_csr[1:end-1]) .* 1e-4 ./
         2
     # bmad_compat ignores all_bin_quadrature (Bmad: trapezoid)

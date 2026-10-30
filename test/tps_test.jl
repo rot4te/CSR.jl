@@ -20,14 +20,14 @@
   @testset "primal, root_order" begin
     t = 0.3 + 2x[1] + x[5]^2
     @test Beamlines.scalarize_all(t) == 0.3
-    @test ModularCSR.root_order(t) == 3
-    @test_throws MethodError ModularCSR.root_order(1.0 + 2.0im)
+    @test CSR.root_order(t) == 3
+    @test_throws MethodError CSR.root_order(1.0 + 2.0im)
   end
 
   @testset "Frozen-wake test particles (images = $n_img)" for n_img in (0, 2)
     p = CSRParams(n_bin = 40, n_shield_images = n_img,
                   beam_chamber_height = n_img > 0 ? 0.01 : 0.0)
-    st = ModularCSR.csr_binned_kick(z, q, alive, geom, 2, ds, 0.17,
+    st = CSR.csr_binned_kick(z, q, alive, geom, 2, ds, 0.17,
                                     200.0, electron, p)
     # Test particles across the bunch, coordinates nonlinear in the
     # variables; more than one default CPU workgroup (1024), so that
@@ -38,11 +38,11 @@
          j) = z0[j] + v[5] * (1 + 0.1j / m) + 0.3 * v[1]^2 - 0.2 *
              v[5] * v[6] + 0.5 * v[1] * v[5]^2
     pzfun(v, j) = v[6] + 1e-4j / m
-    f(v) = ModularCSR.csr_apply_test_kicks!([pzfun(v,
+    f(v) = CSR.csr_apply_test_kicks!([pzfun(v,
         j) for j in 1:m], [zfun(v, j) for j in 1:m], fill(true, m),
         st.bins,
                                      st.kick; pz_scale = 1.3)
-    pzt = ModularCSR.csr_apply_test_kicks!([pzfun(x, j) for j in 1:m],
+    pzt = CSR.csr_apply_test_kicks!([pzfun(x, j) for j in 1:m],
         [zfun(x, j) for j in 1:m], fill(true, m), st.bins,
                                     st.kick; pz_scale = 1.3)
     v0 = zeros(6)
@@ -79,34 +79,34 @@
 
   @testset "Test particles outside the bunch" begin
     p = CSRParams(n_bin = 40)
-    st = ModularCSR.csr_binned_kick(z, q, alive, geom, 2, ds, 0.17,
+    st = CSR.csr_binned_kick(z, q, alive, geom, 2, ds, 0.17,
                                     200.0, electron, p)
-    @test_throws ErrorException ModularCSR.csr_apply_test_kicks!([x[
+    @test_throws ErrorException CSR.csr_apply_test_kicks!([x[
         6]], [0.05 + x[5]], [true], st.bins, st.kick)
     # Accepted range [z_center[1] - dz/100, z_center[end]), as in the
     # error message
     zc, dz = st.bins.z_center, st.bins.dz
-    @test ModularCSR.csr_apply_test_kicks!([0.0, 0.0],
+    @test CSR.csr_apply_test_kicks!([0.0, 0.0],
         [zc[1] - dz / 200, zc[end] - dz / 4], [true, true], st.bins,
                                     st.kick) isa Vector
     for zt in (zc[1] - dz / 50, zc[end] + dz / 4)
-      err = try ModularCSR.csr_apply_test_kicks!([0.0], [zt], [true],
+      err = try CSR.csr_apply_test_kicks!([0.0], [zt], [true],
           st.bins, st.kick); nothing catch e; e end
       @test err isa ErrorException && occursin("$(zc[end]))", err.msg)
     end
     # Dead test particles are skipped wherever they are
     pzt = [x[6]]
-    ModularCSR.csr_apply_test_kicks!(pzt, [0.05 + x[5]], [false],
+    CSR.csr_apply_test_kicks!(pzt, [0.05 + x[5]], [false],
                                      st.bins, st.kick)
     # every coefficient (TPS == compares the scalar parts only)
     @test isequal(pzt[1], x[6])
     # Nothing is kicked when any live test particle is outside
     # (finding 4)
-    k0 = ModularCSR.csr_apply_test_kicks!([0.0], [0.0], [true],
+    k0 = CSR.csr_apply_test_kicks!([0.0], [0.0], [true],
         st.bins, st.kick)[1]
     @test k0 != 0
     pzt = [0.0, 0.0]
-    @test_throws ErrorException ModularCSR.csr_apply_test_kicks!(pzt,
+    @test_throws ErrorException CSR.csr_apply_test_kicks!(pzt,
         [0.0, 0.05], [true, true], st.bins, st.kick)
     @test pzt == [0.0, 0.0]
     pzb, pzt = zeros(n), [0.0, 0.0]
@@ -118,16 +118,16 @@
     # TPS z_t at the range edges: accepted where Float64 is, same
     # kicked value (review finding 6)
     for zt in (zc[1] - dz / 200, zc[1], zc[end - 1], zc[end] - dz / 4)
-      k64 = ModularCSR.csr_apply_test_kicks!([0.0], [zt], [true],
+      k64 = CSR.csr_apply_test_kicks!([0.0], [zt], [true],
           st.bins, st.kick)[1]
-      kt = ModularCSR.csr_apply_test_kicks!([0.0 + x[6]], [zt + x[5]],
+      kt = CSR.csr_apply_test_kicks!([0.0 + x[6]], [zt + x[5]],
           [true], st.bins, st.kick)[1]
       @test isapprox(scalar(kt), k64; rtol = 1e-13,
                      atol = 1e-13 * maximum(abs, st.kick))
     end
     for zt in (zc[1] - dz / 50, zc[end] + dz / 4)
       pzt = [0.0 + x[6]]
-      @test_throws ErrorException ModularCSR.csr_apply_test_kicks!(
+      @test_throws ErrorException CSR.csr_apply_test_kicks!(
           pzt, [zt + x[5]], [true], st.bins, st.kick)
       @test isequal(pzt[1], 0.0 + x[6])
     end
@@ -135,12 +135,12 @@
     # (review finding 1)
     for zt in (NaN, Inf, -Inf, 1e30)
       pzt = [0.0]
-      err = try ModularCSR.csr_apply_test_kicks!(pzt, [zt], [true],
+      err = try CSR.csr_apply_test_kicks!(pzt, [zt], [true],
           st.bins, st.kick); nothing catch e; e end
       @test err isa ErrorException &&
           occursin("outside the bunch's bin range", err.msg)
       @test pzt == [0.0]
-      errt = try ModularCSR.csr_apply_test_kicks!([0.0 + x[6]],
+      errt = try CSR.csr_apply_test_kicks!([0.0 + x[6]],
           [zt + x[5]], [true], st.bins,
           st.kick); nothing catch e; e end
       @test errt isa ErrorException &&
@@ -148,10 +148,10 @@
     end
     # Empty TPS test particles (review finding 3)
     T6 = typeof(x[6])
-    @test isempty(ModularCSR.csr_apply_test_kicks!(T6[], T6[], Bool[],
+    @test isempty(CSR.csr_apply_test_kicks!(T6[], T6[], Bool[],
         st.bins, st.kick))
     # Different lengths (review finding 5)
-    err = try ModularCSR.csr_apply_test_kicks!([0.0, 0.0], [0.0],
+    err = try CSR.csr_apply_test_kicks!([0.0, 0.0], [0.0],
         [true, true], st.bins, st.kick); nothing catch e; e end
     @test err isa ErrorException && occursin("must be equal", err.msg)
     pzb = zeros(n)
