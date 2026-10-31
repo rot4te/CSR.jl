@@ -74,8 +74,7 @@ using CSR: FloorPosition, planar_survey, chord_spline,
     for (c, s0, s1, rtol) in ((SVector(0.0, 0.01, 0.02, 0.03), 0.0,
                                0.1, 1e-10),
                               (SVector(0.0, 0.05, -0.3, 0.2), 0.1,
-                               0.4, 1e-7)), dth in (0.0, 0.01, 0.3,
-                                   -0.8)
+                               0.4, 1e-7)), dth in (0.01, -0.8)
       xp(s) = CSR.spline_d1(c, s)
       quad = simpson(s -> sqrt(1 + xp(s)^2) - cos(dth) - xp(s) *
                      sin(dth), s0, s1, 2000)
@@ -124,7 +123,7 @@ using CSR: FloorPosition, planar_survey, chord_spline,
     # accuracy of the cubic chord spline (~ρφ⁴/384 = 1.3e-6 m
     # here); Bmad's ρ atan(s/ρ) is off by up to 1.4e-3 m
     chord(s) = rho * (sin(s / rho - phi / 2) + sin(phi / 2))
-    for s in (0.01, 0.1, 0.25, 0.4, 0.49)
+    for s in (0.1, 0.4)
       @test s_ref_to_s_chord(s, e) ≈ chord(s) atol = 1e-7
       @test s_ref_to_s_chord(s, e;
                              bmad_compat = true) ≈ rho * atan(s /

@@ -188,12 +188,16 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) *
   c3[:, 2] = [2e-3, 1.5e-3, 3e-3, 3e-3]
   z, q, alive = kernel_test_bunch(1e-3, 1e-9, 5001)
   cases = (
-    ("off-axis drift-bend-drift, kick in bend", 2, 0.17, 0.01),
-    ("kick at element entrance", 3, 0.0, 0.01),
-    ("kick near the lattice end, sources past it", 3, 0.195, 0.002),
+    ("off-axis drift-bend-drift, kick in bend", 2, 0.17, 0.01,
+     false),
+    ("kick at element entrance", 3, 0.0, 0.01, false),
+    ("kick near the lattice end, sources past it", 3, 0.195, 0.002,
+     false),
+    ("kick near the lattice end, sources past it", 3, 0.195, 0.002,
+     true),
   )
   @testset "csr_kick! vs reference: $name, bmad_compat = $bc" for (
-      name, ix, s_kick, h) in cases, bc in (false, true)
+      name, ix, s_kick, h, bc) in cases
     p = CSRParams(n_bin = 120, n_shield_images = 3,
                   beam_chamber_height = h, bmad_compat = bc)
     geom = CSRGeometry(L3, g3, c3; bmad_compat = bc)
@@ -252,7 +256,7 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) *
     r0 = kick(CSRParams(n_bin = 480))
     @test eloss(r0) < 0
     ratio = Dict{Float64,Float64}()
-    for h in (0.01, 0.03, 0.1, 1.0, 10.0)
+    for h in (0.01, 0.1, 1.0)
       r = kick(CSRParams(n_bin = 480, n_shield_images = 32,
                          beam_chamber_height = h))
       ratio[h] = eloss(r) / eloss(r0)
@@ -261,7 +265,6 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) *
                              r0.kick_per_meter) < 1e-3
     end
     @test 0 < ratio[0.01] < 0.01    # strong shielding
-    @test 0 < ratio[0.03] < 0.06
     @test 0.9 < ratio[0.1] < 0.95   # mild shielding
     @test ratio[1.0] ≈ 1 rtol = 1e-3
     # h = 3 mm: the image kernel's structure is much finer than a bin.

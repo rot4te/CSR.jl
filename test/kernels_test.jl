@@ -33,12 +33,8 @@ maxrel(a, b) = maximum(abs, a .- b) / maximum(abs, b)
     @test b.n_particle ≈ r.n_particle rtol = 1e-13
     @test maxrel(b.edge_dcharge_density_dz,
                  r.edge_dcharge_density_dz) < 1e-12
-    @test b.edge_dcharge_density_dz[1] == 0
-    @test sum(b.n_particle) ≈ count(alive) rtol = 1e-13
     @test_throws ErrorException csr_bin_particles(z, q, fill(false,
         length(z)), params)
-    @test_throws ErrorException csr_bin_particles(zeros(5), ones(5),
-        fill(true, 5), params)
   end
 
   @testset "Convolution and kick application" begin
@@ -73,12 +69,8 @@ maxrel(a, b) = maximum(abs, a .- b) / maximum(abs, b)
   c3[:, 2] = [2e-3, 1.5e-3, 3e-3, 3e-3]
   rho = 10.0; L_ele = 0.1; n_ele = 80
   cases = (
-    ("long bend, steady state", circle_lattice(rho, L_ele, n_ele),
-     n_ele, L_ele / 2, 1e4),
     ("off-axis drift-bend-drift, kick in bend", (L3, g3, c3), 2, 0.17,
      200.0),
-    ("off-axis drift-bend-drift, kick in last drift", (L3, g3, c3), 3,
-     0.1, 200.0),
     ("kick at element entrance", (L3, g3, c3), 3, 0.0, 200.0),
     ("source upstream of the lattice", ([0.05, 0.05], [2.0, 2.0],
                                         zeros(3, 6)), 1, 0.03, 50.0),

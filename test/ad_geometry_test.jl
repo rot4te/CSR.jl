@@ -57,7 +57,7 @@
     G = CSRGeometry(L3, ForwardDiff.Dual.(g3, 1.0), c3;
                     bmad_compat = bc)
     kp = CSRKickPoint(G, 2, 0.17, ForwardDiff.Dual(200.0, 1.0))
-    for dz in (2e-5, 3e-4, 1e-3)
+    for dz in (2e-5, 1e-3)
       k = CSR.CSRKick1(G, kp; ix_ele_source = 2,
                               dz_particles = dz)
       k, s = CSR.s_source_calc(k, G, kp)
@@ -81,7 +81,7 @@
   # direction moving g, s_kick and gamma; at the primal root the
   # second derivative is not zero
   @testset "Source root: residual stationary to second order (bmad_compat = $bc)" for bc in (false, true)
-    for dz in (2e-5, 3e-4, 1e-3)
+    for dz in (2e-5, 1e-3)
       function resid(t, fixed)
         G = CSRGeometry(L3, g3 .+ t .* [0.1, 1.0, 0.0], c3;
                         bmad_compat = bc)
@@ -115,7 +115,7 @@
       search = CSR.scalarize_all_search(G, kp,
           CSR.number_type(kp))
       @test search isa CSR.ScalarizeAllSearch
-      for dz in (-0.5, -1e-3, -2e-5, 2e-5, 3e-4, 1e-3, 0.5)
+      for dz in (-0.5, -2e-5, 1e-3, 0.5)
         k = CSR.CSRKick1(G, kp; dz_particles = dz)
         @test CSR.s_source_calc(k, G, kp,
                                        search) ==
@@ -153,7 +153,6 @@
 
   cases = (
     ("free space", 0, false, true, 2, 0.17, 1e-5),
-    ("free space, bmad_compat", 0, true, false, 2, 0.17, 1e-5),
     # Default-mode images: the shielded kick's derivatives are 7-25x
     # smaller than the free-space part's, which amplifies the hat
     # quadrature's finite-difference noise (table level: below, ~1e-5)
@@ -192,7 +191,7 @@
 
     # Centroid x and px at the first three rows (column-major index in
     # vec(centroid))
-    for j in (1, 2, 3, 5, 6, 7)
+    for j in (1, 3, 6)
       @test fd_best(t -> f(L3, g3, c .+ t .* unit(j, 24), sk, 200.0),
                     0.0, Jc[:, j]; scale = 1e-2) < tol
     end

@@ -18,17 +18,12 @@
   dead = findall(.!alive)
   i_zmin = argmin(ifelse.(alive, z, Inf))
   i_zmax = argmax(ifelse.(alive, z, -Inf))
-  interior = filter(i -> alive[i] && i ∉ (i_zmin, i_zmax), [97, 151,
-      200, 263, 333])
+  interior = filter(i -> alive[i] && i ∉ (i_zmin, i_zmax),
+      [151, 263])
 
   cases = (
     ("kick in bend", 2, 0.17, 0, false, false),
-    ("kick in bend, all-bin quadrature", 2, 0.17, 0, false, true),
-    ("kick in bend, bmad_compat", 2, 0.17, 0, true, false),
     ("kick at element entrance, images", 3, 0.0, 2, false, false),
-    ("kick in bend, images, all-bin quadrature", 2, 0.17, 2, false,
-     true),
-    ("kick in bend, images, bmad_compat", 2, 0.17, 2, true, false),
   )
   @testset "$name" for (name, ix, s_kick, n_img, bc, abq) in cases
     p = CSRParams(n_bin = 40, n_shield_images = n_img,
@@ -94,19 +89,17 @@
                                     geom, ix, ds, s_kick, 200.0,
                                     electron, p; kw...)
     @test y2 == y
-    for seed in 1:2
-      ybar = sin.(seed .* (1:n) .+ 0.3)
-      t = back(ybar)
-      @test length(t) == 12
-      @test t[2] == ybar
-      @test maxrel(t[3], Jz' * ybar) < 1e-12
-      @test maxrel(t[4], Jq' * ybar) < 1e-12
-      @test all(iszero, t[3][dead]) && all(iszero, t[4][dead])
-      @test all(x -> x isa NoTangent, t[[1, 5, 7, 11, 12]])
-      @test t[6] isa Tangent{typeof(geom)} && t[8] isa Real &&
-          # checked in ad_rrule_test.jl
-          t[9] isa Real && t[10] isa Real
-    end
+    ybar = sin.((1:n) .+ 0.3)
+    t = back(ybar)
+    @test length(t) == 12
+    @test t[2] == ybar
+    @test maxrel(t[3], Jz' * ybar) < 1e-12
+    @test maxrel(t[4], Jq' * ybar) < 1e-12
+    @test all(iszero, t[3][dead]) && all(iszero, t[4][dead])
+    @test all(x -> x isa NoTangent, t[[1, 5, 7, 11, 12]])
+    @test t[6] isa Tangent{typeof(geom)} && t[8] isa Real &&
+        # checked in ad_rrule_test.jl
+        t[9] isa Real && t[10] isa Real
     # Thunked and zero cotangents
     ybar = cos.(1:n)
     @test back(@thunk(ybar))[3] == back(ybar)[3]

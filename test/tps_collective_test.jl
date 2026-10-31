@@ -58,7 +58,8 @@
                        alive, geom, 2, ds, v[4], v[5], electron, p)
   end
 
-  @testset "Order 2 (images = $n_img, bmad_compat = $bc)" for n_img in (0, 2), bc in (false, true)
+  @testset "Order 2 (images = $n_img, bmad_compat = $bc)" for (
+      n_img, bc) in ((0, false), (2, false), (2, true))
     p = CSRParams(n_bin = 40, n_shield_images = n_img,
                   beam_chamber_height = n_img > 0 ? 3e-3 : 0.0,
                   bmad_compat = bc)
@@ -84,7 +85,8 @@
     end
   end
 
-  @testset "Order 3 (images = $n_img)" for n_img in (0, 2)
+  @testset "Order 3 (images = 0)" begin
+    n_img = 0
     # g and gamma: three Newton steps per source root (root_order of
     # the TPS)
     p = CSRParams(n_bin = 40, n_shield_images = n_img,
@@ -169,7 +171,9 @@
   end
   pzt0 = [1e-4j / m for j in 1:m]
 
-  @testset "Test particles in 6D + knobs (images = $n_img, bmad_compat = $bc)" for n_img in (0, 2), bc in (false, true)
+  @testset "Test particles in 6D + knobs (images = 0, bmad_compat = false)" begin
+    n_img = 0
+    bc = false
     p = CSRParams(n_bin = 40, n_shield_images = n_img,
                   beam_chamber_height = n_img > 0 ? 3e-3 : 0.0,
                   bmad_compat = bc)

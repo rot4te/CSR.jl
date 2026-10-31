@@ -209,14 +209,6 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry,
   end
 
   @testset "Zero cotangents" begin
-    p = CSRParams(n_bin = 40)
-    geom = CSRGeometry(L3, g3, c3)
-    ds = L3[2] / max(1, round(Int,
-                              Beamlines.scalarize_all(L3[2]) / 0.1,
-                              RoundNearestTiesAway))
-    _, back = ChainRulesCore.rrule(csr_kick_pz, pz, z, q, alive, geom,
-                                   2, ds, 0.17, 200.0, electron, p)
-    @test all(x -> x isa AbstractZero, back(ZeroTangent()))
     _, gback = ChainRulesCore.rrule(CSRGeometry, L3, g3, c3)
     @test all(x -> x isa AbstractZero, gback(ZeroTangent()))
   end
@@ -245,11 +237,8 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry,
   # ad_geometry_test.jl.
   fdm = FiniteDifferences.central_fdm(5, 1; max_range = 1e-6)
   Γ = 1e5
-  @testset "test_rrule: $name" for (name, n_img, bc, abq, rtol,
-                                    atol) in (("free space", 0, false,
-                                        true, 1e-6, 1e-9),
-                                        ("images, bmad_compat", 2,
-                                        true, false, 3e-3, 1e-8))
+  @testset "test_rrule: free space" begin
+    n_img, bc, abq, rtol, atol = 0, false, true, 1e-6, 1e-9
     zs, qs, as = kernel_test_bunch(1e-3, 1e-9, 60)
     p = CSRParams(n_bin = 24, n_shield_images = n_img,
                   beam_chamber_height = n_img > 0 ? 0.01 : 0.0,

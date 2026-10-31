@@ -41,3 +41,28 @@ Other changes in the AD tests (not values):
 
 Added tests (kick_test.jl, "Step length"): `ds = 0` raises an `ErrorException`; `CSRParams(; ds_step = …)` raises a
 `MethodError`.
+
+## Pruned in S2b
+
+Applied: [proposal](/Users/alexcoxe/.julia/dev/CSR.jl/.modwork/s2b/proposal.md) section 2, items 1-27 and 29. Kept by user decision: item 28 (tps_collective "Test particles in 6D, knobs as GTPSA parameters") and item 30 (ad_geometry "Hessian: hat-integrated image table"). Criterion-3 items B1-B5: no test edits. Counts are testset pass totals from `.modwork/s2b/suite_t1.log`: 1870 before, 1157 after.
+
+| File | Asserts before | Asserts after | Proposal items |
+|---|---|---|---|
+| geometry_test.jl | 97 | 73 | 1, 2 |
+| binning_test.jl | 32 | 28 | 3 |
+| wake_test.jl | 105 | 59 | 5, 6, 7, 8, 9 |
+| kernels_test.jl | 116 | 85 | 4, 10 |
+| shielding_test.jl | 112 | 104 | 11, 12 |
+| ad_test.jl | 219 | 49 | 13, 14 |
+| ad_geometry_test.jl | 193 | 132 | 15, 16, 17, 18, 19 |
+| ad_rrule_test.jl | 208 | 134 | 20, 21 |
+| tps_test.jl | 71 | 46 | 22, 23, 24 |
+| tps_collective_test.jl | 574 | 307 | 25, 26, 27 |
+| review_fixes_test.jl | 33 | 30 | 29 |
+
+Unchanged: runtests.jl (3), kick_test.jl (27), type_stability_test.jl (80).
+
+Notes:
+- Item 20 removes 73 asserts, not the 84 in the proposal. Each `test_rrule` case totals 73 in the log (62 + 11).
+- Item 14 keeps interior particles 151 and 263 (the proposal's "e.g.").
+- Item 11 and item 25 use explicit (case, bmad_compat) tuples; the removed combinations are not rectangular.

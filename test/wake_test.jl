@@ -19,7 +19,7 @@ using CSR: CSRKickPoint, CSRKick1, s_source_calc, ddz_calc_csr,
   kp = CSRKickPoint(geom, n_ele, s_kick, gamma)
 
   @testset "Source point on a circle" begin
-    for dz in (1e-6, 1e-4, 1e-3, 5e-3)
+    for dz in (1e-6, 5e-3)
       k = CSRKick1(; ix_ele_source = n_ele, dz_particles = dz)
       k, _ = s_source_calc(k, geom, kp)
       @test 1 <= k.ix_ele_source <= n_ele
@@ -53,8 +53,8 @@ using CSR: CSRKickPoint, CSRKick1, s_source_calc, ddz_calc_csr,
     geom_c = CSRGeometry(circle_lattice(rho, L_ele, n_ele)...;
                          bmad_compat = true)
     kp_c = CSRKickPoint(geom_c, n_ele, s_kick, gamma)
-    for dz in (1e-4, 1e-3, 5e-3), (g, p, bc) in ((geom, kp, false),
-        (geom_c, kp_c, true))
+    dz = 5e-3
+    for (g, p, bc) in ((geom, kp, false), (geom_c, kp_c, true))
       k = CSRKick1(; ix_ele_source = n_ele, dz_particles = dz)
       k, _ = s_source_calc(k, g, p)
       phi = 2asin(k.L / (2rho))
@@ -83,11 +83,10 @@ using CSR: CSRKickPoint, CSRKick1, s_source_calc, ddz_calc_csr,
     # the 1/γ² log term is still ~2% at this z
     @test k.I_int_csr ≈ ss_int(2e-8) rtol = 3e-2
     # Source upstream of the kick element: closed form + quadrature
-    for dz in (1e-6, 6e-5, 1e-3)
-      k = first_bin(geom, dz)
-      @test k.ix_ele_source < n_ele
-      @test k.I_int_csr ≈ ss_int(dz) rtol = 3e-3
-    end
+    dz = 6e-5
+    k = first_bin(geom, dz)
+    @test k.ix_ele_source < n_ele
+    @test k.I_int_csr ≈ ss_int(dz) rtol = 3e-3
     # Bmad's approximation (bmad_compat) tends to 2/3 of the integral
     # in steady state
     geom_c = CSRGeometry(circle_lattice(rho, L_ele, n_ele)...;
@@ -102,7 +101,8 @@ using CSR: CSRKickPoint, CSRKick1, s_source_calc, ddz_calc_csr,
     # 1/(4γ⁴) (diagnostics/first_bin_straight.jl)
     g = CSRGeometry(fill(0.5, 4), zeros(4), zeros(5, 6))
     # source in the kick element, upstream of it
-    for γ in (82.0, 1e3), dz in (1e-7, 1e-4)
+    γ = 1e3
+    for dz in (1e-7, 1e-4)
       kpg = CSRKickPoint(g, 3, 0.25, γ)
       k, _ = s_source_calc(CSRKick1(; ix_ele_source = 3,
                                     dz_particles = dz), g, kpg)
@@ -188,7 +188,7 @@ using CSR: CSRKickPoint, CSRKick1, s_source_calc, ddz_calc_csr,
     ddz(geom, kp, j,
         s) = last(CSR.ddz_calc_csr(CSR.CSRKick1(;
             ix_ele_source = j, dz_particles = 0.0), s, geom, kp))
-    for y in (0.0, 0.01), s_kick in (0.03, 0.13, 0.17, 0.29)
+    for y in (0.0, 0.01), s_kick in (0.03, 0.29)
       geom = CSRGeometry(L3, g3, c3)
       kp = CSRKickPoint(geom, 2, s_kick, 200.0; y_source = y)
       e = geom.ele
