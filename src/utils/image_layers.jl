@@ -12,6 +12,11 @@ min(image_sum_order, M)`, `2^-k Σ_{j ≥ ns-M+k} C(k, j)`, which is 1
 for `ns ≤ M - k`. The weighted sum equals the binomial average of
 the partial sums `S_{M-k} … S_M`. Always 1 with `bmad_compat`
 (Bmad's plain sum).
+
+# Arguments
+- `ns`: image layer index, `1:params.n_shield_images`.
+- `params`: `CSRParams` (`n_shield_images`, `image_sum_order`,
+  `bmad_compat` are used).
 """
 function image_layer_weight(ns, params::CSRParams)
   params.bmad_compat && return 1.0
@@ -26,6 +31,14 @@ end
 
 Finest lag scale resolved by the hat-weighted image table: 1% of y/γ,
 the width of the drift kernel's peak.
+
+# Arguments
+- `kp`: kick point of an image layer, from `CSRKickPoint` with
+  `y_source ≠ 0`; `y = kp.y_source`, `γ = kp.gamma`.
+
+# Returns
+- lag width [m], from the primal values
+  (`Beamlines.scalarize_all`).
 """
 image_u_min(kp::CSRKickPoint) = 0.01 *
     abs(Beamlines.scalarize_all(kp.y_source)) /
@@ -39,6 +52,23 @@ Absolute tolerance per lag interval for the hat-weighted image table:
 and at the nodes ±dz/2^j > u_min. The lags alone miss the peak near u
 = 0 when dz ≫ y/γ, which would give a tolerance below the kernel's
 round-off noise.
+
+# Arguments
+- `geom`: centroid geometry, from `CSRGeometry`.
+- `kp`: kick point of the image layer, from `CSRKickPoint` (`y_source
+  ≠ 0`). `csr_image_table` passes the primal `search.geom`,
+  `search.kp` when the tables carry derivatives.
+- `image`: point-sampled image kernel at the lags, e.g. the `image`
+  table of `csr_image_table` before the hat integration.
+- `dz`: bin width [m] (`bins.dz`).
+- `rtol`: relative tolerance, the `rtol` keyword of
+  `csr_image_table` (default `1e-6`); `csr_kick_reference!` passes
+  `1e-6`.
+- `u_min`: smallest node spacing [m], from `image_u_min(kp)`.
+
+# Returns
+- absolute tolerance, `rtol * dz` times the primal value
+  (`Beamlines.scalarize_all`) of the largest |K|.
 """
 function image_hat_tol(geom::CSRGeometry, kp::CSRKickPoint, image, dz,
                        rtol, u_min)

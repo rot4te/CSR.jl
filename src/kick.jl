@@ -7,6 +7,17 @@
 
 `kick[i] = coef * Σ_{k=1}^{i} I_int[k] * edge_grad[i+1-k]`. One work
 item per bin, on the backend of `kick`.
+
+# Arguments
+- `kick`: kick per bin (modified: overwritten), length `n_bin`.
+- `I_int`: bin integrals of the kick integral, from
+  `csr_wake_table` (at least `length(kick)` entries).
+- `edge_grad`: charge density gradient at the bin edges
+  (`bins.edge_dcharge_density_dz` from `csr_bin_particles`).
+- `coef`: kick coefficient, from `csr_kick_coef`.
+
+# Returns
+- `kick`.
 """
 function csr_convolve!(kick::AbstractVector, I_int::AbstractVector,
                        edge_grad::AbstractVector, coef)
@@ -26,7 +37,19 @@ end
 `kick[i] += coef * Σ_{j=1}^{n_bin} image(i - j) * charge[j]`, with
 the image kick for lag `l` stored at `image[l + n_bin + 1]`
 (`csr_image_table`). Bmad's image-charge sum (all lags, bin charge
-rather than its gradient). One work item per bin.
+rather than its gradient). One work item per bin. Errors unless
+`length(image) == 2length(kick) + 1`.
+
+# Arguments
+- `kick`: kick per bin (modified: added to), length `n_bin`.
+- `image`: image-charge table for lags `-n_bin:n_bin`, from
+  `csr_image_table`.
+- `charge`: bin charges [C] (`bins.charge` from
+  `csr_bin_particles`).
+- `coef`: kick coefficient, from `csr_kick_coef`.
+
+# Returns
+- `kick`.
 """
 function csr_image_convolve!(kick::AbstractVector,
                              image::AbstractVector,
@@ -49,7 +72,20 @@ end
 Add the kick, linearly interpolated between bin centers and multiplied
 by `pz_scale`, to `pz` of each live particle. As in Bmad's CSR-only
 branch, `z` is not rescaled for the change in velocity. One work item
-per particle, on the backend of `pz`.
+per particle, on the backend of `pz`. Errors if `pz`, `z`, `alive`
+differ in length, `kick` and `bins.z_center` differ in length, or a
+live particle lies outside the bin range (internal error).
+
+# Arguments
+- `pz`: particle `pz` coordinates (modified).
+- `z`: particle `z` coordinates [m].
+- `alive`: live-particle mask.
+- `bins`: `CSRBins` of these particles, from `csr_bin_particles`.
+- `kick`: Δpz per bin (`st.kick` from `csr_bins_kick`).
+- `pz_scale`: multiplies the applied kick.
+
+# Returns
+- `pz`.
 """
 function csr_apply_kicks!(pz::AbstractVector, z::AbstractVector,
                           alive::AbstractVector{Bool}, bins::CSRBins,
@@ -71,6 +107,19 @@ end
 
 Launch `csr_apply_kicks_kernel!` on the backend of `pz`; returns the
 number of live particles outside the table.
+
+# Arguments
+- `pz`: particle `pz` coordinates (modified for the particles
+  inside the table).
+- `z`: particle `z` coordinates [m].
+- `alive`: live-particle mask.
+- `z_center`: bin centers [m] (`bins.z_center`).
+- `kick`: Δpz per bin, same length as `z_center`.
+- `dz`: bin width [m] (`bins.dz`).
+- `pz_scale`: multiplies the applied kick.
+
+# Returns
+- `n_outside::Int` (0 for an empty `pz`).
 """
 function apply_kicks_outside!(pz, z, alive, z_center, kick, dz,
                               pz_scale)
@@ -93,6 +142,16 @@ end
 
 Number of live particles outside the kick table
 (`csr_count_outside_kernel!` on `backend`), without kicking.
+
+# Arguments
+- `backend`: KernelAbstractions backend of `z` and `alive`.
+- `z`: particle `z` coordinates [m].
+- `alive`: live-particle mask.
+- `z_center`: bin centers [m] (`bins.z_center`).
+- `dz`: bin width [m] (`bins.dz`).
+
+# Returns
+- `n_outside::Int` (0 for an empty `z`).
 """
 function count_outside(backend, z, alive, z_center, dz)
   length(z) == 0 && return 0
@@ -113,9 +172,17 @@ end
 Checks on test particles that need only their types and lengths, for a
 kick of number type `Tkick` (errors name function `fname`): equal
 lengths of `pz_t`, `z_t`, `alive_t`; a `pz_t` that can hold the kick
-(an `AbstractFloat` `pz_t` needs an `AbstractFloat` kick, `z_t` and
-`pz_scale`); and, for a non-`Real` `Tkick` (TPS), `check_descriptors`
-on `pz_t` and `z_t`.
+(an `AbstractFloat` `pz_t` needs `promote_type(Tkick, eltype(z_t),
+typeof(pz_scale))` to be an `AbstractFloat`); and, for a non-`Real`
+`Tkick` (TPS), `check_descriptors` on `pz_t` and `z_t`.
+
+# Arguments
+- `fname`: name of the calling function, for the error messages.
+- `pz_t`, `z_t`, `alive_t`: test particle `pz`, `z` [m] and
+  live-particle mask (`test_particles` of `csr_kick!`).
+- `Tkick`: number type of the kick (`csr_kick!`: promoted from its
+  inputs; `csr_apply_test_kicks!`: `eltype(kick)`).
+- `pz_scale`: as in `csr_apply_test_kicks!`.
 """
 function check_test_particles(fname, pz_t, z_t, alive_t, Tkick,
                               pz_scale)
@@ -141,7 +208,8 @@ expansion in their coordinates about the primal `z`, with the bunch's
 wake held fixed; with a TPS kick (a collective TPS bunch, geometry,
 `gamma`, ...) the expansion is also in the bunch's knobs. The test
 particles' arrays may live on another backend than the bunch (e.g. TPS
-on the CPU); `bins` and `kick` are copied there.
+on the CPU); `bins` and `kick` are copied to the CPU only when the
+test particles are on the CPU.
 
 Errors, raised before any test particle is kicked (`pz_t` is then
 unchanged):
@@ -159,6 +227,18 @@ Other element-type combinations that cannot hold the kick (e.g. a
 `Dual` `pz_t` with a TPS kick, a TPS `pz_t` with a `Dual` kick) are
 not checked and fail inside the kick kernel, possibly after part of
 `pz_t` has been kicked.
+
+# Arguments
+- `pz_t`: test particle `pz` coordinates (modified).
+- `z_t`: test particle `z` coordinates [m].
+- `alive_t`: test particle live mask.
+- `bins`: the bunch's `CSRBins` (`st.bins` from `csr_binned_kick`).
+- `kick`: the bunch's Δpz per bin (`st.kick` from
+  `csr_binned_kick`).
+- `pz_scale`: multiplies the applied kick.
+
+# Returns
+- `pz_t`.
 """
 function csr_apply_test_kicks!(pz_t::AbstractVector,
                                z_t::AbstractVector,
@@ -190,14 +270,47 @@ end
 Apply one 1D CSR kick at reference position `s_kick` [m] from the
 entrance of element `ix_ele_kick`. Errors if the array lengths differ
 or a live particle has a non-finite `z`, or unless `scalarize_all(ds)
-> 0`.
+> 0`; also if fewer than `params.n_bin` particles are live,
+`params.bmad_compat` differs from `geom.bmad_compat`, or `gamma ≤ 1`.
 
-- `pz`, `z`: particle coordinates (`pz` is modified). `pz` must hold
-  the kick's number type: with `Dual` or TPS inputs, a `pz` of that
-  element type, or use `csr_kick_pz`.
+The kick covers one step of length `ds` scaled by `L_chord / L`, as in
+Bmad.
+
+With `params.n_shield_images > 0` the image-charge kicks of the
+shielding plates are added (Bmad's image part of `csr_bin_kicks`),
+with the layer sum averaged per `params.image_sum_order`.
+`kick_per_meter` includes them; `I_csr_per_meter` and `s_source` are
+for free space only.
+
+Runs as KernelAbstractions kernels on the backend of `pz` (deposit,
+edge gradient, convolutions, kick). The wake and image tables are
+always computed on the CPU (`table_backend`; with `Float64` lags for
+a GPU backend) and copied to a GPU backend in
+`csr_float_type(backend)` (`Float32` where the backend has no
+`Float64`, e.g. Metal); scalars passed to the kernels are converted
+likewise. `csr_kick_reference!` is the serial phase 1 version.
+
+Dynamic-descriptor TPS arguments (`@vars(d, dynamic = true)`) must all
+be in GTPSA's current Descriptor (error otherwise; test particles are
+checked only when the kick is TPS, before the kick tables are built);
+static-descriptor TPS (the `@vars` default) carry their Descriptor in
+the type and are not checked.
+
+# Arguments
+- `pz`, `z`: particle coordinates (`pz` is modified; `z` [m]). `pz`
+  must hold the kick's number type: with `Dual` or TPS inputs, a
+  `pz` of that element type, or use `csr_kick_pz`.
+- `q`: macroparticle charges [C].
+- `alive`: live-particle mask.
+- `geom`: centroid geometry, from `CSRGeometry`.
+- `ix_ele_kick`: index into `geom.ele` of the kick's element.
 - `ds`: step length [m] the kick covers (`> 0`).
-- `q`: macroparticle charges [C]. `alive`: live-particle mask.
+- `s_kick`: reference position [m] of the kick, from the entrance
+  of element `ix_ele_kick`.
 - `gamma`: Lorentz factor of the reference particle at the kick point.
+- `species`: particle species (`Species`, AtomicAndPhysicalConstants;
+  mass and charge enter `csr_kick_coef`).
+- `params`: `CSRParams`.
 - `kick_factor`: `1/2` at the first and last step of an element, `1`
   otherwise.
 - `pz_scale`: multiplies the Δpz applied to the particles (not the
@@ -218,27 +331,12 @@ or a live particle has a non-finite `z`, or unless `scalarize_all(ds)
   or `pz_t` with a `Dual` kick) are not checked and fail inside the
   kick kernel, possibly after part of `pz` or `pz_t` has been kicked.
 
-The kick covers one step of length `ds` scaled by `L_chord / L`, as in
-Bmad.
+`z`, `q`, `geom`, `ds`, `s_kick`, `gamma`, `kick_factor` and
+`pz_scale` may be `Dual` or TPS (see `csr_kick_pz`).
 
-With `params.n_shield_images > 0` the image-charge kicks of the
-shielding plates are added (Bmad's image part of `csr_bin_kicks`),
-with the layer sum averaged per `params.image_sum_order`.
-`kick_per_meter` includes them; `I_csr_per_meter` and `s_source` are
-for free space only.
-
-Runs as KernelAbstractions kernels on the backend of `pz` (deposit,
-edge gradient, convolutions, kick). The wake and image tables are
-always computed on the CPU in `Float64` and copied to a GPU backend in
-`csr_float_type(backend)` (`Float32` where the backend has no
-`Float64`, e.g. Metal); scalars passed to the kernels are converted
-likewise. `csr_kick_reference!` is the serial phase 1 version.
-
-Dynamic-descriptor TPS arguments (`@vars(d, dynamic = true)`) must all
-be in GTPSA's current Descriptor (error otherwise; test particles are
-checked only when the kick is TPS, before the kick tables are built);
-static-descriptor TPS (the `@vars` default) carry their Descriptor in
-the type and are not checked.
+# Returns
+- `CSRStepResult` with the per-bin diagnostics of this kick
+  (`csr_step_result`).
 """
 function csr_kick!(pz::AbstractVector, z::AbstractVector,
                    q::AbstractVector, alive::AbstractVector{Bool},
@@ -300,6 +398,14 @@ Dynamic-descriptor TPS arguments (`@vars(d, dynamic = true)`) must all
 be in GTPSA's current Descriptor (error otherwise); static-descriptor
 TPS (the `@vars` default) carry their Descriptor in the type and are
 not checked.
+
+# Arguments
+- `pz`: particle `pz` coordinates (not modified).
+- `z`, `q`, `alive`, `geom`, `ix_ele_kick`, `ds`, `s_kick`, `gamma`,
+  `species`, `params`, `kick_factor`, `pz_scale`: as in `csr_kick!`.
+
+# Returns
+- `pz_new`: kicked copy of `pz`, element type as above.
 """
 function csr_kick_pz(pz::AbstractVector, z::AbstractVector,
                      q::AbstractVector, alive::AbstractVector{Bool},
@@ -330,7 +436,20 @@ end
 Bin the particles and compute the binned kick (all of csr_kick! except
 applying it). Returns the intermediate quantities the adjoint needs:
 bins, kick, free-space tables (I_csr, I_int, s_source), image tables
-per layer, the kick coefficient and the step length.
+per layer, the kick coefficient and the step length. Errors as
+`csr_kick!` for these arguments.
+
+# Arguments
+- `z`, `q`, `alive`, `geom`, `ix_ele_kick`, `ds`, `s_kick`, `gamma`,
+  `species`, `params`, `kick_factor`: as in `csr_kick!`.
+
+# Returns
+- named tuple `(; bins, kick, I_csr, I_int, s_source, images, coef,
+  ds_kick)`: `bins` from `csr_bin_particles`; `kick` the Δpz per
+  bin; `I_csr`, `I_int`, `s_source` from `csr_wake_table`; `images`
+  a vector of one `csr_image_table` `image` per layer; `coef` from
+  `csr_kick_coef`; `ds_kick = kick_factor * ds * L_chord / L`.
+  Arrays on the backend of `z`.
 """
 function csr_binned_kick(z::AbstractVector, q::AbstractVector,
                          alive::AbstractVector{Bool},
@@ -357,6 +476,13 @@ end
 The part of `csr_binned_kick` after binning: kick tables, convolutions
 and kick per bin, for given `bins` (arrays on `backend`). Returns the
 same named tuple.
+
+# Arguments
+- `bins`: `CSRBins`, from `csr_bin_particles`.
+- `backend`: KernelAbstractions backend of `bins` (the particles'
+  `get_backend(z)`).
+- `geom`, `ix_ele_kick`, `ds`, `s_kick`, `gamma`, `species`,
+  `params`, `kick_factor`: as in `csr_kick!`.
 """
 function csr_bins_kick(bins::CSRBins, backend, geom::CSRGeometry,
                        ix_ele_kick::Integer, ds, s_kick, gamma,
@@ -408,6 +534,13 @@ end
     csr_step_result(st) -> CSRStepResult
 
 Per-meter diagnostics from the intermediates of `csr_binned_kick`.
+
+# Arguments
+- `st`: named tuple from `csr_binned_kick` or `csr_bins_kick`.
+
+# Returns
+- `CSRStepResult` (`kick` and `I_csr` divided by `st.ds_kick`,
+  `charge` by `st.bins.dz`).
 """
 csr_step_result(st) = CSRStepResult(st.bins.z_center,
                                     st.bins.charge ./ st.bins.dz,

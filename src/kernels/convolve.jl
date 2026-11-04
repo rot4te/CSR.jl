@@ -7,7 +7,15 @@
     csr_convolve_kernel!(kick, I_int, edge_grad, coef)
 
 One work item per bin `i`: `kick[i] = coef Σ_{k=1}^{i} I_int[k]
-edge_grad[i+1-k]` (causal sum).
+edge_grad[i+1-k]` (causal sum). Launched by `csr_convolve!`.
+
+# Arguments
+- `kick`: kick per bin (overwritten), length `n_bin`.
+- `I_int`: integrated kick integral per bin, `I_int` of
+  `csr_wake_table`.
+- `edge_grad`: charge-density gradient at the left bin edges,
+  `bins.edge_dcharge_density_dz` (`CSRBins`).
+- `coef`: kick coefficient, from `csr_kick_coef`.
 """
 @kernel function csr_convolve_kernel!(kick, @Const(I_int),
                                       @Const(edge_grad), coef)
@@ -24,6 +32,15 @@ end
 
 One work item per bin `i`: `kick[i] += coef Σ_j image(i - j)
 charge[j]`, lags `-n_bin:n_bin` stored at `image[l + n_bin + 1]`.
+Launched by `csr_image_convolve!`.
+
+# Arguments
+- `kick`: kick per bin (modified: the image kick is added),
+  `n_bin = length(kick)`.
+- `image`: image-charge table of one layer, length `2n_bin + 1`,
+  from `csr_image_table`.
+- `charge`: bin charges [C], `bins.charge` (`CSRBins`).
+- `coef`: kick coefficient, from `csr_kick_coef`.
 """
 @kernel function csr_image_convolve_kernel!(kick, @Const(image),
     @Const(charge), coef)

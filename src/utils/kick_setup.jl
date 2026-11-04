@@ -13,6 +13,21 @@ m_e`). `bmad_compat = true`: Bmad's `ds * r_c / (rel_mass * e * |q| *
 γ)` with `r_c = r_e q² / rel_mass`, i.e. `β²/rel_mass` times the
 default (docs, "Physics decisions", V2). Errors unless `gamma > 1`
 (primal value; NaN fails).
+
+# Arguments
+- `species`: particle species, an AtomicAndPhysicalConstants
+  `Species` (e.g. `Species("electron")`); errors if its charge is
+  zero.
+- `gamma`: Lorentz factor of the reference particle.
+- `ds`: step length [m]; the kick functions (`csr_bins_kick`,
+  `csr_kick_reference!`) pass their `ds` scaled by `L_chord / L` of
+  the kick element.
+- `bmad_compat`: callers pass `params.bmad_compat` (`CSRParams`).
+
+Plain, `Dual` or TPS `gamma` and `ds` (see `csr_kick_pz`).
+
+# Returns
+- the prefactor (a number).
 """
 function csr_kick_coef(species::Species, gamma, ds;
                        bmad_compat::Bool = false)
@@ -40,6 +55,12 @@ cavity").
 Bmad weighted the two ends the other way round until bmad-ecosystem PR
 #2199 (2026-10-06; docs, "Physics decisions", D21); CSR.jl follows the
 fixed version in both modes.
+
+# Arguments
+- `E_start`, `E_end`: reference total energies at the element
+  entrance and exit (user input; the result is in their unit).
+- `s`: position from the element entrance, in the unit of `L`.
+- `L`: element length (nonzero).
 """
 function csr_ref_energy(E_start, E_end, s, L)
   f1 = s / L

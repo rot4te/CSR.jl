@@ -13,6 +13,26 @@ fields and `s_chord_source` set, and the separation. `dmid` (if not
 `nothing`) is added to the path-length excess of the elements strictly
 between the source and kick elements (`add_mid`; used by
 `csr_kick_param_adjoint`).
+
+# Arguments
+- `k`: work struct (`CSRKick1`) with the source element
+  `k.ix_ele_source` (in `1:length(geom.ele)`) and the target lag
+  `k.dz_particles` [m]. From `CSRKick1` or a previous source-point
+  call.
+- `s_chord_source`: source position [m] along the chord of element
+  `k.ix_ele_source`.
+- `geom`: centroid geometry, from `CSRGeometry`.
+- `kp`: kick point, from `CSRKickPoint` (uses `kp.floor_k`,
+  `kp.y_source`, `kp.s_chord_kick`, `kp.ix_ele_kick`, `kp.gamma2`,
+  `kp.beta`).
+- `dmid = nothing`: `nothing` or an offset [m] of the middle-element
+  path-length sum (`mid_root`/`mid_eval` of the `dmid` of
+  `s_source_eval`).
+
+# Returns
+- `(k, ddz)`: `k` with `L_vec`, `L`, `theta_L`, `theta_sl`,
+  `theta_lk`, `dL`, `s_chord_source` and `floor_s` set, and the
+  separation minus `k.dz_particles` [m].
 """
 @inline function ddz_calc_csr(k::CSRKick1, s_chord_source,
                               geom::CSRGeometry, kp::CSRKickPoint,
@@ -141,6 +161,16 @@ end
 L_chord, spline, modulo2(theta_L - theta_chord, π/2))` of the
 elements `r` (strictly between source and kick element in
 `ddz_calc_csr`).
+
+# Arguments
+- `acc`: path length [m] accumulated so far.
+- `geom`: centroid geometry, from `CSRGeometry`.
+- `r`: range of element indices into `geom.ele`.
+- `theta_L`: floor angle [rad] of the source-to-kick vector
+  (`theta_L` in `ddz_calc_csr`).
+
+# Returns
+- `acc` plus the elements' path-length excesses [m].
 """
 @inline function middle_excess(acc, geom::CSRGeometry, r, theta_L)
   for i in r
@@ -157,6 +187,10 @@ end
 
 `x + dmid`, or `x` for `dmid = nothing`: the offset of the
 middle-element path-length sums (`ddz_calc_csr`).
+
+# Arguments
+- `x`: path-length sum [m].
+- `dmid`: `nothing` or the offset [m] (`ddz_calc_csr`'s `dmid`).
 """
 @inline add_mid(x, ::Nothing) = x
 @inline add_mid(x, dmid) = x + dmid
@@ -167,6 +201,14 @@ middle-element path-length sums (`ddz_calc_csr`).
 `dmid` for the root's implicit derivative and for the evaluated source
 in `root_source`: a pair `(root, eval)` is split, anything else used
 for both (the other source branches use `mid_eval`).
+
+# Arguments
+- `dmid`: `nothing`, an offset [m], or a `Tuple` `(root, eval)` of
+  offsets (`node_adjoint!` passes one to `s_source_eval`).
+
+# Returns
+- `mid_root`: `dmid[1]` for a `Tuple`, else `dmid`; `mid_eval`:
+  `dmid[2]` for a `Tuple`, else `dmid`.
 """
 @inline mid_root(dmid) = dmid
 @inline mid_root(dmid::Tuple) = dmid[1]
@@ -178,11 +220,17 @@ for both (the other source branches use `mid_eval`).
 
 Where `s_source_walk` placed a source, from primal decisions only, so
 that `s_source_eval` can evaluate the same source in another number
-type without searching. `code`: `SRC_UPSTREAM`/`SRC_DOWNSTREAM`
-(infinite drifts), `SRC_ROOT` (root of `ddz_calc_csr` in element `ix`,
-zbrent's root `s_root` and last evaluation `s_last`),
-`SRC_END`/`SRC_START` (Bmad's round-off branches), `SRC_BEYOND`
-(source beyond the kick element, ignored).
+type without searching.
+
+# Fields
+- `code`: `SRC_UPSTREAM`/`SRC_DOWNSTREAM` (infinite drifts),
+  `SRC_ROOT` (root of `ddz_calc_csr` in element `ix`),
+  `SRC_END`/`SRC_START` (Bmad's round-off branches), `SRC_BEYOND`
+  (source beyond the kick element, ignored).
+- `ix`: source element index into `geom.ele` (0 upstream,
+  `length(geom.ele) + 1` downstream of the lattice).
+- `s_root`: zbrent's root [m] along the chord (`SRC_ROOT`; else 0).
+- `s_last`: zbrent's last evaluation [m] (`SRC_ROOT`; else 0).
 """
 struct SourceOutcome
   code::Int
@@ -212,6 +260,21 @@ kick element is searched for downstream, and past the lattice end on
 an infinite drift (`k.ix_ele_source = length(geom.ele) + 1`, returning
 the distance past the end). Bmad does not do this; `geom.bmad_compat`
 restores Bmad's behaviour.
+
+# Arguments
+- `k`: work struct (`CSRKick1`) with the start element
+  `k.ix_ele_source` and the lag `k.dz_particles` [m]. From
+  `CSRKick1(geom, kp; dz_particles)`, or a previous call's `k` with
+  a new lag (`with_fields`) for a warm start.
+- `geom`: centroid geometry, from `CSRGeometry`.
+- `kp`: kick point, from `CSRKickPoint`.
+
+# Returns
+- `(k, s_chord_source)`: `k` describing the source (as set by
+  `ddz_calc_csr`, `k.ix_ele_source` its element) and the source
+  position [m] along that element's chord (on the drifts: from the
+  lattice start or end; for Bmad's round-off branches, the residual
+  of `source_at`; 0 for a source beyond the kick element).
 """
 @inline function s_source_calc(k::CSRKick1, geom::CSRGeometry,
                                kp::CSRKickPoint)
@@ -227,6 +290,10 @@ point, in which `s_source_calc(k, geom, kp, search)` searches the
 source before evaluating it once in the number types of `geom` and
 `kp` (e.g. `Dual`s): the search's evaluations are not differentiated.
 Built by `scalarize_all_search`.
+
+# Fields
+- `geom`: primal `CSRGeometry` (`Beamlines.scalarize_all(geom)`).
+- `kp`: primal `CSRKickPoint` (`Beamlines.scalarize_all(kp)`).
 """
 struct ScalarizeAllSearch{G<:CSRGeometry,K<:CSRKickPoint}
   geom::G
@@ -240,6 +307,11 @@ end
 Beamlines.scalarize_all(kp))` for tables in number type `T <: Dual` or
 a non-`Real` `T` (GTPSA TPS), else `nothing` (search and evaluate in
 the same number type).
+
+# Arguments
+- `geom`: centroid geometry, from `CSRGeometry`.
+- `kp`: kick point, from `CSRKickPoint`.
+- `T`: number type of the tables, from `table_type`.
 """
 scalarize_all_search(geom::CSRGeometry, kp::CSRKickPoint,
                      ::Type{T}) where {T} =
@@ -256,6 +328,15 @@ scalarize_all_search(geom::CSRGeometry, kp::CSRKickPoint,
 (`s_source_walk`, from element `k.ix_ele_source`) and evaluated in
 `geom` and `kp` (`s_source_eval`); same result, as the search decides
 on primal values only.
+
+# Arguments
+- `k`, `geom`, `kp`: as in `s_source_calc(k, geom, kp)`.
+- `search`: `nothing` or a `ScalarizeAllSearch` of primal copies of
+  `geom` and `kp` (from `scalarize_all_search`; `first_bin_adjoint!`
+  builds one directly).
+
+# Returns
+- `(k, s_chord_source)` as `s_source_calc(k, geom, kp)`.
 """
 @inline s_source_calc(k::CSRKick1, geom::CSRGeometry,
                       kp::CSRKickPoint, ::Nothing) = s_source_calc(k,
@@ -279,6 +360,15 @@ end
 (`ForwardDiff` with one partial); `nothing` without one
 (`root_tangent` then uses `root_slope`). The middle-element offset
 `dmid` is constant in `s` and left out.
+
+# Arguments
+- `search`: `nothing` or a `ScalarizeAllSearch`.
+- `k`: work struct (`CSRKick1`); only `k.ix_ele_source` and the
+  primal `k.dz_particles` are used.
+- `s`: chord position [m] (its primal value is used).
+
+# Returns
+- primal `∂ddz/∂s`, or `nothing` for `search = nothing`.
 """
 scalarize_all_slope(::Nothing, k, s) = nothing
 function scalarize_all_slope(search::ScalarizeAllSearch, k::CSRKick1,
@@ -295,6 +385,19 @@ end
 
 Source on the infinite drift upstream of the lattice (closed-form
 root; `ds_source < 0` from the lattice start).
+
+# Arguments
+- `k`: work struct (`CSRKick1`) with the lag `k.dz_particles` [m]
+  (`k.ix_ele_source` is not read or changed; callers have it 0).
+- `geom`: centroid geometry, from `CSRGeometry` (uses `geom.start`).
+- `kp`: kick point, from `CSRKickPoint`.
+- `dmid`: `nothing` or an offset [m] added to the path length from
+  the lattice start to the kick point (`add_mid`).
+
+# Returns
+- `(k, ds_source)`: `k` with the source geometry fields and
+  `s_chord_source = ds_source` set, and the source position [m]
+  from the lattice start along `geom.start.theta`.
 """
 function upstream_drift_source(k::CSRKick1, geom::CSRGeometry,
                                kp::CSRKickPoint, dmid)
@@ -341,6 +444,19 @@ Source on the infinite drift past the lattice end along the centroid
 exit direction (image charges; not in Bmad), `t ≥ 0` the distance
 past the end. Exact retardation `Ls - βL = dz` with `Ls = -(Lke +
 t)`.
+
+# Arguments
+- `k`: work struct (`CSRKick1`) with the lag `k.dz_particles` [m]
+  (`k.ix_ele_source` is not read or changed).
+- `geom`: centroid geometry, from `CSRGeometry` (uses
+  `geom.ele[end].floor1`).
+- `kp`: kick point, from `CSRKickPoint`.
+- `dmid`: `nothing` or an offset [m] added to `Lke`, the path length
+  from the kick point to the lattice end (`add_mid`).
+
+# Returns
+- `(k, t)`: `k` with the source geometry fields and
+  `s_chord_source = t` set, and `t` [m].
 """
 function downstream_drift_source(k::CSRKick1, geom::CSRGeometry,
                                  kp::CSRKickPoint, dmid)
@@ -385,6 +501,15 @@ end
 Bmad's round-off branches: `k` from `ddz_calc_csr` at chord position
 `s`, with `s_chord_source` set to the residual `r` there (Bmad returns
 the ddz value, not a position; csr_and_space_charge_mod.f90:952).
+
+# Arguments
+- `k`, `geom`, `kp`, `dmid`: as in `ddz_calc_csr`.
+- `s`: chord position [m] in element `k.ix_ele_source` (callers
+  pass 0 or its `L_chord`).
+
+# Returns
+- `(k, r)`: `k` with `s_chord_source = r`, and the residual `r` [m]
+  of `ddz_calc_csr` at `s`.
 """
 @inline function source_at(k::CSRKick1, s, geom::CSRGeometry,
                            kp::CSRKickPoint, dmid)
@@ -408,6 +533,23 @@ the root is an endpoint with ddz exactly 0 (zbrent then returns
 without evaluating there). CSR.jl evaluates at the root unless compat
 (docs, "Physics decisions", V7). With derivatives, `k` is evaluated
 again with the root's derivatives attached.
+
+# Arguments
+- `k`: work struct (`CSRKick1`) with the source element
+  `k.ix_ele_source` and the lag `k.dz_particles` [m].
+- `s_root`: primal root [m] along the element's chord, from `zbrent`
+  (`s_source_walk`) or `SourceOutcome`'s `s_root`.
+- `s_last`: zbrent's last evaluation [m] (`zbrent`'s `x_last`, or
+  `SourceOutcome`'s `s_last`).
+- `geom`, `kp`: as in `ddz_calc_csr`.
+- `dmid`: as in `s_source_eval` (`mid_root(dmid)` for the root,
+  `mid_eval(dmid)` for the evaluated source).
+- `search = nothing`: `nothing` or a `ScalarizeAllSearch`.
+
+# Returns
+- `(k, s_source)`: `k` describing the source with
+  `s_chord_source = s_source`, and the root [m] with its derivatives
+  (`root_tangent`).
 """
 @inline function root_source(k::CSRKick1, s_root, s_last,
                              geom::CSRGeometry, kp::CSRKickPoint,
@@ -432,6 +574,13 @@ end
 
 `s_source_calc`, also returning where the source was placed
 (`SourceOutcome`). All branch decisions use primal values.
+
+# Arguments
+- `k`, `geom`, `kp`: as in `s_source_calc(k, geom, kp)`.
+
+# Returns
+- `(k, s_chord_source, outcome)`: as `s_source_calc`, plus the
+  `SourceOutcome` for `s_source_eval`.
 """
 function s_source_walk(k::CSRKick1, geom::CSRGeometry,
                        kp::CSRKickPoint)
@@ -536,6 +685,19 @@ searching for lag `k.dz_particles` in the number types of `k`, `geom`
 and `kp` (e.g. local `Dual`s in `csr_kick_param_adjoint`, with the
 search done in `Float64`). `dmid` as in `ddz_calc_csr`, or a pair (see
 `mid_root`); `search` as in `root_source`.
+
+# Arguments
+- `o`: `SourceOutcome`, from `s_source_walk` (in primal values).
+- `k`: work struct (`CSRKick1`) with the lag `k.dz_particles` [m];
+  `k.ix_ele_source` is replaced by `o.ix`.
+- `geom`: centroid geometry, from `CSRGeometry`.
+- `kp`: kick point, from `CSRKickPoint`.
+- `dmid = nothing`: `nothing`, an offset [m], or a `Tuple`
+  `(root, eval)` of offsets.
+- `search = nothing`: `nothing` or a `ScalarizeAllSearch`.
+
+# Returns
+- `(k, s_chord_source)`: as `s_source_calc`.
 """
 function s_source_eval(o::SourceOutcome, k::CSRKick1,
                        geom::CSRGeometry, kp::CSRKickPoint,
@@ -562,6 +724,14 @@ end
 Zeroed work struct for the number types of `k` and `s`, with `k`'s
 source element and lag (for evaluating `ddz_calc_csr` at an `s` of
 another number type, e.g. a nested `Dual` in `root_tangent`).
+
+# Arguments
+- `k`: work struct (`CSRKick1`) whose `ix_ele_source` and
+  `dz_particles` are copied.
+- `s`: chord position whose type is promoted with `k`'s number type.
+
+# Returns
+- `CSRKick1{promote_type(number_type(k), typeof(s))}`.
 """
 csr_kick1_like(k::CSRKick1, s) =
   CSRKick1{promote_type(number_type(k), typeof(s))}(;

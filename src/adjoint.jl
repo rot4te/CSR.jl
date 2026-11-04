@@ -12,6 +12,19 @@ csr_binned_kick(...)`; `kbar` is the cotangent of the kick per bin
 tables are constants. Dead particles get zero `z` and `q` cotangents.
 Runs as kernels on the backend of `z`; the kick-cotangent scatter uses
 atomic adds for `Float32`/`Float64` and a serial CPU loop otherwise.
+
+# Arguments
+- `ybar`: cotangent of `csr_kick_pz`'s output `pz_new` (one entry
+  per particle).
+- `z`, `q`, `alive`: the particles of the forward call.
+- `st`: named tuple from `csr_binned_kick` for the forward call.
+- `params`: the forward call's `CSRParams` (uses
+  `particle_bin_span`).
+- `pz_scale`: the forward call's `pz_scale`.
+
+# Returns
+- `pzbar` (a copy of `ybar`), `zbar`, `qbar` (one entry per
+  particle) and `kbar` (one entry per bin).
 """
 function csr_kick_adjoint(ybar::AbstractVector, z::AbstractVector,
                           q::AbstractVector,

@@ -14,6 +14,17 @@ element ends. `bmad_compat = true`: Bmad's formula `|ρ| atan(s_ref
 cos dθ, |ρ + x + s_ref sin dθ|)`, which on an on-axis bend gives
 `ρ atan(s/ρ)` instead of the chord coordinate (docs, "Physics
 decisions", V3).
+
+# Arguments
+- `s_ref`: reference position [m] from the entrance of the element
+  (e.g. `s_kick` in `CSRKickPoint`). Plain, `Dual` or TPS; the
+  result carries its derivatives and those of `e`.
+- `e`: the element's centroid geometry, `geom.ele[i]` of a
+  `CSRGeometry`.
+- `bmad_compat`: `CSRKickPoint` passes `geom.bmad_compat`.
+
+# Returns
+- chord coordinate [m] in element `e` at `s_ref`.
 """
 function s_ref_to_s_chord(s_ref, e::CSRElementInfo;
                           bmad_compat::Bool = false)
@@ -60,6 +71,15 @@ end
 Distance along the reference direction of motion at `ref` from `ref`
 to the centroid spline point at chord coordinate `u` (zero where the
 spline crosses the reference normal plane).
+
+# Arguments
+- `u`: chord coordinate [m] in element `e`.
+- `e`: the element's centroid geometry, `geom.ele[i]`.
+- `ref`: reference floor position, e.g. `advance_floor(e.ref_floor0,
+  s_ref, e.g)` at reference position `s_ref` in the element.
+
+# Returns
+- signed distance [m].
 """
 function chord_normal_offset(u, e::CSRElementInfo, ref::FloorPosition)
   x = spline_val(e.spline, u)
@@ -69,7 +89,17 @@ function chord_normal_offset(u, e::CSRElementInfo, ref::FloorPosition)
 end
 
 """Reference s of a source at `s_chord` in element `ix_ele_source` (0:
-upstream drift, `n + 1`: downstream drift)."""
+upstream drift, `n + 1`: downstream drift).
+
+# Arguments
+- `geom`: centroid geometry, from `CSRGeometry`; `n =
+  length(geom.ele)`.
+- `ix_ele_source`: source element, `k.ix_ele_source` of the
+  `CSRKick1` from `s_source_calc`.
+- `s_chord`: source position [m] from `s_source_calc`: along the
+  element's chord, or on a drift the distance from the lattice start
+  (negative) or past the lattice end.
+"""
 function source_s(geom::CSRGeometry, ix_ele_source, s_chord)
   ix_ele_source == 0 && return s_chord
   if ix_ele_source > length(geom.ele)

@@ -14,6 +14,24 @@ coordinates `[x px y py z pz]`: row 1 at the start of the lattice, row
 
 Dynamic-descriptor TPS arguments must be in GTPSA's current
 Descriptor.
+
+# Arguments
+- `L`: element (reference) lengths [m], one per element (user
+  input). `Dual` or TPS allowed.
+- `g`: reference curvatures [1/m] (0 for straight elements), same
+  length as `L`. `Dual` or TPS allowed.
+- `centroid`: `(n+1) × 6` centroid matrix (above); only the `x`,
+  `px` and `pz` columns are used. `Dual` or TPS allowed.
+- `ref_start`: reference `FloorPosition` at the start of the
+  lattice; the reference exits are `planar_survey(L, g; start =
+  ref_start)`.
+- `bmad_compat`: stored as `geom.bmad_compat`, which selects the
+  Bmad forms of the geometry-dependent steps (e.g. `dL_s` by
+  `path_excess`, `s_ref_to_s_chord`; see `CSRParams`). Must equal
+  `params.bmad_compat` in `csr_kick!`.
+
+# Returns
+- `CSRGeometry{T}`, `T` promoted from all arguments (as a float).
 """
 function CSRGeometry(L::AbstractVector, g::AbstractVector,
                      centroid::AbstractMatrix;
@@ -30,7 +48,19 @@ end
 
 As above, with the reference floor positions `ref_exit[i]` at the exit
 of each element given (e.g. for lattices with patches; see
-`advance_floor`, `advance_floor_patch`).
+`advance_floor`, `advance_floor_patch`). Errors if `L`, `g` and
+`ref_exit` differ in length, `centroid` is not `(n+1) × 6`, or the
+centroid direction in an element is inconsistent (along the chord
+at one end, against it at the other).
+
+# Arguments
+- `L`, `g`, `centroid`, `ref_start`, `bmad_compat`: as above.
+- `ref_exit`: vector of reference `FloorPosition`s at the exit of
+  each element, from `planar_survey`, `advance_floor` or
+  `advance_floor_patch`. `Dual` or TPS allowed.
+
+# Returns
+- `CSRGeometry{T}`, `T` promoted from all arguments (as a float).
 """
 function CSRGeometry(L::AbstractVector, g::AbstractVector,
                      ref_exit::AbstractVector{<:FloorPosition},
@@ -115,6 +145,22 @@ Lorentz factor `gamma`. `y_source` is the height of the source
 particle (image charges; 0 in free space), `kick_factor` multiplies
 every kick computed with this point (half steps, image sign and
 weight). Errors unless `gamma > 1` (primal value; NaN fails).
+
+# Arguments
+- `geom`: centroid geometry, from `CSRGeometry`.
+- `ix_ele_kick`: index into `geom.ele` of the kick's element.
+- `s_kick`: reference position [m] of the kick point from the
+  entrance of element `ix_ele_kick`.
+- `gamma`: Lorentz factor of the reference particle (`> 1`).
+- `y_source`: source height [m]; `csr_bins_kick` passes
+  `ns * params.beam_chamber_height` for image layer `ns`.
+- `kick_factor`: kick multiplier (above).
+
+`s_kick`, `gamma`, `y_source`, `kick_factor` and `geom` may be
+`Dual` or TPS.
+
+# Returns
+- `CSRKickPoint{T}`, `T` promoted from the arguments.
 """
 function CSRKickPoint(geom::CSRGeometry, ix_ele_kick, s_kick, gamma;
                       y_source = 0.0, kick_factor = 1.0)
@@ -142,6 +188,15 @@ end
 
 Copy with the primal value of every number (`Float64` from `Dual`s). A
 `CSRGeometry{Float64}` is returned as is.
+
+# Arguments
+- `f`: a `FloorPosition`.
+- `e`: a `CSRElementInfo` (e.g. `geom.ele[i]`).
+- `geom`: a `CSRGeometry`, from `CSRGeometry`.
+- `kp`: a `CSRKickPoint`, from `CSRKickPoint(geom, ...)`.
+
+# Returns
+- an object of the same struct type with primal numbers.
 """
 Beamlines.scalarize_all(f::FloorPosition) =
   FloorPosition(Beamlines.scalarize_all.(f.r),

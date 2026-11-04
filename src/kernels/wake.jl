@@ -2,7 +2,18 @@
 # wake-table kernels (Bmad I_csr).
 
 """Kick integrand for the source geometry stored in `k` (Bmad I_csr
-formula)."""
+formula).
+
+# Arguments
+- `k`: work struct (`CSRKick1`) describing the source (uses
+  `dz_particles` (nonzero), `dL`, `L`, `theta_sl`, `theta_lk`), from
+  `s_source_calc`.
+- `kp`: kick point, from `CSRKickPoint` (uses `kp.gamma2` and
+  `kp.kick_factor`).
+
+# Returns
+- the integrand value, including `kp.kick_factor`.
+"""
 function I_csr_value(k::CSRKick1, kp::CSRKickPoint)
   z = k.dz_particles
   return -kp.kick_factor * 2 * (k.dL / z + kp.gamma2 * k.theta_sl *
@@ -23,6 +34,22 @@ quadrature (`I_csr_integral`; Bmad's approximation with
 `geom.bmad_compat`). For `i_bin > 1` it is a trapezoid with the
 previous bin's `I_csr_prev`. `search` as in `s_source_calc` (for the
 quadrature's sources).
+
+# Arguments
+- `k`: work struct (`CSRKick1`) describing the source for the lag
+  `k.dz_particles` [m], from `s_source_calc`.
+- `i_bin`: bin (lag) index, `≥ 1`.
+- `dz_slice`: bin width [m] (used for `i_bin > 1`).
+- `geom`: centroid geometry, from `CSRGeometry`.
+- `kp`: kick point, from `CSRKickPoint`.
+- `I_csr_prev`: `I_csr` of bin `i_bin - 1` (used for `i_bin > 1`;
+  `csr_wake_kernel!` passes 0, its `I_int` for `i > 1` being
+  overwritten later).
+- `search = nothing`: `nothing` or a `ScalarizeAllSearch`.
+
+# Returns
+- `k` with `I_csr` and `I_int_csr` set (both 0 for
+  `k.dz_particles ≤ 0`).
 """
 function I_csr_calc(k::CSRKick1, i_bin, dz_slice, geom::CSRGeometry,
                     kp::CSRKickPoint, I_csr_prev, search = nothing)
@@ -111,6 +138,20 @@ u^(1/3)`, which makes the near-field `u^(-1/3)` behaviour smooth. Each
 node needs its own source-point solve, started in the kick element
 (`search` as in `s_source_calc`). `k0`: the source at `z0`, if known
 (then not searched).
+
+# Arguments
+- `z0`, `z1`: lag bounds [m].
+- `geom`: centroid geometry, from `CSRGeometry`.
+- `kp`: kick point, from `CSRKickPoint`.
+- `search = nothing`: `nothing` or a `ScalarizeAllSearch`.
+- `n = 16`: number of Simpson intervals in `t` (must be even; not
+  checked).
+- `k0 = nothing`: `nothing` or a `CSRKick1` describing the source at
+  `z0` (`I_csr_calc` passes the source at the kick element's
+  entrance, from `ddz_calc_csr`).
+
+# Returns
+- the integral (a number).
 """
 function I_csr_integral(z0, z1, geom::CSRGeometry, kp::CSRKickPoint,
                         search = nothing; n = 16, k0 = nothing)
@@ -138,6 +179,20 @@ previous one ended (from `k`; nodes in increasing order). Searches end
 in the same element whatever the start element, so the result does not
 depend on the warm start. Returns the work struct after the last node,
 for the next warm start. `search` as in `s_source_calc`.
+
+# Arguments
+- `k`: work struct (`CSRKick1`) whose `ix_ele_source` starts the
+  first search, from `CSRKick1` or a previous call.
+- `z0`, `z1`: lag bounds [m].
+- `geom`: centroid geometry, from `CSRGeometry`.
+- `kp`: kick point, from `CSRKickPoint`.
+- `n`: number of Simpson intervals in `t = u^(1/3)` (must be even;
+  not checked; callers: `N_BIN_QUAD`).
+- `search = nothing`: `nothing` or a `ScalarizeAllSearch`.
+
+# Returns
+- `(k, integral)`: the work struct after the last node, and
+  `∫ I_csr(u) du` from `z0` to `z1`.
 """
 function I_csr_quadrature(k::CSRKick1, z0, z1, geom::CSRGeometry,
                           kp::CSRKickPoint, n, search = nothing)
@@ -163,7 +218,22 @@ i*dz). Within a block each source search starts where the previous
 lag's ended (as in Bmad); the first lag of a block starts in the kick
 element. Searches end in the same element, and call zbrent on the same
 bracket, whatever the start element. For i > 1, I_int is overwritten
-by csr_trapezoid_kernel!. `search` as in `s_source_calc`.
+in `csr_wake_table` by `csr_trapezoid_kernel!` or, with
+`all_bin_quadrature`, by `csr_bin_quadrature_kernel!`. `search` as in
+`s_source_calc`.
+
+# Arguments
+- `I_csr`, `I_int`, `s_source`: vectors of length `n_bin`
+  (modified), allocated by `csr_wake_table`: per lag `i`, `k.I_csr`
+  and `k.I_int_csr` of `I_csr_calc`, and the reference s [m] of the
+  source (`source_s`).
+- `geom`: centroid geometry, from `CSRGeometry`.
+- `kp`: kick point, from `CSRKickPoint`.
+- `dz`: bin width [m].
+- `n_lag`: lags per work item (`csr_wake_table`: `cld(n_bin,
+  n_block)`).
+- `search`: `nothing` or a `ScalarizeAllSearch`, from
+  `scalarize_all_search`.
 """
 @kernel function csr_wake_kernel!(I_csr, I_int, s_source, geom, kp,
                                   dz, n_lag, search)
@@ -187,6 +257,12 @@ end
 Trapezoid bin integrals `I_int[i] = (I_csr[i] + I_csr[i-1]) dz / 2`
 for bins `i ≥ 2` (Bmad; `all_bin_quadrature = false` or
 `bmad_compat`). One work item per bin.
+
+# Arguments
+- `I_int`: bin integrals (modified for `i ≥ 2`), from
+  `csr_wake_kernel!`.
+- `I_csr`: kick integrals per lag, from `csr_wake_kernel!`.
+- `dz`: bin width [m].
 """
 @kernel function csr_trapezoid_kernel!(I_int, @Const(I_csr), dz)
   j = @index(Global)
@@ -202,6 +278,18 @@ Bins i ≥ 2 by quadrature: one work item per block of `n_lag`
 consecutive bins (bin i is block element i - 1); the source search is
 warm-started from node to node and bin to bin within a block. `search`
 as in `s_source_calc`.
+
+# Arguments
+- `I_int`: bin integrals (modified for `i ≥ 2`), from
+  `csr_wake_kernel!`.
+- `geom`: centroid geometry, from `CSRGeometry`.
+- `kp`: kick point, from `CSRKickPoint`.
+- `dz`: bin width [m]; bin `i` spans lags `(i - 1) dz` to `i dz`.
+- `n_lag`: bins per work item.
+- `n_quad`: Simpson intervals per bin (`csr_wake_table`:
+  `N_BIN_QUAD`), passed to `I_csr_quadrature`.
+- `search`: `nothing` or a `ScalarizeAllSearch`, from
+  `scalarize_all_search`.
 """
 @kernel function csr_bin_quadrature_kernel!(I_int, geom, kp, dz,
     n_lag, n_quad, search)

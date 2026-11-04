@@ -8,6 +8,13 @@
     csr_bin_particles_reference(z, q, alive, params)
 
 Serial reference of `csr_bin_particles`.
+
+# Arguments
+- `z`, `q`, `alive`, `params`: as in `csr_bin_particles`.
+
+# Returns
+- `CSRBins` with CPU `Vector{Float64}` `charge`, `n_particle` and
+  `edge_dcharge_density_dz`.
 """
 function csr_bin_particles_reference(z::AbstractVector,
                                      q::AbstractVector,
@@ -61,6 +68,13 @@ end
     csr_convolve_reference!(kick, I_int, edge_grad, coef)
 
 Serial reference of `csr_convolve!`.
+
+# Arguments
+- `kick` (modified), `I_int`, `edge_grad`, `coef`: as in
+  `csr_convolve!`.
+
+# Returns
+- `kick`.
 """
 function csr_convolve_reference!(kick::AbstractVector,
                                  I_int::AbstractVector,
@@ -79,7 +93,14 @@ end
 """
     csr_apply_kicks_reference!(pz, z, alive, bins, kick)
 
-Serial reference of `csr_apply_kicks!`.
+Serial reference of `csr_apply_kicks!` (without `pz_scale`).
+
+# Arguments
+- `pz` (modified), `z`, `alive`, `bins`, `kick`: as in
+  `csr_apply_kicks!`.
+
+# Returns
+- `pz`.
 """
 function csr_apply_kicks_reference!(pz::AbstractVector,
                                     z::AbstractVector,
@@ -111,6 +132,14 @@ end
 Serial reference of `csr_kick!` (free space and image charges, same
 layer weights), without `pz_scale`. One warm-started source walk over
 the lags, as Bmad.
+
+# Arguments
+- `pz` (modified), `z`, `q`, `alive`, `geom`, `ix_ele_kick`, `ds`,
+  `s_kick`, `gamma`, `species`, `params`, `kick_factor`: as in
+  `csr_kick!`; the tables and kick are `Float64` arrays.
+
+# Returns
+- `CSRStepResult`, as `csr_kick!`.
 """
 function csr_kick_reference!(pz::AbstractVector, z::AbstractVector,
                              q::AbstractVector,

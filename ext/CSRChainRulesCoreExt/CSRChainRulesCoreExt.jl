@@ -122,6 +122,12 @@ end
 Tangent of `geom` built from the vector `v`, in the order of
 `geometry_to_vector`. `bmad_compat` is left out of the Tangent (absent
 properties are zero).
+
+# Arguments
+- `geom`: the `CSRGeometry` the tangent belongs to (gives the
+  types and the number of elements).
+- `v`: vector of length `4 + N_ELE_PARAMS * length(geom.ele)`, e.g.
+  the geometry cotangent from `csr_kick_param_adjoint`.
 """
 function geometry_tangent(geom::CSRGeometry, v::AbstractVector)
   FT = typeof(geom.start)
@@ -147,6 +153,14 @@ Vector of length `4 + N_ELE_PARAMS * n_ele` in the order of
 `geometry_to_vector`, from the Tangent `t` of a `CSRGeometry` (inverse
 of `geometry_tangent`). Entries of `t` that are zero (`AbstractZero`)
 stay zero.
+
+# Arguments
+- `t`: `Tangent` of a `CSRGeometry` (possibly thunked), e.g. the
+  cotangent passed to the `CSRGeometry` pullback.
+- `n_ele`: number of elements, `length(geom.ele)`.
+
+# Returns
+- `Vector{Float64}`.
 """
 function geometry_vector(t, n_ele::Integer)
   v = zeros(4 + N_ELE_PARAMS * n_ele)

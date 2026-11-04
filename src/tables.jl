@@ -6,6 +6,15 @@
 
 Number type of the kick tables: promoted from the geometry, the kick
 point and the bin width.
+
+# Arguments
+- `geom`: `CSRGeometry`.
+- `kp`: `CSRKickPoint`, from `CSRKickPoint(geom, ...)`.
+- `dz`: bin width [m] (`bins.dz` from `csr_bin_particles`).
+
+# Returns
+- the float type promoted from `number_type(geom)`,
+  `number_type(kp)` and `typeof(dz)`.
 """
 table_type(geom::CSRGeometry, kp::CSRKickPoint,
            dz) = float(promote_type(number_type(geom),
@@ -18,12 +27,13 @@ table_type(geom::CSRGeometry, kp::CSRKickPoint,
 
 Kick integral `I_csr`, its integral over each bin `I_int`, and the
 reference s of the source point, for lags `i * dz`, `i = 1:n_bin`, at
-kick point `kp`. The lags are split into `n_block` blocks (one work
-item and workgroup each); a block reuses the previous lag's source
-element as the start of the next search. Default: 4 blocks per thread;
-always one block for TPS tables (`thread_safe_number`). CPU backend
-only: `CSRGeometry` is not isbits (its element vector), and the source
-search raises errors and recurses (adaptive quadrature). The tables
+kick point `kp`. The lags are split into at most `n_block` blocks (one
+work item and workgroup each); a block reuses the previous lag's
+source element as the start of the next search. Default: 4 blocks
+per thread; always one block for TPS tables (`thread_safe_number`).
+CPU backend only: `CSRGeometry` is not isbits (its element vector),
+and the source search raises errors and recurses (adaptive
+quadrature). The tables
 are in `table_type(geom, kp, dz)` (`Float64`, or e.g. `Dual`s or TPS
 for derivatives with respect to the geometry, `s_kick` or `gamma`; the
 sources are then searched in primal values, `scalarize_all_search`).
@@ -32,6 +42,21 @@ sources are then searched in primal values, `scalarize_all_search`).
 `all_bin_quadrature` Simpson in `u^(1/3)` with 8 intervals (9 nodes)
 per bin (`I_csr_quadrature`; 9 source solves per bin, in blocks as
 above).
+
+# Arguments
+- `geom`: centroid geometry, from `CSRGeometry`.
+- `kp`: kick point, from `CSRKickPoint(geom, ...)`.
+- `dz`: bin width [m] (`bins.dz` from `csr_bin_particles`).
+- `n_bin`: number of lags (`params.n_bin`).
+- `backend`: KernelAbstractions backend of the tables (the CPU;
+  `table_backend`).
+- `n_block`: maximum number of blocks (default `min(n_bin, 4 *
+  Threads.nthreads())`); 1 for TPS tables (`thread_safe_number`).
+- `all_bin_quadrature`: bin integral by quadrature (above).
+
+# Returns
+- `I_csr`, `I_int`, `s_source` [m]: length-`n_bin` arrays on
+  `backend`, element type `table_type(geom, kp, dz)`.
 """
 function csr_wake_table(geom::CSRGeometry, kp::CSRKickPoint, dz,
                         n_bin, backend;
@@ -85,6 +110,23 @@ widths of `0.01 y/γ`. The kernel's structure can be much finer than a
 bin (`~y/γ` on a drift, `~Ls³/24ρ²` in a bend), which point
 sampling does not resolve (docs, "Physics decisions", D20). `s_source`
 is at the lags in both cases.
+
+# Arguments
+- `geom`: centroid geometry, from `CSRGeometry`.
+- `kp`: kick point with `y_source ≠ 0`, from `CSRKickPoint(geom,
+  ...; y_source)`.
+- `dz`: bin width [m] (`bins.dz` from `csr_bin_particles`).
+- `n_bin`: number of bins (`params.n_bin`).
+- `backend`: KernelAbstractions backend of the tables (the CPU;
+  `table_backend`).
+- `n_block`: maximum number of blocks (default `min(2n_bin + 1, 4 *
+  Threads.nthreads())`); 1 for TPS tables (`thread_safe_number`).
+- `bin_integrate`: hat-weighted bin integral (above).
+- `rtol`: relative tolerance of the adaptive Simpson (above).
+
+# Returns
+- `image`, `s_source` [m]: length-`2n_bin + 1` arrays on
+  `backend`, element type `table_type(geom, kp, dz)`.
 """
 function csr_image_table(geom::CSRGeometry, kp::CSRKickPoint, dz,
                          n_bin, backend;

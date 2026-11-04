@@ -18,6 +18,13 @@ The numbers of one `CSRElementInfo` in the order of
 `geometry_to_vector`: `L, g, s_start, ref_floor0, ref_floor1, floor0,
 floor1` (each `r`, `theta`), `theta_chord, L_chord, spline[1:4],
 dL_s`. Inverse: `element_from_numbers`.
+
+# Arguments
+- `e`: `CSRElementInfo{T}`, e.g. `geom.ele[j]` of a `CSRGeometry`;
+  any number type `T`.
+
+# Returns
+- `SVector{26,T}` (`N_ELE_PARAMS` numbers).
 """
 function element_numbers(e::CSRElementInfo)
   f(x) = (x.r[1], x.r[2], x.r[3], x.theta)
@@ -30,6 +37,10 @@ end
     element_from_numbers(v::SVector{26}) -> CSRElementInfo
 
 `CSRElementInfo{eltype(v)}` from the numbers of `element_numbers`.
+
+# Arguments
+- `v`: `SVector{26,T}` in the order of `element_numbers`, from
+  `element_numbers` or `seed_numbers`.
 """
 function element_from_numbers(v::SVector{N_ELE_PARAMS,T}) where {T}
   fl(i) = FloorPosition{T}(SVector(v[i], v[i+1], v[i+2]), v[i+3])
@@ -44,6 +55,14 @@ end
 All numbers of `geom`: `start` (`r`, `theta`), then per element its
 `element_numbers`. Length `4 + 26 n_ele`. Inverse:
 `geometry_from_vector`.
+
+# Arguments
+- `geom`: `CSRGeometry{T}`, from the `CSRGeometry` constructor; any
+  number type `T`. `n_ele = length(geom.ele)`.
+
+# Returns
+- `Vector{T}`; element `j`'s numbers at `geometry_base(j) .+
+  (1:26)`.
 """
 function geometry_to_vector(geom::CSRGeometry{T}) where {T}
   v = Vector{T}(undef, 4 + N_ELE_PARAMS * length(geom.ele))
@@ -59,7 +78,15 @@ end
     geometry_from_vector(v, n_ele, bmad_compat) -> CSRGeometry
 
 `CSRGeometry{eltype(v)}` with `n_ele` elements from the numbers `v` in
-the order of `geometry_to_vector`.
+the order of `geometry_to_vector`. Errors unless `length(v) == 4 +
+26 n_ele`.
+
+# Arguments
+- `v`: geometry numbers, `AbstractVector{T}`, e.g. from
+  `geometry_to_vector`.
+- `n_ele`: number of elements (`length(geom.ele)`).
+- `bmad_compat`: `Bool`, stored as `bmad_compat` of the result
+  (e.g. `geom.bmad_compat`).
 """
 function geometry_from_vector(v::AbstractVector{T}, n_ele::Integer,
                               bmad_compat::Bool) where {T}
@@ -72,7 +99,10 @@ function geometry_from_vector(v::AbstractVector{T}, n_ele::Integer,
 end
 
 """Offset in `geometry_to_vector` before element `j`'s numbers (they
-are at `geometry_base(j) .+ (1:26)`)."""
+are at `geometry_base(j) .+ (1:26)`).
+
+# Arguments
+- `j`: element index into `geom.ele`."""
 geometry_base(j) = 4 + N_ELE_PARAMS * (j - 1)
 
 """
@@ -81,6 +111,16 @@ geometry_base(j) = 4 + N_ELE_PARAMS * (j - 1)
 Element range `lo:hi` and the upstream/downstream infinite-drift flags
 after a source search ended in element `ix` (`0`: upstream of the
 lattice, `> n`: past its end), for `geometry_active_indices`.
+
+# Arguments
+- `lo`, `hi`: current element range (indices into `geom.ele`).
+- `up`, `down`: `Bool` flags, a source found on the upstream /
+  downstream infinite drift so far.
+- `ix`: source element, `k.ix_ele_source` of `s_source_calc`.
+- `n`: number of elements, `length(geom.ele)`.
+
+# Returns
+- the updated `(lo, hi, up, down)`.
 """
 widen_source_range(lo, hi, up, down, ix, n) =
   (ix == 0 ? 1 : min(lo, ix), ix > n ? n : max(hi, ix), up || ix == 0,
@@ -107,6 +147,24 @@ element varies monotonically with the lag between the extreme lags
 (true without patches that reverse the centroid).
 `csr_kick_param_adjoint` uses it for the first bin (`lag = dz`,
 `n_images = 0`).
+
+# Arguments
+- `geom`: centroid geometry, `CSRGeometry` (primal `geom0` in
+  `first_bin_adjoint!`).
+- `ix_ele_kick`: index into `geom.ele` of the kick's element.
+- `s_kick`: reference position [m] of the kick, from the entrance
+  of element `ix_ele_kick`.
+- `gamma`: Lorentz factor of the reference particle.
+- `params`: `CSRParams` (`n_bin`, `n_shield_images`,
+  `beam_chamber_height`).
+- `dz`: bin width [m], `bins.dz`.
+- `kick_factor`: as in `CSRKickPoint`.
+- `lag`: largest free-space lag [m].
+- `n_images`: number of image layers searched.
+
+# Returns
+- sorted, unique `Vector{Int}` of indices into
+  `geometry_to_vector(geom)`.
 """
 function geometry_active_indices(geom::CSRGeometry,
                                  ix_ele_kick::Integer, s_kick, gamma,
@@ -212,6 +270,18 @@ on the parameters only through `theta_L`: first order exactly
 type. Exact for every first-order partial, also for a nested `theta_L`
 (`root_tangent`, which uses only the primal of `∂ddz/∂s`); the
 mixed second-order partials are dropped.
+
+# Arguments
+- `acc`: sum the excess is added to (`dL` or `excess` in
+  `ddz_calc_csr`).
+- `geom`: the local-Dual geometry, `wk.geom_d` or `wk.geom_up` of
+  `ParamAdjointWork`.
+- `r`: range of indices into `geom.ele` of the middle elements.
+- `theta_L`: angle [rad] of `L_vec` (as `k.theta_L`).
+
+# Returns
+- `acc` plus the first-order expansion of the sum above (`acc`
+  unchanged for an empty `r`).
 """
 function middle_excess(acc, geom::CSRGeometry{LocalDual}, r, theta_L)
   isempty(r) && return acc
@@ -242,6 +312,18 @@ seeded(x, slot) = LocalDual(x,
     seed_numbers(v, offsets, slots, w = nodual.(v))
 
 `w` with the numbers `v[offsets]` seeded in the local `slots`.
+
+# Arguments
+- `v`: `SVector{N}` of `Float64` numbers, from `element_numbers`.
+- `offsets`: indices into `v` to seed (`KICK_OFFSETS`,
+  `SOURCE_OFFSETS`, `FLOOR1_OFFSETS`).
+- `slots`: local slots, one per offset (`SLOTS_KICK`,
+  `SLOTS_SOURCE`, `SLOTS_FLOOR`).
+- `w`: `LocalDual` numbers kept at the other offsets; default
+  unseeded (`nodual`).
+
+# Returns
+- `SVector{N}` of `LocalDual`.
 """
 function seed_numbers(v::SVector{N}, offsets, slots,
                       w = nodual.(v)) where {N}
@@ -262,6 +344,29 @@ evaluation from `ele_src`, or the last element from `ele_end`;
 `ele_d0` holds the unseeded copies, kick element seeded) and the
 gradient accumulator. `ParamAdjointWork(wk)`: a new task's state,
 sharing the seeded elements of `wk`.
+
+# Arguments
+- `geom0`: primal geometry, `CSRGeometry{Float64}`
+  (`Beamlines.scalarize_all(geom)`).
+- `ix_ele_kick`: index into `geom0.ele` of the kick's element.
+- `n_grad`: length of `grad`, `4 + 26 n_ele + 2`.
+- `wk`: a `ParamAdjointWork` whose `geom0`, `ele_d0`, `ele_src`,
+  `ele_end` and starts are shared (new `ele` and zero `grad`).
+
+# Fields
+- `geom0`: the primal geometry.
+- `ele_d0`: `LocalDual` copies of `geom0.ele`, kick element seeded
+  (`KICK_OFFSETS` in `SLOTS_KICK`), others unseeded.
+- `ele_src`: per element, a copy seeded as source
+  (`SOURCE_OFFSETS` in `SLOTS_SOURCE`).
+- `ele_end`: the last element of `ele_d0` with `floor1` seeded
+  (`FLOOR1_OFFSETS` in `SLOTS_FLOOR`).
+- `ele`: working element vector shared by `geom_d` and `geom_up`.
+- `geom_d`: local-Dual geometry, unseeded start.
+- `geom_up`: as `geom_d`, start seeded in `SLOTS_FLOOR`.
+- `ix_ele_kick`: kick element index.
+- `grad`: gradient accumulator: geometry numbers (order of
+  `geometry_to_vector`), then `s_kick`, `gamma`.
 """
 struct ParamAdjointWork
   geom0::CSRGeometry{Float64}
@@ -315,6 +420,16 @@ end
     scatter_partials!(grad, base, offsets, slots, p, w)
 
 `grad[base + offsets[i]] += w * p[slots[i]]`.
+
+# Arguments
+- `grad`: gradient (modified, returned), as `ParamAdjointWork`
+  `grad`.
+- `base`: offset into `grad`, `geometry_base(j)` (or `0` for the
+  lattice start).
+- `offsets`: offsets after `base` (e.g. `KICK_OFFSETS`).
+- `slots`: local slots, one per offset (e.g. `SLOTS_KICK`).
+- `p`: partials of a `LocalDual` evaluation (`partials(F)`).
+- `w`: weight of the evaluation.
 """
 function scatter_partials!(grad, base, offsets, slots, p, w)
   for (o, s) in zip(offsets, slots)
@@ -331,6 +446,19 @@ element `ix_source` (`ddz_calc_csr`'s `dmid`) passed to the elements
 strictly between source and kick element: `∂path_excess/∂(L_chord,
 spline, theta_chord)` at `theta_L`; on the infinite drifts, the sums
 of `dL_s + L_chord` (upstream or downstream of the kick element).
+
+# Arguments
+- `grad`: gradient (modified, returned), as `ParamAdjointWork`
+  `grad`.
+- `c`: the cotangent, `w * p[SLOT_MID]` or `w * p[SLOT_MID_ROOT]`
+  in `node_adjoint!`; nothing is done for `c == 0`.
+- `ix_source`: source element (`0`: upstream infinite drift,
+  `> length(geom.ele)`: downstream).
+- `ix_kick`: kick element index.
+- `theta_L`: primal angle [rad] of `L_vec`: `k.theta_L` of the
+  evaluated source; for the `SLOT_MID_ROOT` call in compat mode
+  with `SRC_ROOT`, the `theta_L` of `ddz_calc_csr` at `o.s_root`.
+- `geom`: primal geometry, `CSRGeometry{Float64}`.
 """
 function middle_adjoint!(grad, c, ix_source, ix_kick, theta_L,
                          geom::CSRGeometry{Float64})
@@ -374,6 +502,21 @@ source is searched in `Float64` (`s_source_walk`, warm-started from
 `k0`) and evaluated once in local Duals (`s_source_eval`; the root's
 derivatives by implicit differentiation). Returns the primal work
 struct for the next warm start.
+
+# Arguments
+- `wk`: `ParamAdjointWork` (`wk.grad` modified; `wk.ele` swapped
+  per evaluation and restored).
+- `image`: `Bool`, image-charge evaluation.
+- `w`: weight of the evaluation; for `w == 0` only the search runs.
+- `u`: lag [m] (`dz_particles`).
+- `k0`: `CSRKick1{Float64}` warm start, the previous call's result
+  (first: `CSRKick1(; ix_ele_source = ix_ele_kick)`).
+- `kp0`: primal `CSRKickPoint` on `wk.geom0`.
+- `kp_d`: `CSRKickPoint` on `wk.geom_d` with `s_kick`, `gamma`
+  seeded (`SLOT_S_KICK`, `SLOT_GAMMA`).
+
+# Returns
+- `k0`: the `CSRKick1` of the `Float64` search (`s_source_walk`).
 """
 function node_adjoint!(wk::ParamAdjointWork, image::Bool, w, u, k0,
                        kp0, kp_d)
@@ -430,6 +573,22 @@ end
 
 `node_adjoint!` for the `(lag, weight)` pairs in `nodes` (sorted by
 lag, split into blocks on threads), added to `grad`.
+
+# Arguments
+- `grad`: gradient (modified, returned), length `4 + 26 n_ele + 2`
+  (as `ParamAdjointWork` `grad`).
+- `geom0`: primal geometry, `CSRGeometry{Float64}`.
+- `ix_ele_kick`: index into `geom0.ele` of the kick's element.
+- `nodes`: vector of `(lag [m], weight)` tuples or pairs (sorted in
+  place), built in `csr_kick_param_adjoint` or by `hat_nodes`.
+- `image`: `Bool`, image-charge evaluations.
+- `s_kick`: reference position [m] of the kick, from the entrance
+  of element `ix_ele_kick` (primal).
+- `gamma`: Lorentz factor of the reference particle (primal).
+- `y_source`: source height [m] of the image layer
+  (`ns * params.beam_chamber_height`); `0.0` in free space.
+- `kick_factor`: as in `CSRKickPoint` (for images including the
+  layer's sign and weight).
 """
 function nodes_adjoint!(grad, geom0, ix_ele_kick, nodes, image,
                         s_kick, gamma; y_source = 0.0,
@@ -467,8 +626,17 @@ end
 Add `w` times the gradient of the first bin's integral `I_int[1]`
 (`I_csr_calc` with `i_bin = 1`; its quadrature nodes move with the
 parameters) by ForwardDiff with the numbers of
-`geometry_active_indices` for lag `dz` seeded (sources searched in
-`geom0`, `ScalarizeAllSearch`).
+`geometry_active_indices` for lag `dz`, `s_kick` and `gamma` seeded
+(sources searched in `geom0`, `ScalarizeAllSearch`).
+
+# Arguments
+- `grad`: gradient (modified, returned), as in `nodes_adjoint!`.
+- `w`: weight, the cotangent of `I_int[1]`; nothing is done for
+  `w == 0`.
+- `geom0`, `ix_ele_kick`, `s_kick`, `gamma`, `kick_factor`: as in
+  `nodes_adjoint!` (`kick_factor` positional here).
+- `params`: `CSRParams`.
+- `dz`: bin width [m], primal `bins.dz`.
 """
 function first_bin_adjoint!(grad, w, geom0, ix_ele_kick, s_kick,
                             gamma, params, dz, kick_factor)
@@ -504,6 +672,18 @@ Lags and weights of the hat-weighted image table's kernel evaluations
 the accepted adaptive-Simpson intervals of each lag interval (Boole's
 rule on 5 nodes), combined into the hat moments and the table as in
 `csr_image_hat_combine_kernel!`. Coincident nodes are merged.
+
+# Arguments
+- `geom0`: primal geometry, `CSRGeometry` (`Float64`).
+- `kp0`: primal `CSRKickPoint` of the image layer (`y_source`,
+  `kick_factor` with the layer's sign and weight).
+- `dz`: bin width [m], primal `bins.dz`.
+- `n_bin`: number of bins, `params.n_bin`.
+- `Wimg`: cotangent of the image table, length `2n_bin + 1`
+  (built in `csr_kick_param_adjoint`).
+
+# Returns
+- `lag => weight` pairs (lag [m]), input to `nodes_adjoint!`.
 """
 function hat_nodes(geom0::CSRGeometry, kp0::CSRKickPoint, dz, n_bin,
                    Wimg)
@@ -562,7 +742,29 @@ the path-length sums over the elements in between, whose cotangents
 whose quadrature nodes move with the parameters, is differentiated by
 ForwardDiff over its `geometry_active_indices` (`first_bin_adjoint!`).
 Exact up to round-off, like ForwardDiff through `csr_bins_kick`; cost
-a few primal kicks.
+a few primal kicks. Errors unless `scalarize_all(ds) > 0`.
+
+# Arguments
+- `kbar`: cotangent of the kick per bin, the `kbar` output of
+  `csr_kick_adjoint` (any backend; copied to the CPU, primal).
+- `bins`: the forward pass's `CSRBins`, `st.bins` of
+  `csr_binned_kick` (primal values used).
+- `geom`: centroid geometry, from `CSRGeometry`; derivatives at its
+  primal values.
+- `ix_ele_kick`: index into `geom.ele` of the kick's element.
+- `ds`: step length [m] the kick covers (`> 0`).
+- `s_kick`: reference position [m] of the kick, from the entrance
+  of element `ix_ele_kick`.
+- `gamma`: Lorentz factor of the reference particle at the kick
+  point.
+- `species`: `Species` of the particles (as in `csr_kick_coef`).
+- `params`: `CSRParams`.
+- `kick_factor`: as in `csr_kick!`; gets no cotangent.
+
+# Returns
+- `geombar`: `Vector{Float64}` of length `4 + 26 n_ele`, in the
+  order of `geometry_to_vector`.
+- `s_kickbar`, `gammabar`, `dsbar`: `Float64` cotangents.
 """
 function csr_kick_param_adjoint(kbar::AbstractVector, bins::CSRBins,
                                 geom::CSRGeometry,

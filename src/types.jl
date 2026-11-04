@@ -8,6 +8,14 @@ Position `r = (X, Y, Z)` [m] and horizontal orientation angle `theta`
 [rad] in floor coordinates. The number type `T` is promoted from the
 arguments (`Float64`, or e.g. ForwardDiff `Dual`s or GTPSA TPS for
 derivatives w.r.t. the geometry).
+
+Produced by `FloorPosition()`, `planar_survey`, `advance_floor`,
+`advance_floor_patch` and `centroid_floor`.
+
+# Fields
+- `r`: position `(X, Y, Z)` [m], an `SVector{3,T}` (any
+  3-element vector in the constructor).
+- `theta`: horizontal orientation angle [rad].
 """
 struct FloorPosition{T<:Number}
   r::SVector{3,T}
@@ -27,6 +35,9 @@ Base.convert(::Type{FloorPosition{T}},
     FloorPosition()
 
 Origin, orientation angle 0.
+
+# Returns
+- `FloorPosition{Float64}` with `r = (0, 0, 0)`, `theta = 0`.
 """
 FloorPosition() = FloorPosition(SVector(0.0, 0.0, 0.0), 0.0)
 
@@ -37,7 +48,24 @@ Per-element centroid geometry (Bmad `csr_ele_info_struct`). The
 centroid "chord" is the line from the centroid position at the element
 entrance to the centroid position at the exit. `spline` gives the
 centroid offset from the chord as a function of distance along the
-chord. Number type `T` as `FloorPosition`.
+chord. Number type `T` as `FloorPosition`. Built by `CSRGeometry`
+(`geom.ele[i]`).
+
+# Fields
+- `L`: element (reference) length [m].
+- `g`: reference curvature [1/m] (0 for straight elements).
+- `s_start`: reference s [m] at the element entrance.
+- `ref_floor0`, `ref_floor1`: reference `FloorPosition` at the
+  entrance and exit.
+- `floor0`, `floor1`: centroid `FloorPosition` at the entrance and
+  exit.
+- `theta_chord`: angle [rad] of the chord in the floor Z-X plane.
+- `L_chord`: chord length [m]; negative if the centroid moves
+  backwards in the element.
+- `spline`: coefficients `c` of the centroid offset from the chord,
+  `c[1] + c[2] u + c[3] u² + c[4] u³` at chord distance `u`
+  (`spline_val`); zero for a chord shorter than `1e-8`.
+- `dL_s`: centroid path length minus `L_chord` [m].
 """
 struct CSRElementInfo{T<:Number}
   L::T                         # Element (reference) length
@@ -80,7 +108,13 @@ end
 Centroid geometry for a beamline: `start` is the centroid floor
 position at the start of the lattice (Bmad `eleinfo(0)%floor1`), and
 `ele[i]` the information for element `i`. Number type `T` as
-`FloorPosition`.
+`FloorPosition`. Built by the `CSRGeometry(L, g, ...)` constructors.
+
+# Fields
+- `start`: centroid `FloorPosition` at the start of the lattice.
+- `ele`: `Vector{CSRElementInfo{T}}`, one entry per element.
+- `bmad_compat`: the constructor's `bmad_compat`; must equal
+  `CSRParams` `bmad_compat` in `csr_kick!`.
 """
 struct CSRGeometry{T<:Number}
   start::FloorPosition{T}
@@ -93,7 +127,22 @@ end
 
 Kick-point information that is the same for all source lags (part of
 Bmad's `csr_struct`). Number type `T` as `FloorPosition` (e.g. `Dual`s
-for derivatives w.r.t. `s_kick`, `gamma` or the geometry).
+for derivatives w.r.t. `s_kick`, `gamma` or the geometry). Built by
+`CSRKickPoint(geom, ix_ele_kick, s_kick, gamma; ...)`.
+
+# Fields
+- `ix_ele_kick`: index into `geom.ele` of the element containing
+  the kick point.
+- `s_kick`: kick point, reference s [m] from the element entrance.
+- `s_chord_kick`: kick point along the centroid chord [m]
+  (`s_ref_to_s_chord`).
+- `floor_k`: `FloorPosition` of the kick point.
+- `gamma`, `gamma2`, `beta`: Lorentz factor `γ` of the reference
+  particle, `γ²` and `β = √(1 - 1/γ²)`.
+- `y_source`: height [m] of the source particle (image charges; 0
+  for free space).
+- `kick_factor`: multiplies every kick computed with this point
+  (1/2 at element ends; image sign and weight).
 """
 struct CSRKickPoint{T<:Number}
   ix_ele_kick::Int           # Element containing the kick point
@@ -127,7 +176,26 @@ end
 Kick quantities for one source-to-kick separation (Bmad
 `csr_kick1_struct`), in number type `T`. Immutable (isbits for isbits
 `T`): the source-point functions return an updated copy
-(`with_fields`).
+(`with_fields`). Built by the `CSRKick1` keyword constructors.
+
+# Fields
+- `I_csr`: kick integral (Bmad `I_csr`).
+- `I_int_csr`: kick integral integrated over the bin.
+- `L_vec`: source-to-kick vector [m] in floor coordinates.
+- `L`: distance [m] between the source and kick points.
+- `dL`: `Ls - L` [m], `Ls` the centroid path length from source
+  to kick (negative for a source ahead of the kick point).
+- `dz_particles`: lag [m], kicked minus source particle position
+  at constant time.
+- `s_chord_source`: source point along the source element chord
+  [m].
+- `theta_L`: angle [rad] of `L_vec`.
+- `theta_sl`: angle [rad] between the source velocity and `L_vec`.
+- `theta_lk`: angle [rad] between `L_vec` and the kicked particle
+  velocity.
+- `ix_ele_source`: source element (0 = upstream of the lattice,
+  `length(geom.ele) + 1` = downstream, `source_s`).
+- `floor_s`: `FloorPosition` of the source point.
 """
 struct CSRKick1{T<:Number}
   I_csr::T                    # Kick integral
@@ -161,6 +229,17 @@ Zeroed work struct in number type `T` (default `Float64`;
 `CSRKick1(geom, kp)`: promoted from the geometry and the kick point)
 with the source search's start element `ix_ele_source` and the lag
 `dz_particles`.
+
+# Arguments
+- `T`: number type of the fields.
+- `geom`: `CSRGeometry`.
+- `kp`: `CSRKickPoint` (from `CSRKickPoint(geom, ...)`).
+- `ix_ele_source`: start element of the source search, an index
+  into `geom.ele` (0 = upstream of the lattice).
+- `dz_particles`: lag [m] (converted to `T`).
+
+# Returns
+- `CSRKick1{T}` with all other fields zero.
 """
 function CSRKick1{T}(; ix_ele_source::Integer = 0,
                      dz_particles = zero(T)) where {T}
@@ -182,6 +261,14 @@ CSRKick1(geom, kp; ix_ele_source::Integer = kp.ix_ele_kick,
 
 Copy of `k` with the given fields replaced (converted to `k`'s number
 type).
+
+# Arguments
+- `k`: `CSRKick1` (from `CSRKick1(...)` or a source-point function).
+- `fields...`: keyword arguments `name = value`, `name` a field of
+  `CSRKick1`.
+
+# Returns
+- `CSRKick1{T}`, `T = number_type(k)`.
 """
 @inline function with_fields(k::CSRKick1{T}; kw...) where {T}
   nt = NamedTuple{fieldnames(CSRKick1)}(ntuple(i -> getfield(k, i),
@@ -194,6 +281,13 @@ end
 
 Number type `T` of a `FloorPosition{T}`, `CSRElementInfo{T}`,
 `CSRGeometry{T}`, `CSRKickPoint{T}` or `CSRKick1{T}`.
+
+# Arguments
+- `x`: a `FloorPosition`, `CSRElementInfo`, `CSRGeometry`,
+  `CSRKickPoint` or `CSRKick1`.
+
+# Returns
+- the type `T`.
 """
 number_type(::FloorPosition{T}) where {T} = T
 number_type(::CSRElementInfo{T}) where {T} = T
@@ -208,6 +302,17 @@ Longitudinal bins. Bin `i` spans `[z0_edge[i], z0_edge[i] + dz)`.
 `edge_dcharge_density_dz[i]` is the charge density gradient at the
 left edge of bin `i`: `(charge[i] - charge[i-1]) / dz²` (zero for `i
 = 1`). Arrays live on the backend of the particle coordinates.
+Produced by `csr_bin_particles` (and `csr_bin_particles_reference`).
+
+# Fields
+- `dz`: bin width [m].
+- `z0_edge`: left edge [m] of each bin.
+- `z_center`: center [m] of each bin, `z0_edge .+ dz / 2`.
+- `charge`: charge [C] deposited in each bin.
+- `n_particle`: particle weight in each bin (sum of the triangle
+  overlaps).
+- `edge_dcharge_density_dz`: charge density gradient [C/m²] at the
+  left edge of each bin.
 """
 struct CSRBins{T,V<:AbstractVector,W<:AbstractVector}
   dz::T
@@ -225,7 +330,18 @@ Diagnostics for one kick, per bin (mirrors Bmad's
 `diagnostic_output_file` columns): `z_center`, `charge_per_meter`
 [C/m], `kick_per_meter` (Δpz per meter), `I_csr_per_meter`,
 `s_source` (reference s of the source point). Arrays are on the
-backend of the particle coordinates.
+backend of the particle coordinates. Returned by `csr_kick!`
+(`csr_step_result`) and `csr_kick_reference!`.
+
+# Fields
+- `z_center`: bin centers [m] (`CSRBins` `z_center`).
+- `charge_per_meter`: bin charge / bin width [C/m].
+- `kick_per_meter`: Δpz per bin divided by `kick_factor * ds *
+  L_chord / L` of the kick element [1/m].
+- `I_csr_per_meter`: free-space kick integral `I_csr` per lag,
+  divided by the same length.
+- `s_source`: reference s [m] of the free-space source point per
+  lag.
 """
 struct CSRStepResult{Z<:AbstractVector,C<:AbstractVector,
                      K<:AbstractVector,I<:AbstractVector,
@@ -252,16 +368,18 @@ const N_BIN_QUAD = 8
               bmad_compat = false)
 
 Parameters for the 1D CSR calculation. Names follow Bmad's
-`space_charge_com` components.
+`space_charge_com` components. The constructor errors if a
+constraint below is not met.
 
-## Properties
+# Fields
 - `n_bin`: Number of longitudinal bins. Must satisfy `n_bin - 2 -
   (particle_bin_span + 1) ≥ 1`.
 - `particle_bin_span`: Width of each particle's triangular charge
-  distribution, in units of the bin width.
+  distribution, in units of the bin width. At least 1.
 - `n_shield_images`: Number of image-charge layers for shielding by
-  parallel plates (0 = free space). Layer `n` is a pair of images at
-  heights `±n * beam_chamber_height` with sign `(-1)^n`, as in Bmad.
+  parallel plates (0 = free space; must be ≥ 0). Layer `n` is a pair
+  of images at heights `±n * beam_chamber_height` with sign
+  `(-1)^n`, as in Bmad.
 - `beam_chamber_height`: Height of the beam chamber [m], i.e. the
   distance between the plates. Must be positive when `n_shield_images
   > 0`.

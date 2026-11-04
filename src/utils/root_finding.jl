@@ -6,6 +6,21 @@
 Brent's root finder, following Bmad's `super_zbrent` (including the
 final linear interpolation). `x_last` is the last point at which `f`
 was evaluated.
+
+# Arguments
+- `f`: real function of one variable (`s_source_walk` passes the
+  primal `ddz_calc_csr` separation as a function of the source
+  chord coordinate).
+- `x1`, `x2`: ends of the bracket (`f(x1)`, `f(x2)` of opposite sign
+  or zero).
+- `rel_tol`, `abs_tol`: convergence when half the bracket is at most
+  `(rel_tol * |b| + abs_tol) / 2`, `b` the current estimate (callers
+  use `1e-12`, `1e-8`).
+
+# Returns
+- `x_zero`: the root; `ok`: `true` if converged; `x_last`. Not
+  bracketed: `(1e100, false, x2)`. No convergence within 100
+  iterations: `ok = false` with the last iterate as `x_zero`.
 """
 function zbrent(f, x1, x2, rel_tol, abs_tol)
   itmax = 100
@@ -79,6 +94,20 @@ differentiation, `ds/dp = -(∂f/∂p) / (∂f/∂s)`), two for nested
 `Dual`s (Hessians), the truncation order for a TPS. Returns `s0`
 (converted to the promoted type of `s0` and `f0`) when `f0` carries no
 derivatives.
+
+# Arguments
+- `f`: function of `s` whose root is wanted, in the parameters'
+  number type (e.g. the `ddz_calc_csr` separation in
+  `root_source`, or `chord_normal_offset` in `s_ref_to_s_chord`).
+- `s0`: primal root (plain number), e.g. from `zbrent` or Newton
+  steps on primal values.
+- `f0`: `f(s0)`, carrying the parameters' derivatives (`Dual`s or
+  TPS).
+- `dfds`: primal slope `∂f/∂s` at `s0`, or `nothing`.
+
+# Returns
+- `s`: the root with derivatives, in the promoted number type of
+  `s0` and `f0`.
 """
 function root_tangent(f, s0, f0, dfds = nothing)
   n = root_order(f0)
@@ -99,6 +128,10 @@ Number of Newton steps `root_tangent` needs for `x`'s number type: 0
 for plain numbers, 1 per level of `Dual` nesting (a TPS extension adds
 its truncation order). Other number types (e.g. `Complex`) have no
 method.
+
+# Arguments
+- `x`: a number (e.g. `f0` in `root_tangent`) or a `Real` number
+  type.
 """
 root_order(x::Number) = root_order(typeof(x))
 root_order(::Type{<:Real}) = 0
@@ -109,6 +142,9 @@ root_order(::Type{<:Dual{T,V}}) where {T,V} = 1 + root_order(V)
 
 Primal `∂f/∂s` at `s0`, from a `Dual` with tag `RootTag` (outside
 the parameters' `Dual`s of any nesting).
+
+# Arguments
+- `f`, `s0`: as in `root_tangent`.
 """
 root_slope(f,
            s0) = Beamlines.scalarize_all(partials(f(Dual{RootTag}(

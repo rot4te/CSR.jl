@@ -12,6 +12,18 @@ with speed `β` along the centroid with the centroid's curvature (zero
 on the infinite drifts outside the lattice). `1 − N⋅β′ ≈
 1/(2γ²)` and `B⋅(N − β′)` are computed without cancellation
 (from `N − t`, `t` the source's direction; D43), in both modes.
+
+# Arguments
+- `k`: work struct (`CSRKick1`) describing the source (uses
+  `ix_ele_source`, `s_chord_source`, `floor_s`, `L`), from
+  `s_source_calc`.
+- `geom`: centroid geometry, from `CSRGeometry`.
+- `kp`: kick point of an image layer, from `CSRKickPoint` with
+  `y_source ≠ 0` and the layer's `kick_factor`.
+
+# Returns
+- the field described above (including `kp.kick_factor`), in the
+  promoted number type of `k`, `geom` and `kp`.
 """
 function image_charge_kick(k::CSRKick1, geom::CSRGeometry,
                            kp::CSRKickPoint)
@@ -58,6 +70,19 @@ end
 Image kick for lags i = -n_bin:n_bin, stored at index i + n_bin + 1.
 One work item per block of `n_lag` consecutive lags, warm-started
 within a block as csr_wake_kernel!. `search` as in `s_source_calc`.
+
+# Arguments
+- `image`: vector of length `2n_bin + 1` (modified), allocated by
+  `csr_image_table`.
+- `s_source`: vector of the same length (modified): reference s [m]
+  of each lag's source (`source_s`).
+- `geom`: centroid geometry, from `CSRGeometry`.
+- `kp`: kick point with `kp.y_source ≠ 0`, from `CSRKickPoint`.
+- `dz`: bin width [m]; lag `i` is `i * dz`.
+- `n_lag`: lags per work item (`csr_image_table`: `cld(2n_bin + 1,
+  n_block)`).
+- `search`: `nothing` or a `ScalarizeAllSearch`, from
+  `scalarize_all_search`.
 """
 @kernel function csr_image_kernel!(image, s_source, geom, kp, dz,
                                    n_lag, search)
@@ -79,6 +104,18 @@ end
 
 Image kick at lag u (the source search starts from the element in `k`;
 `search` as in `s_source_calc`), and the work struct after the search.
+
+# Arguments
+- `k`: work struct (`CSRKick1`) whose `ix_ele_source` starts the
+  search, from `CSRKick1(geom, kp)` or a previous call.
+- `u`: lag [m] (any sign).
+- `geom`: centroid geometry, from `CSRGeometry`.
+- `kp`: kick point with `kp.y_source ≠ 0`, from `CSRKickPoint`.
+- `search = nothing`: `nothing` or a `ScalarizeAllSearch`.
+
+# Returns
+- `(k, K)`: the work struct describing the source, and
+  `K = image_charge_kick(k, geom, kp)`.
 """
 function image_kernel_at(k::CSRKick1, u, geom::CSRGeometry,
                          kp::CSRKickPoint, search = nothing)
@@ -92,11 +129,30 @@ end
                   depth, leaf = nothing, search = nothing) -> (k, S)
 
 Adaptive Simpson for S = (∫K, ∫K t) over [a, b], t = (u - u0) /
-dz; fa, fm, fb are K at a, (a + b)/2, b. Intervals narrower than
+dz; fa, fm, fb are K at a, (a + b)/2, b. Intervals not wider than
 `h_min` are not split (the kernel has round-off noise from the source
 search). Each accepted interval `[a, b]` contributes Boole's rule on
 its 5 nodes; `leaf(a, b)` is called for it unless `leaf === nothing`
 (`csr_kick_param_adjoint`). `search` as in `s_source_calc`.
+
+# Arguments
+- `k`: work struct (`CSRKick1`), warm start of the source searches.
+- `geom`, `kp`: as in `image_kernel_at`.
+- `a`, `b`: interval ends [m] in lag `u`.
+- `fa`, `fm`, `fb`: kernel values at `a`, `(a + b)/2`, `b` (from
+  `image_kernel_at`).
+- `u0`: lag [m] at which `t = 0`.
+- `dz`: bin width [m], the unit of `t`.
+- `tol`: absolute tolerance on `S` (halved per split).
+- `h_min`: interval width [m] up to which there is no split.
+- `depth`: remaining splits (`image_segment` starts with 40).
+- `leaf = nothing`: `nothing` or a function `leaf(a, b)`
+  (`hat_nodes`).
+- `search = nothing`: `nothing` or a `ScalarizeAllSearch`.
+
+# Returns
+- `(k, S)`: the work struct after the last search, and `S` as an
+  `SVector` of 2.
 """
 function image_simpson(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol,
                        h_min, depth, leaf = nothing, search = nothing)
@@ -127,6 +183,13 @@ end
 
 `S = (∫K, ∫K t)` over `[a, b]`, `t = (u - u0)/dz`, by
 `image_simpson` from the kernel at `a`, the midpoint and `b`.
+
+# Arguments
+- `k`, `geom`, `kp`, `a`, `b`, `u0`, `dz`, `tol`, `h_min`, `leaf`,
+  `search`: as in `image_simpson`.
+
+# Returns
+- `(k, S)`: as `image_simpson`.
 """
 function image_segment(k, geom, kp, a, b, u0, dz, tol, h_min,
                        leaf = nothing, search = nothing)
@@ -148,6 +211,21 @@ tolerance on the interval. The intervals touching u = 0 are split
 geometrically down to `u_min` first, so that structure finer than the
 first Simpson nodes is not missed (on a drift the kernel peaks at |u|
 = y/(√2 γ)). `leaf` and `search` as in `image_simpson`.
+
+# Arguments
+- `k`: work struct (`CSRKick1`), warm start of the source searches,
+  from `CSRKick1(geom, kp)` or a previous call.
+- `geom`, `kp`: as in `image_kernel_at`.
+- `m`: integer lag-interval index (callers: `-n_bin-1:n_bin`).
+- `dz`: bin width [m].
+- `tol`: absolute tolerance, from `image_hat_tol`.
+- `u_min`: lag [m] down to which the intervals touching 0 are split,
+  from `image_u_min`; also `image_simpson`'s `h_min`.
+- `leaf = nothing`, `search = nothing`: as in `image_simpson`.
+
+# Returns
+- `(k, moments)`: the work struct after the last search, and
+  `moments = SVector(∫K t, ∫K (1 - t))` (not divided by `dz`).
 """
 function image_interval_moments(k, geom, kp, m, dz, tol, u_min,
                                 leaf = nothing, search = nothing)
@@ -181,6 +259,17 @@ end
 Moments for lag intervals m = -n_bin-1:n_bin (index m + n_bin + 2),
 blocks of `n_int` consecutive intervals. `search` as in
 `s_source_calc`.
+
+# Arguments
+- `rise`, `fall`: vectors of length `2n_bin + 2` (modified),
+  allocated by `csr_image_table`: the moments `∫K t` and
+  `∫K (1 - t)` of `image_interval_moments`.
+- `geom`, `kp`, `dz`: as in `csr_image_kernel!`.
+- `tol`: absolute tolerance per interval, from `image_hat_tol`.
+- `u_min`: from `image_u_min` (see `image_interval_moments`).
+- `n_int`: intervals per work item.
+- `search`: `nothing` or a `ScalarizeAllSearch`, from
+  `scalarize_all_search`.
 """
 @kernel function csr_image_hat_kernel!(rise, fall, geom, kp, dz, tol,
                                        u_min, n_int, search)
@@ -201,6 +290,12 @@ end
 Hat-weighted image table from the interval moments: image(l) = (∫
 over [(l-1)dz, l dz] of K t + ∫ over [l dz, (l+1)dz] of K (1 - t)) /
 dz.
+
+# Arguments
+- `image`: vector of length `2n_bin + 1` (modified; overwritten),
+  index `l + n_bin + 1`.
+- `rise`, `fall`: moments from `csr_image_hat_kernel!`.
+- `dz`: bin width [m].
 """
 @kernel function csr_image_hat_combine_kernel!(image, @Const(rise),
     @Const(fall), dz)

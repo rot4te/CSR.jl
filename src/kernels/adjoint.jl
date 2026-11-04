@@ -11,6 +11,12 @@
 
 d/dzp of triangle_overlap(zp, dz_particle, zb0, zb1) = f(zb0 − zp)
 − f(zb1 − zp), f the triangle's density.
+
+# Arguments
+- `zp`, `dz_particle`, `zb0`, `zb1`: as in `triangle_overlap`.
+
+# Returns
+- the derivative [1/m].
 """
 @inline function triangle_overlap_dzp(zp, dz_particle, zb0, zb1)
   f(u) = max(zero(u), 2 / dz_particle - 4 * abs(u) / dz_particle^2)
@@ -21,6 +27,17 @@ end
     adjoint_kick_cell(zp, zc1, z_center, dz)
 
 Interpolation cell of a particle, as in csr_apply_kicks_kernel!.
+
+# Arguments
+- `zp`: particle position [m], `z[i]`.
+- `zc1`: first bin centre [m], `z_center[1]`.
+- `z_center`: bin centres [m], `bins.z_center` (`CSRBins`).
+- `dz`: bin width [m], `bins.dz`.
+
+# Returns
+- `(i0, r1)`: lower bin `i0` of the cell and the fraction
+  `r1 = (zp - z_center[i0]) / dz`. No range test (unlike
+  `kick_cell`).
 """
 @inline function adjoint_kick_cell(zp, zc1, z_center, dz)
   i0 = trunc(Int, (zp - zc1) / dz) + 1
@@ -34,6 +51,20 @@ end
 Adjoint of the kick application for one particle: kick cotangent
 scattered to the two bins, z cotangent from the slope of the
 interpolated kick.
+
+# Arguments
+- `add!`: scatter-add functor, `AtomicAdd()` or `PlainAdd()`.
+- `kbar`: cotangent of the kick per bin (modified: `add!` into bins
+  `i0`, `i0 + 1`).
+- `zbar`: `z` cotangent per particle (modified: `zbar[i]` set).
+- `i`: particle index.
+- `ybar`: output (`pz`) cotangent per particle, as passed to
+  `csr_kick_adjoint`.
+- `z`: particle longitudinal positions [m].
+- `z_center`: bin centres [m], `bins.z_center` (`CSRBins`).
+- `kick`: Δpz per bin, `st.kick` of `csr_binned_kick`.
+- `dz`: bin width [m], `bins.dz`.
+- `pz_scale`: factor on the applied kick (as in `csr_kick_pz`).
 """
 @inline function kick_adjoint_particle!(add!, kbar, zbar, i, ybar, z,
                                         z_center, kick, dz, pz_scale)
@@ -50,7 +81,14 @@ end
                              kick, dz, pz_scale)
 
 One work item per particle: `kick_adjoint_particle!` with atomic adds
-into `kbar`; `zbar = 0` for dead particles.
+into `kbar`; `zbar = 0` for dead particles. Launched by
+`csr_kick_adjoint` for `Float32`/`Float64` `kbar`.
+
+# Arguments
+- `kbar`, `zbar`, `ybar`, `z`, `z_center`, `kick`, `dz`,
+  `pz_scale`: as in `kick_adjoint_particle!` (`kbar`, `zbar`
+  modified; `kbar` zeroed by the caller).
+- `alive`: live-particle mask (`Bool`).
 """
 @kernel function csr_kick_adjoint_kernel!(kbar, zbar, @Const(ybar),
     @Const(z), @Const(alive), @Const(z_center),
@@ -69,6 +107,14 @@ end
 
 gbar[m] = coef Σ_{i≥m} I_int[i+1−m] kbar[i] (correlation:
 transpose of csr_convolve_kernel!).
+
+# Arguments
+- `gbar`: cotangent of the edge gradient per bin (overwritten).
+- `I_int`: integrated kick integral per bin, `st.I_int` of
+  `csr_binned_kick`.
+- `kbar`: cotangent of the kick per bin (from
+  `kick_adjoint_particle!` / `csr_kick_adjoint_kernel!`).
+- `coef`: kick coefficient, `st.coef`.
 """
 @kernel function csr_convolve_adjoint_kernel!(gbar, @Const(I_int),
     @Const(kbar), coef)
@@ -86,6 +132,13 @@ end
 
 Qbar[j] = (gbar[j] [j ≥ 2] − gbar[j+1] [j < n_bin]) / dz²
 (transpose of csr_edge_gradient_kernel!).
+
+# Arguments
+- `Qbar`: cotangent of the bin charge (overwritten),
+  `n_bin = length(Qbar)`.
+- `gbar`: cotangent of the edge gradient, from
+  `csr_convolve_adjoint_kernel!`.
+- `dz`: bin width [m], `bins.dz`.
 """
 @kernel function csr_edge_gradient_adjoint_kernel!(Qbar, @Const(gbar),
     dz)
@@ -102,6 +155,14 @@ end
 
 Qbar[j] += coef Σ_i image(i − j) kbar[i] (transpose of
 csr_image_convolve_kernel!).
+
+# Arguments
+- `Qbar`: cotangent of the bin charge (modified),
+  `n_bin = length(Qbar)`.
+- `image`: image-charge table of one layer (length `2n_bin + 1`),
+  an entry of `st.images` of `csr_binned_kick`.
+- `kbar`: cotangent of the kick per bin.
+- `coef`: kick coefficient, `st.coef`.
 """
 @kernel function csr_image_convolve_adjoint_kernel!(Qbar,
     @Const(image), @Const(kbar), coef)
@@ -119,7 +180,22 @@ end
                                 dz, dz_particle, pbs)
 
 Adjoint of the deposit: qbar_p = Σ_j w_j(z_p) Qbar_j, zbar_p += q_p
-Σ_j w_j'(z_p) Qbar_j.
+Σ_j w_j'(z_p) Qbar_j. Dead particles: `qbar = 0`, `zbar`
+unchanged.
+
+# Arguments
+- `qbar`: `q` cotangent per particle (overwritten).
+- `zbar`: `z` cotangent per particle (modified: added to), set by
+  `kick_adjoint_particle!` / `csr_kick_adjoint_kernel!`.
+- `Qbar`: cotangent of the bin charge, from
+  `csr_edge_gradient_adjoint_kernel!` and
+  `csr_image_convolve_adjoint_kernel!`.
+- `z`: particle longitudinal positions [m].
+- `q`: macroparticle charges [C].
+- `alive`: live-particle mask (`Bool`).
+- `z_min`, `dz`, `dz_particle`, `pbs`: grid and triangle as in
+  `deposit_particle!` (`bins.z0_edge[1]`, `bins.dz`,
+  `particle_bin_span * dz`, `params.particle_bin_span`).
 """
 @kernel function csr_deposit_adjoint_kernel!(qbar, zbar, @Const(Qbar),
     @Const(z), @Const(q), @Const(alive),

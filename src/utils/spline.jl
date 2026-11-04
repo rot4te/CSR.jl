@@ -12,6 +12,12 @@ Value, first and second derivative at `s` of the cubic `x(s) = c[1] +
 c[2] s + c[3] s² + c[4] s³` (Bmad `spline_struct` with `x0 = 0`).
 Centroid offsets from an element's chord are such cubics
 (`chord_spline`).
+
+# Arguments
+- `c`: the 4 coefficients, indexable (e.g. `e.spline` of a
+  `CSRElementInfo`, from `chord_spline`).
+- `s`: position along the spline axis [m] (for `e.spline`, the
+  chord coordinate in the element).
 """
 spline_val(c, s) = ((c[4] * s + c[3]) * s + c[2]) * s + c[1]
 
@@ -19,6 +25,9 @@ spline_val(c, s) = ((c[4] * s + c[3]) * s + c[2]) * s + c[1]
     spline_d1(c, s)
 
 First derivative of the cubic `c` at `s` (see `spline_val`).
+
+# Arguments
+- `c`, `s`: as in `spline_val`.
 """
 spline_d1(c, s) = (3c[4] * s + 2c[3]) * s + c[2]
 
@@ -26,6 +35,9 @@ spline_d1(c, s) = (3c[4] * s + 2c[3]) * s + c[2]
     spline_d2(c, s)
 
 Second derivative of the cubic `c` at `s` (see `spline_val`).
+
+# Arguments
+- `c`, `s`: as in `spline_val`.
 """
 spline_d2(c, s) = 6c[4] * s + 2c[3]
 
@@ -35,6 +47,17 @@ spline_d2(c, s) = 6c[4] * s + 2c[3]
 Coefficients of the cubic with `x(0) = x(L_chord) = 0` and end slopes
 `slope0`, `slope1`. Equivalent to Bmad's `create_a_spline([0, 0],
 [L_chord, 0], slope0, slope1)`.
+
+# Arguments
+- `L_chord`: chord length [m] (nonzero; `CSRGeometry` builds a
+  spline only for `|L_chord| ≥ 1e-8`).
+- `slope0`, `slope1`: slopes `x′` at `s = 0` and `s = L_chord`;
+  `CSRGeometry` passes the centroid angles [rad] relative to the
+  chord at the element entrance and exit.
+
+# Returns
+- `SVector{4}` of coefficients `c` for `spline_val`, stored as
+  `CSRElementInfo` `spline`.
 """
 function chord_spline(L_chord, slope0, slope1)
   return SVector(0.0, slope0, (-2slope0 - slope1) / L_chord,
@@ -51,6 +74,18 @@ reference line is the spline axis rotated by `dtheta_ref`.
 With `bmad_compat = true`, the s⁴ term uses Bmad's coefficient
 `9c₃²` instead of the integral's `9c₃²/5` (docs, "Physics
 decisions", V1).
+
+# Arguments
+- `s0`, `s1`: start and end [m] of the interval along the spline
+  axis.
+- `c`: spline coefficients, as in `spline_val` (e.g. `e.spline`).
+- `dtheta_ref`: angle [rad] of the reference line relative to the
+  spline axis.
+- `bmad_compat`: Bmad's s⁴ coefficient (above); `path_excess`
+  calls this with `bmad_compat = true`.
+
+# Returns
+- the length difference [m].
 """
 function dspline_len(s0, s1, c, dtheta_ref = 0.0;
                      bmad_compat::Bool = false)
@@ -101,6 +136,20 @@ of radius ρ it overestimates the excess over an arc Ls by
 `Ls⁵/(1920ρ⁴)`, which shifts image sources at large heights
 (docs, "Physics decisions", V9). The result type is the same in both
 modes (`Float64` for `Float32` arguments).
+
+# Arguments
+- `s0`, `s1`: start and end [m] of the interval along the spline
+  axis (chord coordinates for `e.spline`).
+- `c`: spline coefficients, as in `spline_val` (e.g. `e.spline` of
+  a `CSRElementInfo`, from `chord_spline`).
+- `dtheta_ref`: angle [rad] of the reference line from the spline
+  axis (e.g. `modulo2(theta_L - e.theta_chord, pi / 2)` for the
+  source–kick line in `ddz_calc_csr`).
+- `bmad_compat`: Bmad's small-angle form (above); e.g.
+  `geom.bmad_compat`.
+
+# Returns
+- the excess [m].
 """
 function path_excess(s0, s1, c, dtheta_ref = 0.0;
                      bmad_compat::Bool = false)

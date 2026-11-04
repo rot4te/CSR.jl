@@ -8,7 +8,8 @@ Bin the live particles (`alive[i] == true`) with longitudinal
 positions `z` [m] and charges `q` [C]. Each particle is spread as a
 triangle of base `particle_bin_span * dz`. The grid is centered on the
 live-particle z range, with empty padding bins at both ends. Errors if
-the array lengths differ or a live particle has a non-finite `z`.
+the array lengths differ, no particle is live, a live particle has
+a non-finite `z`, or the live z range has zero width.
 
 Runs as KernelAbstractions kernels on the backend of `z`. The deposit
 uses atomic adds for `Float32`/`Float64` charges, so the summation
@@ -20,6 +21,18 @@ The grid (`dz`, `z0_edge`, `z_center`) and `n_particle` are built from
 primal values (`Beamlines.scalarize_all`): with ForwardDiff Duals only
 `charge` and `edge_dcharge_density_dz` carry derivatives, and the grid
 is held constant.
+
+# Arguments
+- `z`: longitudinal particle positions [m] (user array). `Dual` or
+  TPS allowed.
+- `q`: macroparticle charges [C], same length. `Dual` or TPS
+  allowed.
+- `alive`: live-particle mask (`AbstractVector{Bool}`), same
+  length.
+- `params`: `CSRParams` (uses `n_bin`, `particle_bin_span`).
+
+# Returns
+- `CSRBins` with `params.n_bin` bins on the backend of `z`.
 """
 function csr_bin_particles(z::AbstractVector, q::AbstractVector,
                            alive::AbstractVector{Bool},
