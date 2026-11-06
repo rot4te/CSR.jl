@@ -92,7 +92,7 @@
                                  ix_ele_source = k.ix_ele_source,
                                  dz_particles = dz)
         return last(CSR.ddz_calc_csr(k2,
-            fixed ? Beamlines.scalarize_all(s) : s, G, kp))
+            fixed ? Beamlines.scalarize(s) : s, G, kp))
       end
       d1(fixed) = ForwardDiff.derivative(t -> resid(t, fixed), 0.0)
       d2(fixed) = ForwardDiff.derivative(t -> ForwardDiff.derivative(
@@ -123,8 +123,8 @@
                                                G, kp)
       end
     end
-    @test CSR.scalarize_all_search(Beamlines.scalarize_all(G),
-        Beamlines.scalarize_all(CSRKickPoint(G, 2, 0.17, 200.0)),
+    @test CSR.scalarize_all_search(Beamlines.scalarize(G),
+        Beamlines.scalarize(CSRKickPoint(G, 2, 0.17, 200.0)),
         Float64) === nothing
   end
 
@@ -170,7 +170,7 @@
                                       CSRGeometry(Lv, gv, reshape(cv,
         4, 6); bmad_compat = bc),
                                       ix, Lv[ix] / max(1, round(Int,
-        Beamlines.scalarize_all(Lv[ix]) / 0.1, RoundNearestTiesAway)),
+        Beamlines.scalarize(Lv[ix]) / 0.1, RoundNearestTiesAway)),
                                       s, γ, electron, p;
                                       kick_factor = 0.5)
     y = f(L3, g3, c, sk, 200.0)
@@ -242,7 +242,7 @@
                   bmad_compat = bc, all_bin_quadrature = false)
     ybar = cos.(1:n)
     ds = L3[2] / max(1, round(Int,
-                              Beamlines.scalarize_all(L3[2]) / 0.1,
+                              Beamlines.scalarize(L3[2]) / 0.1,
                               RoundNearestTiesAway))
     F(x) = sum(ybar .* csr_kick_pz(pz0, z, q, alive, CSRGeometry(L3,
         [x[1], x[2], 0.0], c3; bmad_compat = bc), 2, ds, x[3],

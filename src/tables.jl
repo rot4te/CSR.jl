@@ -151,8 +151,8 @@ function csr_image_table(geom::CSRGeometry, kp::CSRKickPoint, dz,
   tol = search === nothing ? image_hat_tol(geom, kp, image, dz, rtol,
       u_min) :
                              image_hat_tol(search.geom, search.kp,
-                                 Beamlines.scalarize_all.(image),
-                                 Beamlines.scalarize_all(dz), rtol,
+                                 Beamlines.scalarize.(image),
+                                 Beamlines.scalarize(dz), rtol,
                                  u_min)
   rise = KernelAbstractions.zeros(backend, T, n + 1)
   fall = KernelAbstractions.zeros(backend, T, n + 1)

@@ -165,8 +165,8 @@ function image_simpson(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol,
   S2 = h / 12 * (g(a, fa) + 4g((a + m) / 2, fl) + 2g(m,
       fm) + 4g((m + b) / 2, fr) + g(b, fb))
   if depth <= 0 || h <= h_min || maximum(abs,
-      Beamlines.scalarize_all.(S2 - S1)) <=
-          15Beamlines.scalarize_all(tol)
+      Beamlines.scalarize.(S2 - S1)) <=
+          15Beamlines.scalarize(tol)
     leaf === nothing || leaf(a, b)
     return k, S2 + (S2 - S1) / 15
   end

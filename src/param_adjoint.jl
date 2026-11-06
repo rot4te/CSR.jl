@@ -180,7 +180,7 @@ function geometry_active_indices(geom::CSRGeometry,
   kp = CSRKickPoint(geom, ix_ele_kick, s_kick, gamma; kick_factor)
   lo, hi, up, down = widen_source_range(lo, hi, up, down, src_ix(kp,
       lag), n)
-  Beamlines.scalarize_all(kp.s_chord_kick) == 0 && ix_ele_kick > 1 &&
+  Beamlines.scalarize(kp.s_chord_kick) == 0 && ix_ele_kick > 1 &&
       (lo = min(lo, ix_ele_kick - 1))
   for ns in 1:n_images
     kp_ns = CSRKickPoint(geom, ix_ele_kick, s_kick, gamma;
@@ -285,15 +285,15 @@ mixed second-order partials are dropped.
 """
 function middle_excess(acc, geom::CSRGeometry{LocalDual}, r, theta_L)
   isempty(r) && return acc
-  theta0 = Beamlines.scalarize_all(theta_L)
+  theta0 = Beamlines.scalarize(theta_L)
   t = Dual{MidTag}(theta0, 1.0)
   M = zero(t)
   for i in r
     ce = geom.ele[i]
-    M += path_excess(0.0, Beamlines.scalarize_all(ce.L_chord),
-                     Beamlines.scalarize_all.(ce.spline),
+    M += path_excess(0.0, Beamlines.scalarize(ce.L_chord),
+                     Beamlines.scalarize.(ce.spline),
                      modulo2(t -
-                             Beamlines.scalarize_all(ce.theta_chord),
+                             Beamlines.scalarize(ce.theta_chord),
                              pi / 2);
                      bmad_compat = geom.bmad_compat)
   end
@@ -347,7 +347,7 @@ sharing the seeded elements of `wk`.
 
 # Arguments
 - `geom0`: primal geometry, `CSRGeometry{Float64}`
-  (`Beamlines.scalarize_all(geom)`).
+  (`Beamlines.scalarize(geom)`).
 - `ix_ele_kick`: index into `geom0.ele` of the kick's element.
 - `n_grad`: length of `grad`, `4 + 26 n_ele + 2`.
 - `wk`: a `ParamAdjointWork` whose `geom0`, `ele_d0`, `ele_src`,
@@ -742,7 +742,7 @@ the path-length sums over the elements in between, whose cotangents
 whose quadrature nodes move with the parameters, is differentiated by
 ForwardDiff over its `geometry_active_indices` (`first_bin_adjoint!`).
 Exact up to round-off, like ForwardDiff through `csr_bins_kick`; cost
-a few primal kicks. Errors unless `scalarize_all(ds) > 0`.
+a few primal kicks. Errors unless `scalarize(ds) > 0`.
 
 # Arguments
 - `kbar`: cotangent of the kick per bin, the `kbar` output of
@@ -771,22 +771,22 @@ function csr_kick_param_adjoint(kbar::AbstractVector, bins::CSRBins,
                                 ix_ele_kick::Integer, ds, s_kick,
                                 gamma, species::Species,
                                 params::CSRParams; kick_factor = 1.0)
-  Beamlines.scalarize_all(ds) > 0 ||
+  Beamlines.scalarize(ds) > 0 ||
       error("csr_kick_param_adjoint: ds must be > 0 (got $ds)")
   cpu(A) = A isa Array ? A : Array(A)
-  bins0 = CSRBins(Beamlines.scalarize_all(bins.dz), cpu(bins.z0_edge),
+  bins0 = CSRBins(Beamlines.scalarize(bins.dz), cpu(bins.z0_edge),
                   cpu(bins.z_center),
-                  Beamlines.scalarize_all.(cpu(bins.charge)),
+                  Beamlines.scalarize.(cpu(bins.charge)),
                   cpu(bins.n_particle),
-                  Beamlines.scalarize_all.(cpu(
+                  Beamlines.scalarize.(cpu(
       bins.edge_dcharge_density_dz)))
-  kb = Beamlines.scalarize_all.(cpu(kbar))
+  kb = Beamlines.scalarize.(cpu(kbar))
   n_ele = length(geom.ele)
-  geom0 = Beamlines.scalarize_all(geom)
-  s_kick, gamma, kick_factor = Beamlines.scalarize_all(s_kick),
-      Beamlines.scalarize_all(gamma),
-      Beamlines.scalarize_all(kick_factor)
-  ds0 = Beamlines.scalarize_all(ds)
+  geom0 = Beamlines.scalarize(geom)
+  s_kick, gamma, kick_factor = Beamlines.scalarize(s_kick),
+      Beamlines.scalarize(gamma),
+      Beamlines.scalarize(kick_factor)
+  ds0 = Beamlines.scalarize(ds)
   ik = ix_ele_kick
   n_bin = params.n_bin
   dz = bins0.dz

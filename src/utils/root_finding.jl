@@ -86,7 +86,7 @@ end
 Root `s0` of `f(s) = 0`, found from primal values, with the root's
 dependence on the parameters of `f` attached: Newton steps `s ← s -
 (f(s) - r0) / dfds` from `s0` in the number type of `f0 = f(s0)`, with
-`r0 = Beamlines.scalarize_all(f0)` (so the primal root stays `s0`) and
+`r0 = Beamlines.scalarize(f0)` (so the primal root stays `s0`) and
 the primal slope `dfds = ∂f/∂s` at `s0` (computed by `root_slope`
 if `nothing`). With a constant slope each step gains one order, so
 `root_order(f0)` steps are taken: one for `Dual`s (implicit
@@ -113,7 +113,7 @@ function root_tangent(f, s0, f0, dfds = nothing)
   n = root_order(f0)
   n == 0 && return convert(promote_type(typeof(s0), typeof(f0)), s0)
   d = dfds === nothing ? root_slope(f, s0) : dfds
-  r0 = Beamlines.scalarize_all(f0)
+  r0 = Beamlines.scalarize(f0)
   s = s0 - (f0 - r0) / d
   for _ in 2:n
     s -= (f(s) - r0) / d
@@ -147,9 +147,9 @@ the parameters' `Dual`s of any nesting).
 - `f`, `s0`: as in `root_tangent`.
 """
 root_slope(f,
-           s0) = Beamlines.scalarize_all(partials(f(Dual{RootTag}(
-               Beamlines.scalarize_all(s0),
-               one(Beamlines.scalarize_all(s0)))), 1))
+           s0) = Beamlines.scalarize(partials(f(Dual{RootTag}(
+               Beamlines.scalarize(s0),
+               one(Beamlines.scalarize(s0)))), 1))
 
 """
     RootTag

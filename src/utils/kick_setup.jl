@@ -31,7 +31,7 @@ Plain, `Dual` or TPS `gamma` and `ds` (see `csr_kick_pz`).
 """
 function csr_kick_coef(species::Species, gamma, ds;
                        bmad_compat::Bool = false)
-  Beamlines.scalarize_all(gamma) > 1 || error("csr_kick_coef: gamma must be > 1 (got $(Beamlines.scalarize_all(gamma)))")
+  Beamlines.scalarize(gamma) > 1 || error("csr_kick_coef: gamma must be > 1 (got $(Beamlines.scalarize(gamma)))")
   rel_mass = massof(species) / M_ELECTRON
   q = chargeof(species)
   q == 0 && error("csr_kick_coef: species has zero charge")

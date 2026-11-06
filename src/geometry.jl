@@ -92,13 +92,13 @@ function CSRGeometry(L::AbstractVector, g::AbstractVector,
     floor1 = cfloor(ref_floor1, i + 1)
 
     dr = floor1.r - floor0.r
-    if Beamlines.scalarize_all(dr[1]) == 0 &&
-        Beamlines.scalarize_all(dr[3]) == 0
+    if Beamlines.scalarize(dr[1]) == 0 &&
+        Beamlines.scalarize(dr[3]) == 0
       # Zero-length chord (e.g. a marker): TPS atan/sqrt abort at 0
       # and Dual derivatives are not finite there. The chord is below
       # the 1e-8 threshold below, so its primal direction is enough.
-      theta_chord = convert(T, atan(Beamlines.scalarize_all(dr[1]),
-                                    Beamlines.scalarize_all(dr[3])))
+      theta_chord = convert(T, atan(Beamlines.scalarize(dr[1]),
+                                    Beamlines.scalarize(dr[3])))
       L_chord = zero(T)
     else
       theta_chord = atan(dr[1], dr[3])
@@ -108,16 +108,16 @@ function CSRGeometry(L::AbstractVector, g::AbstractVector,
     dL_s = zero(T)
 
     # Bmad's threshold for a zero-length chord
-    if abs(Beamlines.scalarize_all(L_chord)) >= 1e-8
+    if abs(Beamlines.scalarize(L_chord)) >= 1e-8
       # An element with a negative step (e.g. off-center beam in a
       # patch with only an x-pitch) can have floor%theta and
       # theta_chord 180° apart. Restrict theta0 and theta1 to [-π/2,
       # π/2).
       theta0 = modulo2(floor0.theta - theta_chord, pi / 2)
       theta1 = modulo2(floor1.theta - theta_chord, pi / 2)
-      parallel0 = abs(modulo2(Beamlines.scalarize_all(floor0.theta -
+      parallel0 = abs(modulo2(Beamlines.scalarize(floor0.theta -
           theta_chord), pi)) < pi / 2
-      parallel1 = abs(modulo2(Beamlines.scalarize_all(floor1.theta -
+      parallel1 = abs(modulo2(Beamlines.scalarize(floor1.theta -
           theta_chord), pi)) < pi / 2
       parallel0 == parallel1 || error(
         "CSRGeometry: inconsistent centroid direction in element $i")
@@ -166,7 +166,7 @@ function CSRKickPoint(geom::CSRGeometry, ix_ele_kick, s_kick, gamma;
                       y_source = 0.0, kick_factor = 1.0)
   check_descriptors("CSRKickPoint"; geom, s_kick, gamma, y_source,
                     kick_factor)
-  Beamlines.scalarize_all(gamma) > 1 || error("CSRKickPoint: gamma must be > 1 (got $(Beamlines.scalarize_all(gamma)))")
+  Beamlines.scalarize(gamma) > 1 || error("CSRKickPoint: gamma must be > 1 (got $(Beamlines.scalarize(gamma)))")
   e = geom.ele[ix_ele_kick]
   s_chord_kick = s_ref_to_s_chord(s_kick, e; geom.bmad_compat)
   x = spline_val(e.spline, s_chord_kick)
@@ -181,10 +181,10 @@ function CSRKickPoint(geom::CSRGeometry, ix_ele_kick, s_kick, gamma;
 end
 
 """
-    Beamlines.scalarize_all(f::FloorPosition),
-    Beamlines.scalarize_all(e::CSRElementInfo),
-    Beamlines.scalarize_all(geom::CSRGeometry),
-    Beamlines.scalarize_all(kp::CSRKickPoint)
+    Beamlines.scalarize(f::FloorPosition),
+    Beamlines.scalarize(e::CSRElementInfo),
+    Beamlines.scalarize(geom::CSRGeometry),
+    Beamlines.scalarize(kp::CSRKickPoint)
 
 Copy with the primal value of every number (`Float64` from `Dual`s). A
 `CSRGeometry{Float64}` is returned as is.
@@ -198,32 +198,32 @@ Copy with the primal value of every number (`Float64` from `Dual`s). A
 # Returns
 - an object of the same struct type with primal numbers.
 """
-Beamlines.scalarize_all(f::FloorPosition) =
-  FloorPosition(Beamlines.scalarize_all.(f.r),
-                Beamlines.scalarize_all(f.theta))
-Beamlines.scalarize_all(e::CSRElementInfo) =
-  CSRElementInfo(Beamlines.scalarize_all(e.L),
-                 Beamlines.scalarize_all(e.g),
-                 Beamlines.scalarize_all(e.s_start),
-                 Beamlines.scalarize_all(e.ref_floor0),
-                 Beamlines.scalarize_all(e.ref_floor1),
-                 Beamlines.scalarize_all(e.floor0),
-                 Beamlines.scalarize_all(e.floor1),
-                 Beamlines.scalarize_all(e.theta_chord),
-                 Beamlines.scalarize_all(e.L_chord),
-                 Beamlines.scalarize_all.(e.spline),
-                 Beamlines.scalarize_all(e.dL_s))
-Beamlines.scalarize_all(geom::CSRGeometry{Float64}) = geom
-Beamlines.scalarize_all(geom::CSRGeometry) =
-  CSRGeometry(Beamlines.scalarize_all(geom.start),
-              map(Beamlines.scalarize_all, geom.ele),
+Beamlines.scalarize(f::FloorPosition) =
+  FloorPosition(Beamlines.scalarize.(f.r),
+                Beamlines.scalarize(f.theta))
+Beamlines.scalarize(e::CSRElementInfo) =
+  CSRElementInfo(Beamlines.scalarize(e.L),
+                 Beamlines.scalarize(e.g),
+                 Beamlines.scalarize(e.s_start),
+                 Beamlines.scalarize(e.ref_floor0),
+                 Beamlines.scalarize(e.ref_floor1),
+                 Beamlines.scalarize(e.floor0),
+                 Beamlines.scalarize(e.floor1),
+                 Beamlines.scalarize(e.theta_chord),
+                 Beamlines.scalarize(e.L_chord),
+                 Beamlines.scalarize.(e.spline),
+                 Beamlines.scalarize(e.dL_s))
+Beamlines.scalarize(geom::CSRGeometry{Float64}) = geom
+Beamlines.scalarize(geom::CSRGeometry) =
+  CSRGeometry(Beamlines.scalarize(geom.start),
+              map(Beamlines.scalarize, geom.ele),
               geom.bmad_compat)
-Beamlines.scalarize_all(kp::CSRKickPoint) =
-  CSRKickPoint(kp.ix_ele_kick, Beamlines.scalarize_all(kp.s_kick),
-               Beamlines.scalarize_all(kp.s_chord_kick),
-               Beamlines.scalarize_all(kp.floor_k),
-               Beamlines.scalarize_all(kp.gamma),
-               Beamlines.scalarize_all(kp.gamma2),
-               Beamlines.scalarize_all(kp.beta),
-               Beamlines.scalarize_all(kp.y_source),
-               Beamlines.scalarize_all(kp.kick_factor))
+Beamlines.scalarize(kp::CSRKickPoint) =
+  CSRKickPoint(kp.ix_ele_kick, Beamlines.scalarize(kp.s_kick),
+               Beamlines.scalarize(kp.s_chord_kick),
+               Beamlines.scalarize(kp.floor_k),
+               Beamlines.scalarize(kp.gamma),
+               Beamlines.scalarize(kp.gamma2),
+               Beamlines.scalarize(kp.beta),
+               Beamlines.scalarize(kp.y_source),
+               Beamlines.scalarize(kp.kick_factor))

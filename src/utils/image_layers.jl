@@ -38,11 +38,11 @@ the width of the drift kernel's peak.
 
 # Returns
 - lag width [m], from the primal values
-  (`Beamlines.scalarize_all`).
+  (`Beamlines.scalarize`).
 """
 image_u_min(kp::CSRKickPoint) = 0.01 *
-    abs(Beamlines.scalarize_all(kp.y_source)) /
-        Beamlines.scalarize_all(kp.gamma)
+    abs(Beamlines.scalarize(kp.y_source)) /
+        Beamlines.scalarize(kp.gamma)
 
 """
     image_hat_tol(geom, kp, image, dz, rtol, u_min)
@@ -68,7 +68,7 @@ round-off noise.
 
 # Returns
 - absolute tolerance, `rtol * dz` times the primal value
-  (`Beamlines.scalarize_all`) of the largest |K|.
+  (`Beamlines.scalarize`) of the largest |K|.
 """
 function image_hat_tol(geom::CSRGeometry, kp::CSRKickPoint, image, dz,
                        rtol, u_min)
@@ -81,5 +81,5 @@ function image_hat_tol(geom::CSRGeometry, kp::CSRKickPoint, image, dz,
     K = max(K, abs(Kp), abs(Km))
     x /= 2
   end
-  return rtol * Beamlines.scalarize_all(K) * dz
+  return rtol * Beamlines.scalarize(K) * dz
 end

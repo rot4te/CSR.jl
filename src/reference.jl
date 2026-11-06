@@ -147,7 +147,7 @@ function csr_kick_reference!(pz::AbstractVector, z::AbstractVector,
                              geom::CSRGeometry, ix_ele_kick::Integer,
                              ds, s_kick, gamma, species::Species,
                              params::CSRParams; kick_factor = 1.0)
-  Beamlines.scalarize_all(ds) > 0 ||
+  Beamlines.scalarize(ds) > 0 ||
       error("csr_kick_reference!: ds must be > 0 (got $ds)")
   n_bin = params.n_bin
   params.bmad_compat == geom.bmad_compat ||

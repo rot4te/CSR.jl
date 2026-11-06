@@ -18,7 +18,7 @@
   z, q, alive = kernel_test_bunch(1e-3, 1e-9, n)
   pz0 = zeros(n)
   ds0 = L3[2] / max(1, round(Int,
-                             Beamlines.scalarize_all(L3[2]) / 0.1,
+                             Beamlines.scalarize(L3[2]) / 0.1,
                              RoundNearestTiesAway))
 
   @testset "Helpers" begin
@@ -52,7 +52,7 @@
     c[3, 1] = v[3]
     geom = CSRGeometry([L3[1], v[1], L3[3]], [g3[1], v[2], g3[3]], c;
                        bmad_compat = p.bmad_compat)
-    ds = v[1] / max(1, round(Int, Beamlines.scalarize_all(v[1]) / 0.1,
+    ds = v[1] / max(1, round(Int, Beamlines.scalarize(v[1]) / 0.1,
                              RoundNearestTiesAway))
     return csr_kick_pz(pz0, z .* (1 + 0.2v[6]), q .* (1 + v[6]),
                        alive, geom, 2, ds, v[4], v[5], electron, p)

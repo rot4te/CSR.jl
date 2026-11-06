@@ -31,7 +31,7 @@
                   bmad_compat = bc, all_bin_quadrature = abq)
     geom = CSRGeometry(L3, g3, c3; bmad_compat = bc)
     ds = L3[ix] / max(1, round(Int,
-                               Beamlines.scalarize_all(L3[ix]) / 0.1,
+                               Beamlines.scalarize(L3[ix]) / 0.1,
                                RoundNearestTiesAway))
     kw = (kick_factor = 0.5, pz_scale = 1.3)
     f(pp, zz, qq) = csr_kick_pz(pp, zz, qq, alive, geom, ix, ds,

@@ -171,7 +171,7 @@ using CSR: CSRKickPoint, CSRKick1, s_source_calc, ddz_calc_csr,
     # Kick insensitive to the round-off centroid angle
     z, q, alive = gaussian_line_bunch(1e-3, 1e-9, 201)
     p = CSRParams(n_bin = 40)
-    ds = 0.1 / max(1, round(Int, Beamlines.scalarize_all(0.1) / 0.05,
+    ds = 0.1 / max(1, round(Int, Beamlines.scalarize(0.1) / 0.05,
                             RoundNearestTiesAway))
     r0 = csr_kick!(zeros(201), z, q, alive, CSRGeometry([0.1, 0.1],
         [0.1, 0.1], zeros(3, 6)), 2, ds, 0.1, 1e4,

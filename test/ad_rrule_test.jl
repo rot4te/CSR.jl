@@ -56,11 +56,11 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry,
                   bmad_compat = bc, all_bin_quadrature = abq)
     geom = CSRGeometry(L3, g3, c3; bmad_compat = bc)
     ds = L3[2] / max(1, round(Int,
-                              Beamlines.scalarize_all(L3[2]) / 0.1,
+                              Beamlines.scalarize(L3[2]) / 0.1,
                               RoundNearestTiesAway))
     f(gm, s, γ) = csr_kick_pz(pz, z, q, alive, gm, 2,
                               gm.ele[2].L / max(1, round(Int,
-        Beamlines.scalarize_all(gm.ele[2].L) / 0.1,
+        Beamlines.scalarize(gm.ele[2].L) / 0.1,
         RoundNearestTiesAway)), s, γ, electron, p; kw...)
     ybar = cos.(1:n)
     y, back = ChainRulesCore.rrule(csr_kick_pz, pz, z, q, alive, geom,
@@ -75,7 +75,7 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry,
         CSR.geometry_from_vector(v, 3, bc), 0.17, 200.0)), v0)
     # ds = L / n in f, so the ds cotangent reaches element 2's length
     # with d ds / d L = 1 / n (n = 3 here)
-    n2 = round(Int, Beamlines.scalarize_all(L3[2]) / 0.1,
+    n2 = round(Int, Beamlines.scalarize(L3[2]) / 0.1,
                RoundNearestTiesAway)
     vadj = CE.geometry_vector(t[6], 3)
     vadj[31] += t[8] / n2
@@ -129,7 +129,7 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry,
                   beam_chamber_height = 0.01)
     geom = CSRGeometry(L3, g3, c3)
     ds = L3[2] / max(1, round(Int,
-                              Beamlines.scalarize_all(L3[2]) / 0.1,
+                              Beamlines.scalarize(L3[2]) / 0.1,
                               RoundNearestTiesAway))
     ybar = cos.(1:n)
     for s in (0.19, 0.23)
@@ -172,7 +172,7 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry,
                   beam_chamber_height = n_img > 0 ? 0.01 : 0.0,
                   bmad_compat = bc, all_bin_quadrature = abq)
     ds = Lv[ix] / max(1, round(Int,
-                               Beamlines.scalarize_all(Lv[ix]) / 0.05,
+                               Beamlines.scalarize(Lv[ix]) / 0.05,
                                RoundNearestTiesAway))
     zz, qq, aa = kernel_test_bunch(3e-3, 1e-9, 400)
     st = CSR.csr_binned_kick(zz, qq, aa, geom, ix, ds, sk,
@@ -186,11 +186,11 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry,
     # ix's length (d ds / d L = 1 / n)
     g = copy(g)
     g[5 + 26(ix - 1)] += dsb / max(1, round(Int,
-        Beamlines.scalarize_all(Lv[ix]) / 0.05, RoundNearestTiesAway))
+        Beamlines.scalarize(Lv[ix]) / 0.05, RoundNearestTiesAway))
     function phi(x)
       gx = CSR.geometry_from_vector(view(x, 1:n_g), n_ele, bc)
       dsx = gx.ele[ix].L / max(1, round(Int,
-                                        Beamlines.scalarize_all(
+                                        Beamlines.scalarize(
           gx.ele[ix].L) / 0.05, RoundNearestTiesAway))
       return sum(kbar .* CSR.csr_bins_kick(st.bins,
           CSR.CPU(), gx, ix, dsx, x[n_g+1], x[n_g+2], electron,
@@ -245,16 +245,16 @@ ChainRulesTestUtils.test_approx(a::CSRGeometry, b::CSRGeometry,
                   bmad_compat = bc, all_bin_quadrature = abq)
     geom = CSRGeometry(L3, g3, c3; bmad_compat = bc)
     ds = L3[2] / max(1, round(Int,
-                              Beamlines.scalarize_all(L3[2]) / 0.1,
+                              Beamlines.scalarize(L3[2]) / 0.1,
                               RoundNearestTiesAway))
     dsl(gm) = gm.ele[2].L / max(1, round(Int,
-        Beamlines.scalarize_all(gm.ele[2].L) / 0.1,
+        Beamlines.scalarize(gm.ele[2].L) / 0.1,
         RoundNearestTiesAway))
     h(pz, q, gm, s, w) = csr_kick_pz(pz, zs, q, as, gm, 2, dsl(gm), s,
                                      Γ * w, electron, p; kw...)
     function h_rrule(::RuleConfig, _, pz, q, gm, s, w)
       nds = max(1, round(Int,
-                         Beamlines.scalarize_all(gm.ele[2].L) / 0.1,
+                         Beamlines.scalarize(gm.ele[2].L) / 0.1,
                          RoundNearestTiesAway))
       y, back = ChainRulesCore.rrule(csr_kick_pz, pz, zs, q, as, gm,
                                      2, dsl(gm), s, Γ * w, electron,

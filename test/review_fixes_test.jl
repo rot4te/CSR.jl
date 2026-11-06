@@ -34,7 +34,7 @@ import KernelAbstractions
     z, q, alive = kernel_test_bunch(1e-3, 1e-9, 400)
     params = CSRParams(n_bin = 40)
     ds = L3[3] / max(1, round(Int,
-                              Beamlines.scalarize_all(L3[3]) / 0.05,
+                              Beamlines.scalarize(L3[3]) / 0.05,
                               RoundNearestTiesAway))
     pz = zeros(Float32, length(z))
     pz_new = csr_kick_pz(pz, z, q, alive, geom, 3, ds, 0.1, 200.0,
@@ -102,7 +102,7 @@ import KernelAbstractions
     params = CSRParams(n_bin = 40)
     e = Species("electron")
     ds = L3[3] / max(1, round(Int,
-                              Beamlines.scalarize_all(L3[3]) / 0.05,
+                              Beamlines.scalarize(L3[3]) / 0.05,
                               RoundNearestTiesAway))
     @test_throws "equal lengths" csr_bin_particles(z, q[1:end-1],
         alive, params)

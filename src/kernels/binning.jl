@@ -23,13 +23,13 @@ function triangle_overlap(zp, dz_particle, zb0, zb1)
   zp1 = zp + dz_particle / 2
   inv_dz2 = 1 / dz_particle^2
   overlap = zero(zp * inv_dz2)
-  z1 = Beamlines.scalar_max(zp0, zb0)
-  z2 = Beamlines.scalar_min(zp, zb1)
-  Beamlines.scalarize_all(z2) > Beamlines.scalarize_all(z1) &&
+  z1 = max(zp0, zb0)
+  z2 = min(zp, zb1)
+  Beamlines.scalarize(z2) > Beamlines.scalarize(z1) &&
       (overlap += 2 * ((z2 - zp0)^2 - (z1 - zp0)^2) * inv_dz2)
-  z1 = Beamlines.scalar_max(zp, zb0)
-  z2 = Beamlines.scalar_min(zp1, zb1)
-  Beamlines.scalarize_all(z2) > Beamlines.scalarize_all(z1) &&
+  z1 = max(zp, zb0)
+  z2 = min(zp1, zb1)
+  Beamlines.scalarize(z2) > Beamlines.scalarize(z1) &&
       (overlap += 2 * ((z1 - zp1)^2 - (z2 - zp1)^2) * inv_dz2)
   return overlap
 end
@@ -51,7 +51,7 @@ end, or the one before it.
   outside `1:n_bin`.
 """
 @inline deposit_ix0(zp, z_min, dz,
-                    dz_particle) = nint((Beamlines.scalarize_all(zp) -
+                    dz_particle) = nint((Beamlines.scalarize(zp) -
                         dz_particle / 2 - z_min) / dz)
 
 """
@@ -87,7 +87,7 @@ grid are counted in n_outside.
     if 1 <= ib <= n_bin
       zb0 = z_min + (ib - 1) * dz
       overlap = triangle_overlap(zp, dz_particle, zb0, zb0 + dz)
-      add!(n_particle, ib, Beamlines.scalarize_all(overlap))
+      add!(n_particle, ib, Beamlines.scalarize(overlap))
       add!(charge, ib, overlap * qp)
     else
       add!(n_outside, 1, one(eltype(n_outside)))

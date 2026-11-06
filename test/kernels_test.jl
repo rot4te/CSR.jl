@@ -81,7 +81,7 @@ maxrel(a, b) = maximum(abs, a .- b) / maximum(abs, b)
                   bmad_compat = bc)
     geom = CSRGeometry(L, g, cen; bmad_compat = bc)
     ds = L[ix] / max(1, round(Int,
-                              Beamlines.scalarize_all(L[ix]) / 0.1,
+                              Beamlines.scalarize(L[ix]) / 0.1,
                               RoundNearestTiesAway))
     pz1 = zeros(length(z))
     pz2 = zeros(length(z))
@@ -123,7 +123,7 @@ maxrel(a, b) = maximum(abs, a .- b) / maximum(abs, b)
     geom = CSRGeometry([0.05, 0.05], [2.0, 2.0], zeros(3, 6))
     r = csr_kick!(zeros(length(z)), z, q, alive, geom, 1,
                   0.05 / max(1, round(Int,
-                                      Beamlines.scalarize_all(0.05) /
+                                      Beamlines.scalarize(0.05) /
                                       0.1, RoundNearestTiesAway)),
                   0.03, 50.0, electron, params)
     @test any(<(0), r.s_source)
@@ -140,7 +140,7 @@ maxrel(a, b) = maximum(abs, a .- b) / maximum(abs, b)
   @testset "Generic element types" begin
     geom = CSRGeometry(L3, g3, c3)
     ds = L3[2] / max(1, round(Int,
-                              Beamlines.scalarize_all(L3[2]) / 0.1,
+                              Beamlines.scalarize(L3[2]) / 0.1,
                               RoundNearestTiesAway))
     pzr = zeros(length(z))
     ref = CSR.csr_kick_reference!(pzr, z, q, alive, geom, 2,

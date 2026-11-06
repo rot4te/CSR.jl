@@ -52,7 +52,7 @@ curvature `g`, entered at `f`.
 """
 function advance_floor(f::FloorPosition, L, g)
   angle = g * L
-  if Beamlines.scalarize_all(angle) == 0
+  if Beamlines.scalarize(angle) == 0
     # Expansion about angle 0 (values exact; derivatives w.r.t. g and
     # L correct to second order)
     dx = -L * angle / 2

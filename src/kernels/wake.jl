@@ -55,7 +55,7 @@ function I_csr_calc(k::CSRKick1, i_bin, dz_slice, geom::CSRGeometry,
                     kp::CSRKickPoint, I_csr_prev, search = nothing)
   # No kick when the source particle is ahead of the kicked particle
   z = k.dz_particles
-  Beamlines.scalarize_all(z) <= 0 && return with_fields(k;
+  Beamlines.scalarize(z) <= 0 && return with_fields(k;
       I_csr = 0.0, I_int_csr = 0.0)
 
   gamma2 = kp.gamma2
@@ -66,7 +66,7 @@ function I_csr_calc(k::CSRKick1, i_bin, dz_slice, geom::CSRGeometry,
     ix_ele_kick = kp.ix_ele_kick
     s_chord_kick = kp.s_chord_kick
     # At the element entrance: use the end of the previous element
-    while Beamlines.scalarize_all(s_chord_kick) == 0
+    while Beamlines.scalarize(s_chord_kick) == 0
       ix_ele_kick -= 1
       # No kick from before the beginning of the lattice
       ix_ele_kick == 0 && return with_fields(k; I_csr, I_int_csr)

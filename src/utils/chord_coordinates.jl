@@ -28,10 +28,10 @@ decisions", V3).
 """
 function s_ref_to_s_chord(s_ref, e::CSRElementInfo;
                           bmad_compat::Bool = false)
-  abs(Beamlines.scalarize_all(e.g)) > 1e-5 || return s_ref *
+  abs(Beamlines.scalarize(e.g)) > 1e-5 || return s_ref *
       e.L_chord / e.L
   # Zero-length chord: no spline (CSRGeometry), Bmad's formula
-  if bmad_compat || abs(Beamlines.scalarize_all(e.L_chord)) < 1e-8
+  if bmad_compat || abs(Beamlines.scalarize(e.L_chord)) < 1e-8
     rho = 1 / e.g
     dtheta = e.floor0.theta - e.ref_floor0.theta
     dr = e.ref_floor0.r - e.floor0.r
@@ -41,10 +41,10 @@ function s_ref_to_s_chord(s_ref, e::CSRElementInfo;
                            abs(rho + x + s_ref * sin(dtheta)))
   end
   ref = advance_floor(e.ref_floor0, s_ref, e.g)
-  e0, ref0 = Beamlines.scalarize_all(e), Beamlines.scalarize_all(ref)
+  e0, ref0 = Beamlines.scalarize(e), Beamlines.scalarize(ref)
   slope(u) = dot3(z_axis(e0.theta_chord) + spline_d1(e0.spline,
       u) * x_axis(e0.theta_chord), z_axis(ref0.theta))
-  s0 = Beamlines.scalarize_all(s_ref)
+  s0 = Beamlines.scalarize(s_ref)
   if s0 == 0
     u = 0.0
   elseif s0 == e0.L

@@ -23,9 +23,9 @@ CSRGTPSAExt = "GTPSA"
 
 [compat]
 AbstractFFTs = "1.5.0"
-AtomicAndPhysicalConstants = "0.11.5"
+AtomicAndPhysicalConstants = "0.12"
 Atomix = "1.2.1"
-Beamlines = "0.11"
+Beamlines = "0.12"
 ChainRulesCore = "1.26.1"
 ChainRulesTestUtils = "1.13"
 ForwardDiff = "1.3.3"

@@ -28,7 +28,7 @@ agree for every number type.
 - `inside::Bool`: `true` if the particle is kicked.
 """
 @inline function kick_cell(zp, z_center, dz)
-  zpp = Beamlines.scalarize_all(zp)
+  zpp = Beamlines.scalarize(zp)
   u = (zpp - z_center[1]) / dz
   # NaN, Inf or far outside the table: outside (trunc(Int, ·) would
   # throw)

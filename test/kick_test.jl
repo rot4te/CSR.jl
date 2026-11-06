@@ -38,7 +38,7 @@
     rho = 10.0; L_ele = 0.1; n_ele = 80; gamma = 1e4
     params = CSRParams(n_bin = 200, particle_bin_span = 2)
     ds_kick = L_ele / max(1, round(Int,
-                                   Beamlines.scalarize_all(L_ele) /
+                                   Beamlines.scalarize(L_ele) /
                                    L_ele, RoundNearestTiesAway))
     geom = CSRGeometry(circle_lattice(rho, L_ele, n_ele)...)
     pz = zeros(length(z))
@@ -115,7 +115,7 @@
     geom = CSRGeometry(fill(0.5, 20), zeros(20), zeros(21, 6))
     pz = zeros(length(z))
     res = csr_kick!(pz, z, q, alive, geom, 20, 0.5 / max(1, round(Int,
-        Beamlines.scalarize_all(0.5) / 0.5, RoundNearestTiesAway)),
+        Beamlines.scalarize(0.5) / 0.5, RoundNearestTiesAway)),
                     0.25, gamma, electron, params)
     # Compare with the bend kick scale for the same bunch and step
     N = Q / E_CHARGE
@@ -136,7 +136,7 @@
     g2 = CSRGeometry([0.1], [1 / rho2], zeros(2, 6))
     kick(nb, ab) = csr_kick!(zeros(40001), z2, q2, a2, g2, 1,
                              0.1 / max(1, round(Int,
-        Beamlines.scalarize_all(0.1) / 0.01, RoundNearestTiesAway)),
+        Beamlines.scalarize(0.1) / 0.01, RoundNearestTiesAway)),
                              0.05, gam, electron,
                              CSRParams(n_bin = nb,
                                        all_bin_quadrature = ab))
@@ -167,7 +167,7 @@
                       bmad_compat = true)
     kc(ab) = csr_kick!(zeros(40001), z2, q2, a2, g2c, 1,
                        0.1 / max(1, round(Int,
-        Beamlines.scalarize_all(0.1) / 0.01, RoundNearestTiesAway)),
+        Beamlines.scalarize(0.1) / 0.01, RoundNearestTiesAway)),
                        0.05, gam, electron,
                        CSRParams(n_bin = 40, all_bin_quadrature = ab,
                                  bmad_compat = true)).kick_per_meter
@@ -181,7 +181,7 @@
     @test_throws ErrorException csr_kick!(zeros(50), zz, qq, aa, geom,
         1,
                                           0.1 / max(1, round(Int,
-        Beamlines.scalarize_all(0.1) / 0.1, RoundNearestTiesAway)),
+        Beamlines.scalarize(0.1) / 0.1, RoundNearestTiesAway)),
                                           0.05, 100.0, electron,
         params)
   end
@@ -192,7 +192,7 @@
     @test_throws ErrorException csr_kick!(zeros(length(z)), z, q,
         alive, geom, 1,
                                           0.1 / max(1, round(Int,
-        Beamlines.scalarize_all(0.1) / 0.1, RoundNearestTiesAway)),
+        Beamlines.scalarize(0.1) / 0.1, RoundNearestTiesAway)),
                                           0.05, 100.0, electron,
         params)
   end

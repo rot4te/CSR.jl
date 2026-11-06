@@ -251,10 +251,10 @@ function csr_apply_test_kicks!(pz_t::AbstractVector,
   backend = get_backend(pz_t)
   zc, k = backend isa CPU ? (cpu(bins.z_center),
                              cpu(kick)) : (bins.z_center, kick)
-  dz = Beamlines.scalarize_all(bins.dz)
+  dz = Beamlines.scalarize(bins.dz)
   n = count_outside(backend, z_t, alive_t, zc, dz)
   n == 0 || error("csr_apply_test_kicks!: $n test particle(s) outside the bunch's bin range " *
-                  "[$(Beamlines.scalarize_all(first(zc)) - Beamlines.scalarize_all(bins.dz) / 100), $(Beamlines.scalarize_all(last(zc))))")
+                  "[$(Beamlines.scalarize(first(zc)) - Beamlines.scalarize(bins.dz) / 100), $(Beamlines.scalarize(last(zc))))")
   apply_kicks_outside!(pz_t, z_t, alive_t, zc, k, dz,
                        pz_scale) == 0 ||
     error("csr_apply_test_kicks!: test particle outside the bin range (internal error)")
@@ -269,7 +269,7 @@ end
 
 Apply one 1D CSR kick at reference position `s_kick` [m] from the
 entrance of element `ix_ele_kick`. Errors if the array lengths differ
-or a live particle has a non-finite `z`, or unless `scalarize_all(ds)
+or a live particle has a non-finite `z`, or unless `scalarize(ds)
 > 0`; also if fewer than `params.n_bin` particles are live,
 `params.bmad_compat` differs from `geom.bmad_compat`, or `gamma ≤ 1`.
 
@@ -344,7 +344,7 @@ function csr_kick!(pz::AbstractVector, z::AbstractVector,
                    s_kick, gamma, species::Species,
                    params::CSRParams; kick_factor = 1.0,
                    pz_scale = 1.0, test_particles = nothing)
-  Beamlines.scalarize_all(ds) > 0 ||
+  Beamlines.scalarize(ds) > 0 ||
       error("csr_kick!: ds must be > 0 (got $ds)")
   check_descriptors("csr_kick!"; pz, z, q, geom, ds, s_kick, gamma,
                     kick_factor, pz_scale)
@@ -413,7 +413,7 @@ function csr_kick_pz(pz::AbstractVector, z::AbstractVector,
                      s_kick, gamma, species::Species,
                      params::CSRParams; kick_factor = 1.0,
                      pz_scale = 1.0)
-  Beamlines.scalarize_all(ds) > 0 ||
+  Beamlines.scalarize(ds) > 0 ||
       error("csr_kick_pz: ds must be > 0 (got $ds)")
   check_descriptors("csr_kick_pz"; pz, z, q, geom, ds, s_kick, gamma,
                     kick_factor, pz_scale)
@@ -457,7 +457,7 @@ function csr_binned_kick(z::AbstractVector, q::AbstractVector,
                          ix_ele_kick::Integer, ds, s_kick, gamma,
                          species::Species, params::CSRParams;
                          kick_factor = 1.0)
-  Beamlines.scalarize_all(ds) > 0 ||
+  Beamlines.scalarize(ds) > 0 ||
       error("csr_binned_kick: ds must be > 0 (got $ds)")
   n_bin = params.n_bin
   params.bmad_compat == geom.bmad_compat ||
@@ -488,7 +488,7 @@ function csr_bins_kick(bins::CSRBins, backend, geom::CSRGeometry,
                        ix_ele_kick::Integer, ds, s_kick, gamma,
                        species::Species, params::CSRParams;
                        kick_factor = 1.0)
-  Beamlines.scalarize_all(ds) > 0 ||
+  Beamlines.scalarize(ds) > 0 ||
       error("csr_bins_kick: ds must be > 0 (got $ds)")
   n_bin = params.n_bin
   tb = table_backend(backend)

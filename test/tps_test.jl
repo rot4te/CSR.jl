@@ -12,14 +12,14 @@
   n = 400
   z, q, alive = kernel_test_bunch(1e-3, 1e-9, n)
   geom = CSRGeometry(L3, g3, c3)
-  ds = L3[2] / max(1, round(Int, Beamlines.scalarize_all(L3[2]) / 0.1,
+  ds = L3[2] / max(1, round(Int, Beamlines.scalarize(L3[2]) / 0.1,
                             RoundNearestTiesAway))
   d = Descriptor(6, 3)
   x = @vars(d)
 
   @testset "primal, root_order" begin
     t = 0.3 + 2x[1] + x[5]^2
-    @test Beamlines.scalarize_all(t) == 0.3
+    @test Beamlines.scalarize(t) == 0.3
     @test CSR.root_order(t) == 3
     @test_throws MethodError CSR.root_order(1.0 + 2.0im)
   end
