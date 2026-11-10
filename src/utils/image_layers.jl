@@ -37,12 +37,9 @@ the width of the drift kernel's peak.
   `y_source ≠ 0`; `y = kp.y_source`, `γ = kp.gamma`.
 
 # Returns
-- lag width [m], from the primal values
-  (`Beamlines.scalarize`).
+- lag width [m].
 """
-image_u_min(kp::CSRKickPoint) = 0.01 *
-    abs(Beamlines.scalarize(kp.y_source)) /
-        Beamlines.scalarize(kp.gamma)
+image_u_min(kp::CSRKickPoint) = 0.01 * abs(kp.y_source) / kp.gamma
 
 """
     image_hat_tol(geom, kp, image, dz, rtol, u_min)
@@ -56,8 +53,7 @@ round-off noise.
 # Arguments
 - `geom`: centroid geometry, from `CSRGeometry`.
 - `kp`: kick point of the image layer, from `CSRKickPoint` (`y_source
-  ≠ 0`). `csr_image_table` passes the primal `search.geom`,
-  `search.kp` when the tables carry derivatives.
+  ≠ 0`).
 - `image`: point-sampled image kernel at the lags, e.g. the `image`
   table of `csr_image_table` before the hat integration.
 - `dz`: bin width [m] (`bins.dz`).
@@ -67,8 +63,7 @@ round-off noise.
 - `u_min`: smallest node spacing [m], from `image_u_min(kp)`.
 
 # Returns
-- absolute tolerance, `rtol * dz` times the primal value
-  (`Beamlines.scalarize`) of the largest |K|.
+- absolute tolerance, `rtol * dz` times the largest |K|.
 """
 function image_hat_tol(geom::CSRGeometry, kp::CSRKickPoint, image, dz,
                        rtol, u_min)
@@ -81,5 +76,5 @@ function image_hat_tol(geom::CSRGeometry, kp::CSRKickPoint, image, dz,
     K = max(K, abs(Kp), abs(Km))
     x /= 2
   end
-  return rtol * Beamlines.scalarize(K) * dz
+  return rtol * K * dz
 end

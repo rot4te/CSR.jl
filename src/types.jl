@@ -6,8 +6,7 @@
 
 Position `r = (X, Y, Z)` [m] and horizontal orientation angle `theta`
 [rad] in floor coordinates. The number type `T` is promoted from the
-arguments (`Float64`, or e.g. ForwardDiff `Dual`s or GTPSA TPS for
-derivatives w.r.t. the geometry).
+arguments (as a float).
 
 Produced by `FloorPosition()`, `planar_survey`, `advance_floor`,
 `advance_floor_patch` and `centroid_floor`.
@@ -126,8 +125,7 @@ end
     CSRKickPoint
 
 Kick-point information that is the same for all source lags (part of
-Bmad's `csr_struct`). Number type `T` as `FloorPosition` (e.g. `Dual`s
-for derivatives w.r.t. `s_kick`, `gamma` or the geometry). Built by
+Bmad's `csr_struct`). Number type `T` as `FloorPosition`. Built by
 `CSRKickPoint(geom, ix_ele_kick, s_kick, gamma; ...)`.
 
 # Fields

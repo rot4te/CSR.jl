@@ -35,8 +35,7 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) *
     # Without images the chamber height is ignored
     z, q, alive = gaussian_line_bunch(1e-3, 1e-9, 401)
     geom = CSRGeometry(circle_lattice(10.0, 0.1, 10)...)
-    ds = 0.1 / max(1, round(Int, Beamlines.scalarize(0.1) / 0.1,
-                            RoundNearestTiesAway))
+    ds = 0.1 / max(1, round(Int, 0.1 / 0.1, RoundNearestTiesAway))
     r1 = csr_kick!(zeros(401), z, q, alive, geom, 10, ds, 0.05, 1e3,
                    electron, CSRParams(n_bin = 40))
     r2 = csr_kick!(zeros(401), z, q, alive, geom, 10, ds, 0.05, 1e3,
@@ -201,8 +200,7 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) *
     p = CSRParams(n_bin = 120, n_shield_images = 3,
                   beam_chamber_height = h, bmad_compat = bc)
     geom = CSRGeometry(L3, g3, c3; bmad_compat = bc)
-    ds = L3[ix] / max(1, round(Int,
-                               Beamlines.scalarize(L3[ix]) / 0.1,
+    ds = L3[ix] / max(1, round(Int, L3[ix] / 0.1,
                                RoundNearestTiesAway))
     pz1 = zeros(length(z)); pz2 = zeros(length(z))
     r1 = csr_kick!(pz1, z, q, alive, geom, ix, ds, s_kick, 200.0,
@@ -249,8 +247,7 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) *
     N = 40001
     zb, qb, aliveb = gaussian_line_bunch(1e-3, 1e-9, N)
     geom = CSRGeometry(circle_lattice(10.0, 0.1, 80)...)
-    ds = 0.1 / max(1, round(Int, Beamlines.scalarize(0.1) / 0.1,
-                            RoundNearestTiesAway))
+    ds = 0.1 / max(1, round(Int, 0.1 / 0.1, RoundNearestTiesAway))
     kick(p) = csr_kick!(zeros(N), zb, qb, aliveb, geom, 80, ds, 0.05,
                         1e4, electron, p)
     r0 = kick(CSRParams(n_bin = 480))
@@ -319,8 +316,7 @@ eloss(r) = sum(r.kick_per_meter .* r.charge_per_meter) *
     N = 20001
     zb, qb, aliveb = gaussian_line_bunch(1e-3, 1e-9, N)
     geom = CSRGeometry(circle_lattice(10.0, 0.1, 400)...)
-    ds = 0.1 / max(1, round(Int, Beamlines.scalarize(0.1) / 0.1,
-                            RoundNearestTiesAway))
+    ds = 0.1 / max(1, round(Int, 0.1 / 0.1, RoundNearestTiesAway))
     kick(M, k) = csr_kick!(zeros(N), zb, qb, aliveb, geom, 400, ds,
                            0.05, 1e4, electron,
                            CSRParams(n_bin = 120, n_shield_images = M,

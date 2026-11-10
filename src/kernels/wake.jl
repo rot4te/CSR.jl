@@ -22,8 +22,7 @@ function I_csr_value(k::CSRKick1, kp::CSRKickPoint)
 end
 
 """
-    I_csr_calc(k, i_bin, dz_slice, geom, kp, I_csr_prev,
-               search = nothing) -> k
+    I_csr_calc(k, i_bin, dz_slice, geom, kp, I_csr_prev) -> k
 
 Bmad `I_csr`: `k` with the CSR kick integral `I_csr` for separation
 `k.dz_particles` and its integral over the bin, `I_int_csr`. For
@@ -32,8 +31,7 @@ element, which handles the near-field log singularity, plus (if the
 source is upstream of the kick element) the rest of the bin by
 quadrature (`I_csr_integral`; Bmad's approximation with
 `geom.bmad_compat`). For `i_bin > 1` it is a trapezoid with the
-previous bin's `I_csr_prev`. `search` as in `s_source_calc` (for the
-quadrature's sources).
+previous bin's `I_csr_prev`.
 
 # Arguments
 - `k`: work struct (`CSRKick1`) describing the source for the lag
@@ -45,18 +43,16 @@ quadrature's sources).
 - `I_csr_prev`: `I_csr` of bin `i_bin - 1` (used for `i_bin > 1`;
   `csr_wake_kernel!` passes 0, its `I_int` for `i > 1` being
   overwritten later).
-- `search = nothing`: `nothing` or a `ScalarizeAllSearch`.
 
 # Returns
 - `k` with `I_csr` and `I_int_csr` set (both 0 for
   `k.dz_particles ≤ 0`).
 """
 function I_csr_calc(k::CSRKick1, i_bin, dz_slice, geom::CSRGeometry,
-                    kp::CSRKickPoint, I_csr_prev, search = nothing)
+                    kp::CSRKickPoint, I_csr_prev)
   # No kick when the source particle is ahead of the kicked particle
   z = k.dz_particles
-  Beamlines.scalarize(z) <= 0 && return with_fields(k;
-      I_csr = 0.0, I_int_csr = 0.0)
+  z <= 0 && return with_fields(k; I_csr = 0.0, I_int_csr = 0.0)
 
   gamma2 = kp.gamma2
   I_csr = I_csr_value(k, kp)
@@ -66,7 +62,7 @@ function I_csr_calc(k::CSRKick1, i_bin, dz_slice, geom::CSRGeometry,
     ix_ele_kick = kp.ix_ele_kick
     s_chord_kick = kp.s_chord_kick
     # At the element entrance: use the end of the previous element
-    while Beamlines.scalarize(s_chord_kick) == 0
+    while s_chord_kick == 0
       ix_ele_kick -= 1
       # No kick from before the beginning of the lattice
       ix_ele_kick == 0 && return with_fields(k; I_csr, I_int_csr)
@@ -116,9 +112,8 @@ function I_csr_calc(k::CSRKick1, i_bin, dz_slice, geom::CSRGeometry,
       else
         # First node: the entrance source itself, not a search for lag
         # zz (which may return the previous element's end, the same
-        # point but other numbers: two branches for derivatives w.r.t.
-        # the raw geometry numbers)
-        I_int_csr += I_csr_integral(zz, z, geom, kp, search;
+        # point but other numbers)
+        I_int_csr += I_csr_integral(zz, z, geom, kp;
                                     k0 = with_fields(k_entry;
             dz_particles = zz))
       end
@@ -130,20 +125,17 @@ function I_csr_calc(k::CSRKick1, i_bin, dz_slice, geom::CSRGeometry,
 end
 
 """
-    I_csr_integral(z0, z1, geom, kp, search = nothing; n = 16,
-                   k0 = nothing)
+    I_csr_integral(z0, z1, geom, kp; n = 16, k0 = nothing)
 
 `∫ I_csr(u) du` from `z0` to `z1` by composite Simpson in `t =
 u^(1/3)`, which makes the near-field `u^(-1/3)` behaviour smooth. Each
-node needs its own source-point solve, started in the kick element
-(`search` as in `s_source_calc`). `k0`: the source at `z0`, if known
-(then not searched).
+node needs its own source-point solve, started in the kick element.
+`k0`: the source at `z0`, if known (then not searched).
 
 # Arguments
 - `z0`, `z1`: lag bounds [m].
 - `geom`: centroid geometry, from `CSRGeometry`.
 - `kp`: kick point, from `CSRKickPoint`.
-- `search = nothing`: `nothing` or a `ScalarizeAllSearch`.
 - `n = 16`: number of Simpson intervals in `t` (must be even; not
   checked).
 - `k0 = nothing`: `nothing` or a `CSRKick1` describing the source at
@@ -153,15 +145,15 @@ node needs its own source-point solve, started in the kick element
 # Returns
 - the integral (a number).
 """
-function I_csr_integral(z0, z1, geom::CSRGeometry, kp::CSRKickPoint,
-                        search = nothing; n = 16, k0 = nothing)
+function I_csr_integral(z0, z1, geom::CSRGeometry, kp::CSRKickPoint;
+                        n = 16, k0 = nothing)
   function f(t)
     k, _ = s_source_calc(CSRKick1(geom, kp; dz_particles = t^3), geom,
-                         kp, search)
+                         kp)
     return I_csr_value(k, kp) * 3t^2
   end
-  t0 = cube_root(z0)
-  t1 = cube_root(z1)
+  t0 = cbrt(z0)
+  t1 = cbrt(z1)
   h = (t1 - t0) / n
   acc = (k0 === nothing ? f(t0) : I_csr_value(k0, kp) * 3t0^2) + f(t1)
   for j in 1:n-1
@@ -171,14 +163,13 @@ function I_csr_integral(z0, z1, geom::CSRGeometry, kp::CSRKickPoint,
 end
 
 """
-    I_csr_quadrature(k, z0, z1, geom, kp, n, search = nothing) -> (k,
-        integral)
+    I_csr_quadrature(k, z0, z1, geom, kp, n) -> (k, integral)
 
 As `I_csr_integral`, with each source search starting where the
 previous one ended (from `k`; nodes in increasing order). Searches end
 in the same element whatever the start element, so the result does not
 depend on the warm start. Returns the work struct after the last node,
-for the next warm start. `search` as in `s_source_calc`.
+for the next warm start.
 
 # Arguments
 - `k`: work struct (`CSRKick1`) whose `ix_ele_source` starts the
@@ -188,21 +179,19 @@ for the next warm start. `search` as in `s_source_calc`.
 - `kp`: kick point, from `CSRKickPoint`.
 - `n`: number of Simpson intervals in `t = u^(1/3)` (must be even;
   not checked; callers: `N_BIN_QUAD`).
-- `search = nothing`: `nothing` or a `ScalarizeAllSearch`.
 
 # Returns
 - `(k, integral)`: the work struct after the last node, and
   `∫ I_csr(u) du` from `z0` to `z1`.
 """
 function I_csr_quadrature(k::CSRKick1, z0, z1, geom::CSRGeometry,
-                          kp::CSRKickPoint, n, search = nothing)
-  t0 = cube_root(z0)
-  h = (cube_root(z1) - t0) / n
+                          kp::CSRKickPoint, n)
+  t0 = cbrt(z0)
+  h = (cbrt(z1) - t0) / n
   acc = zero(number_type(k))
   for j in 0:n
-    t = j == n ? cube_root(z1) : t0 + j * h
-    k, _ = s_source_calc(with_fields(k; dz_particles = t^3), geom, kp,
-                         search)
+    t = j == n ? cbrt(z1) : t0 + j * h
+    k, _ = s_source_calc(with_fields(k; dz_particles = t^3), geom, kp)
     w = (j == 0 || j == n) ? 1 : (isodd(j) ? 4 : 2)
     acc += w * I_csr_value(k, kp) * 3t^2
   end
@@ -210,8 +199,7 @@ function I_csr_quadrature(k::CSRKick1, z0, z1, geom::CSRGeometry,
 end
 
 """
-    csr_wake_kernel!(I_csr, I_int, s_source, geom, kp, dz, n_lag,
-                     search)
+    csr_wake_kernel!(I_csr, I_int, s_source, geom, kp, dz, n_lag)
 
 One work item per block of `n_lag` consecutive lags i (separation
 i*dz). Within a block each source search starts where the previous
@@ -219,8 +207,7 @@ lag's ended (as in Bmad); the first lag of a block starts in the kick
 element. Searches end in the same element, and call zbrent on the same
 bracket, whatever the start element. For i > 1, I_int is overwritten
 in `csr_wake_table` by `csr_trapezoid_kernel!` or, with
-`all_bin_quadrature`, by `csr_bin_quadrature_kernel!`. `search` as in
-`s_source_calc`.
+`all_bin_quadrature`, by `csr_bin_quadrature_kernel!`.
 
 # Arguments
 - `I_csr`, `I_int`, `s_source`: vectors of length `n_bin`
@@ -232,17 +219,15 @@ in `csr_wake_table` by `csr_trapezoid_kernel!` or, with
 - `dz`: bin width [m].
 - `n_lag`: lags per work item (`csr_wake_table`: `cld(n_bin,
   n_block)`).
-- `search`: `nothing` or a `ScalarizeAllSearch`, from
-  `scalarize_all_search`.
 """
 @kernel function csr_wake_kernel!(I_csr, I_int, s_source, geom, kp,
-                                  dz, n_lag, search)
+                                  dz, n_lag)
   b = @index(Global)
   k = CSRKick1(geom, kp)
   for i in (b - 1) * n_lag + 1:min(b * n_lag, length(I_csr))
     k, s_chord = s_source_calc(with_fields(k; dz_particles = i * dz),
-                               geom, kp, search)
-    k = I_csr_calc(k, i, dz, geom, kp, 0.0, search)
+                               geom, kp)
+    k = I_csr_calc(k, i, dz, geom, kp, 0.0)
     @inbounds begin
       I_csr[i] = k.I_csr
       I_int[i] = k.I_int_csr
@@ -271,13 +256,11 @@ for bins `i ≥ 2` (Bmad; `all_bin_quadrature = false` or
 end
 
 """
-    csr_bin_quadrature_kernel!(I_int, geom, kp, dz, n_lag, n_quad,
-                               search)
+    csr_bin_quadrature_kernel!(I_int, geom, kp, dz, n_lag, n_quad)
 
 Bins i ≥ 2 by quadrature: one work item per block of `n_lag`
 consecutive bins (bin i is block element i - 1); the source search is
-warm-started from node to node and bin to bin within a block. `search`
-as in `s_source_calc`.
+warm-started from node to node and bin to bin within a block.
 
 # Arguments
 - `I_int`: bin integrals (modified for `i ≥ 2`), from
@@ -288,16 +271,13 @@ as in `s_source_calc`.
 - `n_lag`: bins per work item.
 - `n_quad`: Simpson intervals per bin (`csr_wake_table`:
   `N_BIN_QUAD`), passed to `I_csr_quadrature`.
-- `search`: `nothing` or a `ScalarizeAllSearch`, from
-  `scalarize_all_search`.
 """
 @kernel function csr_bin_quadrature_kernel!(I_int, geom, kp, dz,
-    n_lag, n_quad, search)
+    n_lag, n_quad)
   b = @index(Global)
   k = CSRKick1(geom, kp)
   for i in (b - 1) * n_lag + 2:min(b * n_lag + 1, length(I_int))
-    k, v = I_csr_quadrature(k, (i - 1) * dz, i * dz, geom, kp, n_quad,
-                            search)
+    k, v = I_csr_quadrature(k, (i - 1) * dz, i * dz, geom, kp, n_quad)
     @inbounds I_int[i] = v
   end
 end

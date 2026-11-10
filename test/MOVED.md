@@ -66,3 +66,50 @@ Notes:
 - Item 20 removes 73 asserts, not the 84 in the proposal. Each `test_rrule` case totals 73 in the log (62 + 11).
 - Item 14 keeps interior particles 151 and 263 (the proposal's "e.g.").
 - Item 11 and item 25 use explicit (case, bmad_compat) tuples; the removed combinations are not rectangular.
+
+## S2f: derivative-through-kick tests removed
+
+Spec 4.2b item 5 (scalar kick, derivative machinery removed). Counts are pass totals: before from
+`.modwork/s2f-ref/suite/table_t1.tsv` (0450fbb's counts equal these, 1157), after from the S2f part 2 `-t 1`
+run: 447/447 (same at `-t 4`). All other testsets: pass totals unchanged. New Dual/TPS tests (spec 4.2b item 5,
+"Add") are not part of this list.
+
+| File | Testset | Removed | Kept |
+|---|---|---|---|
+| runtests.jl | `Package extensions load` (all three extensions deleted) | 3 | 0 |
+| ad_test.jl (deleted) | `kick in bend` | 23 | 3, moved |
+| ad_test.jl (deleted) | `kick at element entrance, images` | 23 | 3, moved |
+| ad_test.jl (deleted) | `Dual derivative of the charge in q; grid constant` | 3 | 0 |
+| ad_geometry_test.jl (deleted) | all testsets (`advance_floor at g = 0` 4, `modulo2 at a fold boundary` 3, `Source root: residual stationary` 4 + 4, `... to second order` 4 + 4, `Primal search == search in Duals` 21 + 21, `Hat-integrated image table` 8, `free space` 14, `images` 13, `images, bmad_compat` 13, `kick at element entrance, images` 13, `Hessian: free space, trapezoid` 2, `Hessian: images, bmad_compat` 2, `Hessian: hat-integrated image table` 2) | 132 | 0 |
+| ad_rrule_test.jl (deleted) | all testsets (`geometry_to_vector round trip` 4, `vs ForwardDiff` 10 + 10 + 10, `s_kick with images, round-off (D43)` 2, `Parameter adjoint == ForwardDiff` 8 × 3, `Zero cotangents` 1, `test_rrule: free space` 73) | 134 | 0 |
+| tps_test.jl | `primal, root_order` | 3 | 0 |
+| tps_test.jl | `Frozen-wake test particles (images = 0)`: TPS vs ForwardDiff value, Jacobian, Hessian, third order | 16 | 1 (Float64 test particles at bunch positions) |
+| tps_collective_test.jl | `Helpers` | 8 | 0 |
+| tps_collective_test.jl | `Order 2 (images = 0, bmad_compat = false)`, `(2, false)`, `(2, true)` | 34 × 3 | 0 |
+| tps_collective_test.jl | `Order 3 (images = 0)` | 5 | 0 |
+| tps_collective_test.jl | `csr_kick! with TPS pz` | 4 | 0 |
+| tps_collective_test.jl | `csr_kick! pz element type`: "cannot hold the kick" errors | 6 | 2 (Float32 and Float64 `pz`) |
+| tps_collective_test.jl | `Test particles in 6D + knobs (images = 0, bmad_compat = false)` | 76 | 0 |
+| tps_collective_test.jl | `Test particles in 6D, knobs as GTPSA parameters` | 51 | 0 |
+| tps_collective_test.jl | `Test particles: pz_t element type`: "cannot hold the kick" errors | 9 | 3 (Float32 `pz_t`) |
+| tps_collective_test.jl | `Zero-length element in a TPS geometry`: TPS and Dual geometry | 9 | 1 (Float64 `L_chord == 0`; testset renamed `Zero-length element: L_chord == 0`) |
+| tps_collective_test.jl | `Descriptor check` | 31 | 0 |
+| type_stability_test.jl | `Dual`, `nested Dual`, `TPS`, `TPS dynamic` | 13 × 4 | 0 (`Float64`, `Float32`, `Float32 spline` unchanged) |
+| geometry_test.jl | `s_ref_to_s_chord in a bend (V3)`: ForwardDiff derivatives in `s` and `g` | 6 | 17 |
+| wake_test.jl | `First-bin quadrature: one branch for each raw geometry number` | 4 | 0 |
+| kernels_test.jl | `Work struct and geometry types are isbits (GPU-ready)`: the `Dual` case | 3 | 7 |
+| review_fixes_test.jl | `W4 device_number_type`: `device_number_type` (deleted) 4, rrule forward pass 2, duplicate 1 | 7 | 0 (the last assert, renamed `W4 csr_kick_pz element type`, duplicated tps_collective_test.jl `csr_kick_pz returns eltype(pz)`; changed expectation below) |
+| review_fixes_test.jl | `W5 gamma check`: `Dual` gamma | 2 | 8 (one `Dual` gamma assert kept: `CSRKickPoint`) |
+| review_fixes_test.jl | `S9 no boxed state` (`geometry_active_indices`, `widen_source_range`: deleted with `param_adjoint.jl`) | 4 | 0 |
+
+Moved: the Float64 asserts of ad_test.jl's two `csr_kick_pz` cases (`csr_kick_pz` leaves `pz` unchanged, equals
+`csr_kick!`, kick nonzero; 3 per case) are in kernels_test.jl, `csr_kick_pz == csr_kick!: kick in bend` and
+`csr_kick_pz == csr_kick!: kick at element entrance, images` (same bunch, geometry, parameters).
+
+Changed expectation: `csr_kick_pz returns eltype(pz)` (tps_collective_test.jl): `csr_kick_pz` with a `Float32`
+`pz` and `Float64` inputs on the CPU returns `Float32` (spec 4.2b item 2, `eltype(pz)`); it returned `Float64`
+before.
+
+Removed Float64 asserts of deleted functions (no code left to test): `device_number_type` (3 of the 4 W4 asserts
+had `Float64`/`Float32` arguments), `geometry_to_vector` round trip, `geometry_active_indices`,
+`widen_source_range`.

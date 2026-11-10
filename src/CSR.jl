@@ -12,8 +12,6 @@ using StaticArrays
 using AtomicAndPhysicalConstants
 using KernelAbstractions
 import Atomix
-import ForwardDiff
-using ForwardDiff: Dual, Partials, value, partials
 import Beamlines
 
 export CSRParams, FloorPosition, CSRGeometry, CSRElementInfo, CSRBins,
@@ -36,8 +34,6 @@ include("geometry.jl")
 include("binning.jl")
 include("tables.jl")
 include("kick.jl")
-include("adjoint.jl")
-include("param_adjoint.jl")
 include("reference.jl")
 
 include("kernels/binning.jl")
@@ -46,6 +42,5 @@ include("kernels/wake.jl")
 include("kernels/image_charges.jl")
 include("kernels/convolve.jl")
 include("kernels/kick.jl")
-include("kernels/adjoint.jl")
 
 end

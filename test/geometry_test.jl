@@ -137,18 +137,6 @@ using CSR: FloorPosition, planar_survey, chord_spline,
     end
     @test s_ref_to_s_chord(L, e) == e.L_chord
     @test s_ref_to_s_chord(0.0, e) == 0
-    # Derivatives along s (first and second order, nested Duals) vs
-    # central differences
-    f(s) = s_ref_to_s_chord(s, e)
-    df(s) = ForwardDiff.derivative(f, s)
-    h = 1e-5
-    for s in (0.0, 0.3)
-      @test df(s) ≈ (f(s + h) - f(s - h)) / 2h rtol = 1e-9
-      @test ForwardDiff.derivative(df,
-                                   s) ≈ (df(s + h) - df(s - h)) /
-                                       2h rtol = 1e-6
-    end
-    @test df(0.3) ≈ cos(0.3 / rho - phi / 2) atol = 1e-6
 
     # Off-axis centroid: the kick point is in the reference normal
     # plane, at the centroid offset (≈ x)
@@ -164,13 +152,6 @@ using CSR: FloorPosition, planar_survey, chord_spline,
       @test -1e-3 < dr' * x_axis(ref.theta) < 2e-3
     end
     @test s_ref_to_s_chord(L, e) == e.L_chord
-    # Derivative w.r.t. g: ForwardDiff vs central differences
-    sc(g) = s_ref_to_s_chord(0.3, CSRGeometry([1.0, L], [0.0, g],
-        centroid).ele[2])
-    h = 1e-6
-    @test ForwardDiff.derivative(sc,
-                                 1 / rho) ≈ (sc(1 / rho + h) -
-                                     sc(1 / rho - h)) / 2h rtol = 1e-6
   end
 
   @testset "CSRGeometry, off-axis centroid" begin

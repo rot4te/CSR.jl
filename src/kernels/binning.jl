@@ -8,8 +8,7 @@ Fraction of a unit-area triangular distribution centered at `zp` with
 base `dz_particle` that lies in `[zb0, zb1]`.
 
 # Arguments
-- `zp`: particle position [m], `z[i]`; `Dual` or TPS allowed (branch
-  decisions on the primal).
+- `zp`: particle position [m], `z[i]`.
 - `dz_particle`: triangle base [m], `particle_bin_span * dz`
   (`CSRParams`, bin width `dz`).
 - `zb0`, `zb1`: lower and upper bin edge [m] (for grid bin `ib`:
@@ -25,12 +24,10 @@ function triangle_overlap(zp, dz_particle, zb0, zb1)
   overlap = zero(zp * inv_dz2)
   z1 = max(zp0, zb0)
   z2 = min(zp, zb1)
-  Beamlines.scalarize(z2) > Beamlines.scalarize(z1) &&
-      (overlap += 2 * ((z2 - zp0)^2 - (z1 - zp0)^2) * inv_dz2)
+  z2 > z1 && (overlap += 2 * ((z2 - zp0)^2 - (z1 - zp0)^2) * inv_dz2)
   z1 = max(zp, zb0)
   z2 = min(zp1, zb1)
-  Beamlines.scalarize(z2) > Beamlines.scalarize(z1) &&
-      (overlap += 2 * ((z1 - zp1)^2 - (z2 - zp1)^2) * inv_dz2)
+  z2 > z1 && (overlap += 2 * ((z1 - zp1)^2 - (z2 - zp1)^2) * inv_dz2)
   return overlap
 end
 
@@ -41,7 +38,7 @@ Start of the deposit loop: the bin containing the triangle's left
 end, or the one before it.
 
 # Arguments
-- `zp`: particle position [m], `z[i]` (only the primal is used).
+- `zp`: particle position [m], `z[i]`.
 - `z_min`: lower edge [m] of bin 1 (`bins.z0_edge[1]`).
 - `dz`: bin width [m], `bins.dz`.
 - `dz_particle`: triangle base [m], `particle_bin_span * dz`.
@@ -50,9 +47,8 @@ end, or the one before it.
 - `Int` bin index (`nint`), start of the deposit loop; may be
   outside `1:n_bin`.
 """
-@inline deposit_ix0(zp, z_min, dz,
-                    dz_particle) = nint((Beamlines.scalarize(zp) -
-                        dz_particle / 2 - z_min) / dz)
+@inline deposit_ix0(zp, z_min, dz, dz_particle) =
+  nint((zp - dz_particle / 2 - z_min) / dz)
 
 """
     deposit_particle!(add!, charge, n_particle, n_outside, zp, qp,
@@ -65,7 +61,7 @@ grid are counted in n_outside.
 - `add!`: scatter-add functor `add!(A, i, v)`, `AtomicAdd()` or
   `PlainAdd()`.
 - `charge`: bin charges [C], `bins.charge` (modified).
-- `n_particle`: primal overlap sum per bin, `bins.n_particle`
+- `n_particle`: overlap sum per bin, `bins.n_particle`
   (modified).
 - `n_outside`: one-element `Int32` counter (modified: `+1` per bin
   of the loop outside `1:n_bin`).
@@ -87,7 +83,7 @@ grid are counted in n_outside.
     if 1 <= ib <= n_bin
       zb0 = z_min + (ib - 1) * dz
       overlap = triangle_overlap(zp, dz_particle, zb0, zb0 + dz)
-      add!(n_particle, ib, Beamlines.scalarize(overlap))
+      add!(n_particle, ib, overlap)
       add!(charge, ib, overlap * qp)
     else
       add!(n_outside, 1, one(eltype(n_outside)))

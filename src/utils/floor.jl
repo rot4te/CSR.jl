@@ -53,8 +53,8 @@ curvature `g`, entered at `f`.
 function advance_floor(f::FloorPosition, L, g)
   angle = g * L
   if Beamlines.scalarize(angle) == 0
-    # Expansion about angle 0 (values exact; derivatives w.r.t. g and
-    # L correct to second order)
+    # Angle 0 (g = 0 or L = 0): the general form divides by g. The
+    # expansion about angle 0 gives the exact values there.
     dx = -L * angle / 2
     dz = L * (1 - angle^2 / 6)
   else
@@ -97,16 +97,15 @@ Reference floor positions at the exit of each element, for elements of
 length `L[i]` and reference curvature `g[i]` (zero for straight
 elements). Horizontal plane only.
 
-Dynamic-descriptor TPS arguments must be in GTPSA's current
-Descriptor.
+`L`, `g` and `start` may hold ForwardDiff `Dual` or GTPSA TPS
+numbers: they are scalarized (`Beamlines.scalarize`), and the floor
+positions hold real numbers.
 
 # Arguments
 - `L`: element lengths [m], a vector (user input).
 - `g`: reference curvatures [1/m], a vector of the same length as
   `L` (error otherwise).
 - `start`: reference floor position at the start of the lattice.
-
-Plain, `Dual` or TPS numbers in `L`, `g` and `start`.
 
 # Returns
 - `Vector{FloorPosition}` of length `length(L)`, number type
@@ -115,7 +114,9 @@ Plain, `Dual` or TPS numbers in `L`, `g` and `start`.
 """
 function planar_survey(L::AbstractVector, g::AbstractVector;
                        start::FloorPosition = FloorPosition())
-  check_descriptors("planar_survey"; L, g, start)
+  L = scalar_array(L)
+  g = scalar_array(g)
+  start = Beamlines.scalarize(start)
   length(L) == length(g) ||
       error("planar_survey: L and g must have the same length")
   floors = Vector{FloorPosition{float(promote_type(eltype(L),

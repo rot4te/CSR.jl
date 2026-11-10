@@ -8,9 +8,9 @@ final linear interpolation). `x_last` is the last point at which `f`
 was evaluated.
 
 # Arguments
-- `f`: real function of one variable (`s_source_walk` passes the
-  primal `ddz_calc_csr` separation as a function of the source
-  chord coordinate).
+- `f`: real function of one variable (`s_source_calc` passes the
+  `ddz_calc_csr` separation as a function of the source chord
+  coordinate).
 - `x1`, `x2`: ends of the bracket (`f(x1)`, `f(x2)` of opposite sign
   or zero).
 - `rel_tol`, `abs_tol`: convergence when half the bracket is at most
@@ -79,86 +79,3 @@ function zbrent(f, x1, x2, rel_tol, abs_tol)
   end
   return b, false, x_last
 end
-
-"""
-    root_tangent(f, s0, f0, dfds = nothing) -> s
-
-Root `s0` of `f(s) = 0`, found from primal values, with the root's
-dependence on the parameters of `f` attached: Newton steps `s ← s -
-(f(s) - r0) / dfds` from `s0` in the number type of `f0 = f(s0)`, with
-`r0 = Beamlines.scalarize(f0)` (so the primal root stays `s0`) and
-the primal slope `dfds = ∂f/∂s` at `s0` (computed by `root_slope`
-if `nothing`). With a constant slope each step gains one order, so
-`root_order(f0)` steps are taken: one for `Dual`s (implicit
-differentiation, `ds/dp = -(∂f/∂p) / (∂f/∂s)`), two for nested
-`Dual`s (Hessians), the truncation order for a TPS. Returns `s0`
-(converted to the promoted type of `s0` and `f0`) when `f0` carries no
-derivatives.
-
-# Arguments
-- `f`: function of `s` whose root is wanted, in the parameters'
-  number type (e.g. the `ddz_calc_csr` separation in
-  `root_source`, or `chord_normal_offset` in `s_ref_to_s_chord`).
-- `s0`: primal root (plain number), e.g. from `zbrent` or Newton
-  steps on primal values.
-- `f0`: `f(s0)`, carrying the parameters' derivatives (`Dual`s or
-  TPS).
-- `dfds`: primal slope `∂f/∂s` at `s0`, or `nothing`.
-
-# Returns
-- `s`: the root with derivatives, in the promoted number type of
-  `s0` and `f0`.
-"""
-function root_tangent(f, s0, f0, dfds = nothing)
-  n = root_order(f0)
-  n == 0 && return convert(promote_type(typeof(s0), typeof(f0)), s0)
-  d = dfds === nothing ? root_slope(f, s0) : dfds
-  r0 = Beamlines.scalarize(f0)
-  s = s0 - (f0 - r0) / d
-  for _ in 2:n
-    s -= (f(s) - r0) / d
-  end
-  return s
-end
-
-"""
-    root_order(x)
-
-Number of Newton steps `root_tangent` needs for `x`'s number type: 0
-for plain numbers, 1 per level of `Dual` nesting (a TPS extension adds
-its truncation order). Other number types (e.g. `Complex`) have no
-method.
-
-# Arguments
-- `x`: a number (e.g. `f0` in `root_tangent`) or a `Real` number
-  type.
-"""
-root_order(x::Number) = root_order(typeof(x))
-root_order(::Type{<:Real}) = 0
-root_order(::Type{<:Dual{T,V}}) where {T,V} = 1 + root_order(V)
-
-"""
-    root_slope(f, s0)
-
-Primal `∂f/∂s` at `s0`, from a `Dual` with tag `RootTag` (outside
-the parameters' `Dual`s of any nesting).
-
-# Arguments
-- `f`, `s0`: as in `root_tangent`.
-"""
-root_slope(f,
-           s0) = Beamlines.scalarize(partials(f(Dual{RootTag}(
-               Beamlines.scalarize(s0),
-               one(Beamlines.scalarize(s0)))), 1))
-
-"""
-    RootTag
-
-ForwardDiff tag of the derivative `∂f/∂s` in `root_slope`. Ordered
-after any other tag (including `Nothing`, for untagged `Dual`s), so
-that its `Dual` wraps the parameters' `Dual`s.
-"""
-struct RootTag end
-ForwardDiff.:≺(::Type, ::Type{RootTag}) = true
-ForwardDiff.:≺(::Type{RootTag}, ::Type) = false
-ForwardDiff.:≺(::Type{RootTag}, ::Type{RootTag}) = false

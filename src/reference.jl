@@ -131,7 +131,8 @@ end
 
 Serial reference of `csr_kick!` (free space and image charges, same
 layer weights), without `pz_scale`. One warm-started source walk over
-the lags, as Bmad.
+the lags, as Bmad. Number inputs are scalarized as in `csr_kick!`.
+Errors if `pz` has an `Integer` element type (before any kick).
 
 # Arguments
 - `pz` (modified), `z`, `q`, `alive`, `geom`, `ix_ele_kick`, `ds`,
@@ -147,8 +148,15 @@ function csr_kick_reference!(pz::AbstractVector, z::AbstractVector,
                              geom::CSRGeometry, ix_ele_kick::Integer,
                              ds, s_kick, gamma, species::Species,
                              params::CSRParams; kick_factor = 1.0)
-  Beamlines.scalarize(ds) > 0 ||
-      error("csr_kick_reference!: ds must be > 0 (got $ds)")
+  check_float_pz("csr_kick_reference!", "pz", pz)
+  z = scalar_array(z)
+  q = scalar_array(q)
+  geom = Beamlines.scalarize(geom)
+  ds = Beamlines.scalarize(ds)
+  s_kick = Beamlines.scalarize(s_kick)
+  gamma = Beamlines.scalarize(gamma)
+  kick_factor = Beamlines.scalarize(kick_factor)
+  ds > 0 || error("csr_kick_reference!: ds must be > 0 (got $ds)")
   n_bin = params.n_bin
   params.bmad_compat == geom.bmad_compat ||
       error(

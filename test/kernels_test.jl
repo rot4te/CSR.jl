@@ -80,9 +80,7 @@ maxrel(a, b) = maximum(abs, a .- b) / maximum(abs, b)
     p = CSRParams(n_bin = 120, particle_bin_span = 2,
                   bmad_compat = bc)
     geom = CSRGeometry(L, g, cen; bmad_compat = bc)
-    ds = L[ix] / max(1, round(Int,
-                              Beamlines.scalarize(L[ix]) / 0.1,
-                              RoundNearestTiesAway))
+    ds = L[ix] / max(1, round(Int, L[ix] / 0.1, RoundNearestTiesAway))
     pz1 = zeros(length(z))
     pz2 = zeros(length(z))
     r1 = csr_kick!(pz1, z, q, alive, geom, ix, ds, s_kick, gamma,
@@ -122,9 +120,8 @@ maxrel(a, b) = maximum(abs, a .- b) / maximum(abs, b)
   @testset "Sources upstream of the lattice are reached" begin
     geom = CSRGeometry([0.05, 0.05], [2.0, 2.0], zeros(3, 6))
     r = csr_kick!(zeros(length(z)), z, q, alive, geom, 1,
-                  0.05 / max(1, round(Int,
-                                      Beamlines.scalarize(0.05) /
-                                      0.1, RoundNearestTiesAway)),
+                  0.05 / max(1, round(Int, 0.05 / 0.1,
+                                      RoundNearestTiesAway)),
                   0.03, 50.0, electron, params)
     @test any(<(0), r.s_source)
   end
@@ -139,9 +136,7 @@ maxrel(a, b) = maximum(abs, a .- b) / maximum(abs, b)
 
   @testset "Generic element types" begin
     geom = CSRGeometry(L3, g3, c3)
-    ds = L3[2] / max(1, round(Int,
-                              Beamlines.scalarize(L3[2]) / 0.1,
-                              RoundNearestTiesAway))
+    ds = L3[2] / max(1, round(Int, L3[2] / 0.1, RoundNearestTiesAway))
     pzr = zeros(length(z))
     ref = CSR.csr_kick_reference!(pzr, z, q, alive, geom, 2,
         ds, 0.17, 200.0, electron, params)
@@ -165,8 +160,7 @@ maxrel(a, b) = maximum(abs, a .- b) / maximum(abs, b)
   end
 
   @testset "Work struct and geometry types are isbits (GPU-ready)" begin
-    D = ForwardDiff.Dual{Nothing,Float64,3}
-    for T in (Float64, Float32, D)
+    for T in (Float64, Float32)
       @test isbitstype(CSR.CSRKick1{T})
       @test isbitstype(CSRKickPoint{T})
       @test isbitstype(CSRElementInfo{T})
@@ -175,5 +169,31 @@ maxrel(a, b) = maximum(abs, a .- b) / maximum(abs, b)
     k2 = CSR.with_fields(k; L = 2, ix_ele_source = 1)
     @test k2.L === 2.0 && k2.ix_ele_source == 1 && k2.dz_particles ==
         1e-3 && k.L == 0
+  end
+
+  # Moved from ad_test.jl (S2f): csr_kick_pz leaves pz unchanged and
+  # returns the csr_kick! result
+  @testset "csr_kick_pz == csr_kick!: $name" for (name, ix, s_kick,
+      n_img) in (("kick in bend", 2, 0.17, 0),
+                 ("kick at element entrance, images", 3, 0.0, 2))
+    n4 = 400
+    z4, q4, a4 = kernel_test_bunch(1e-3, 1e-9, n4)
+    pz4 = 1e-4 .* sin.(1:n4)
+    p = CSRParams(n_bin = 40, n_shield_images = n_img,
+                  beam_chamber_height = n_img > 0 ? 0.01 : 0.0,
+                  bmad_compat = false, all_bin_quadrature = false)
+    geom = CSRGeometry(L3, g3, c3; bmad_compat = false)
+    ds = L3[ix] / max(1, round(Int, L3[ix] / 0.1,
+                               RoundNearestTiesAway))
+    kw = (kick_factor = 0.5, pz_scale = 1.3)
+    pz0 = copy(pz4)
+    y = csr_kick_pz(pz4, z4, q4, a4, geom, ix, ds, s_kick, 200.0,
+                    electron, p; kw...)
+    @test pz4 == pz0
+    pz1 = copy(pz4)
+    csr_kick!(pz1, z4, q4, a4, geom, ix, ds, s_kick, 200.0, electron,
+              p; kw...)
+    @test y == pz1
+    @test maximum(abs, y .- pz4) > 0
   end
 end

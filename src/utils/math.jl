@@ -30,33 +30,13 @@ end
 `x` folded into the range `[-amp, amp)`. Same as Bmad's `modulo2`.
 
 # Arguments
-- `x`: value to fold (e.g. an angle difference [rad]). For a
-  `Dual` only the value is folded (partials unchanged);
-  CSRGTPSAExt adds a TPS method.
+- `x`: value to fold (e.g. an angle difference [rad]).
 - `amp`: half-width of the range (`> 0`; e.g. `pi / 2`).
 """
 function modulo2(x, amp)
   m = mod(x, 2amp)
   return m >= amp ? m - 2amp : m
 end
-
-# Fold the value only; the derivative of the fold is 1 (ForwardDiff's
-# `mod` gives NaN partials at a value of exactly 0).
-# CSRGTPSAExt adds a TPS method (GTPSA has no `mod`).
-modulo2(x::Dual{T}, amp) where {T} = Dual{T}(modulo2(value(x), amp),
-    partials(x))
-
-"""
-    cube_root(x)
-
-Real cube root, `cbrt(x)`. CSRGTPSAExt adds a TPS method (GTPSA
-has no `cbrt`).
-
-# Arguments
-- `x`: real number, `Dual` or TPS (the TPS method errors on a zero
-  scalar part).
-"""
-cube_root(x) = cbrt(x)
 
 """
     cross3(a, b)

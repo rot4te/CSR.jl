@@ -30,13 +30,9 @@ reference s of the source point, for lags `i * dz`, `i = 1:n_bin`, at
 kick point `kp`. The lags are split into at most `n_block` blocks (one
 work item and workgroup each); a block reuses the previous lag's
 source element as the start of the next search. Default: 4 blocks
-per thread; always one block for TPS tables (`thread_safe_number`).
-CPU backend only: `CSRGeometry` is not isbits (its element vector),
-and the source search raises errors and recurses (adaptive
-quadrature). The tables
-are in `table_type(geom, kp, dz)` (`Float64`, or e.g. `Dual`s or TPS
-for derivatives with respect to the geometry, `s_kick` or `gamma`; the
-sources are then searched in primal values, `scalarize_all_search`).
+per thread. CPU backend only: `CSRGeometry` is not isbits (its element
+vector), and the source search raises errors and recurses (adaptive
+quadrature). The tables are in `table_type(geom, kp, dz)`.
 
 `I_int` for bins `i ≥ 2`: trapezoid in `I_csr`, or with
 `all_bin_quadrature` Simpson in `u^(1/3)` with 8 intervals (9 nodes)
@@ -51,7 +47,7 @@ above).
 - `backend`: KernelAbstractions backend of the tables (the CPU;
   `table_backend`).
 - `n_block`: maximum number of blocks (default `min(n_bin, 4 *
-  Threads.nthreads())`); 1 for TPS tables (`thread_safe_number`).
+  Threads.nthreads())`).
 - `all_bin_quadrature`: bin integral by quadrature (above).
 
 # Returns
@@ -63,28 +59,25 @@ function csr_wake_table(geom::CSRGeometry, kp::CSRKickPoint, dz,
                         n_block = min(n_bin, 4 * Threads.nthreads()),
                         all_bin_quadrature::Bool = false)
   T = table_type(geom, kp, dz)
-  thread_safe_number(T) || (n_block = 1)
   I_csr = KernelAbstractions.zeros(backend, T, n_bin)
   I_int = KernelAbstractions.zeros(backend, T, n_bin)
   s_source = KernelAbstractions.zeros(backend, T, n_bin)
   n_lag = cld(n_bin, n_block)
-  search = scalarize_all_search(geom, kp, T)
   # Workgroup size passed at launch: a static size
   # (`csr_wake_kernel!(backend, 1)`) is not inferred.
   csr_wake_kernel!(backend)(I_csr, I_int, s_source, geom, kp, dz,
-                            n_lag, search; ndrange = cld(n_bin,
-      n_lag), workgroupsize = 1)
+                            n_lag; ndrange = cld(n_bin, n_lag),
+                            workgroupsize = 1)
   KernelAbstractions.synchronize(backend)
   if n_bin > 1
     if all_bin_quadrature
       n_q = cld(n_bin - 1, min(n_bin - 1, n_block))
       csr_bin_quadrature_kernel!(backend)(I_int, geom, kp, dz, n_q,
-          N_BIN_QUAD, search;
-        ndrange = cld(n_bin - 1, n_q), workgroupsize = 1)
+          N_BIN_QUAD; ndrange = cld(n_bin - 1, n_q),
+          workgroupsize = 1)
     else
       csr_trapezoid_kernel!(backend)(I_int, I_csr, dz;
-          ndrange = n_bin - 1,
-          workgroupsize = cpu_workgroupsize(n_bin - 1, T))
+          ndrange = n_bin - 1)
     end
     KernelAbstractions.synchronize(backend)
   end
@@ -120,7 +113,7 @@ is at the lags in both cases.
 - `backend`: KernelAbstractions backend of the tables (the CPU;
   `table_backend`).
 - `n_block`: maximum number of blocks (default `min(2n_bin + 1, 4 *
-  Threads.nthreads())`); 1 for TPS tables (`thread_safe_number`).
+  Threads.nthreads())`).
 - `bin_integrate`: hat-weighted bin integral (above).
 - `rtol`: relative tolerance of the adaptive Simpson (above).
 
@@ -136,34 +129,26 @@ function csr_image_table(geom::CSRGeometry, kp::CSRKickPoint, dz,
                          rtol = 1e-6)
   n = 2n_bin + 1
   T = table_type(geom, kp, dz)
-  thread_safe_number(T) || (n_block = 1)
   image = KernelAbstractions.zeros(backend, T, n)
   s_source = KernelAbstractions.zeros(backend, T, n)
   n_lag = cld(n, n_block)
-  search = scalarize_all_search(geom, kp, T)
-  csr_image_kernel!(backend)(image, s_source, geom, kp, dz, n_lag,
-                             search; ndrange = cld(n, n_lag),
+  csr_image_kernel!(backend)(image, s_source, geom, kp, dz, n_lag;
+                             ndrange = cld(n, n_lag),
                              workgroupsize = 1)
   KernelAbstractions.synchronize(backend)
   bin_integrate || return image, s_source
 
   u_min = image_u_min(kp)
-  tol = search === nothing ? image_hat_tol(geom, kp, image, dz, rtol,
-      u_min) :
-                             image_hat_tol(search.geom, search.kp,
-                                 Beamlines.scalarize.(image),
-                                 Beamlines.scalarize(dz), rtol,
-                                 u_min)
+  tol = image_hat_tol(geom, kp, image, dz, rtol, u_min)
   rise = KernelAbstractions.zeros(backend, T, n + 1)
   fall = KernelAbstractions.zeros(backend, T, n + 1)
   n_int = cld(n + 1, min(n + 1, n_block))
   csr_image_hat_kernel!(backend)(rise, fall, geom, kp, dz, tol, u_min,
-                                 n_int, search; ndrange = cld(n + 1,
-      n_int),
+                                 n_int; ndrange = cld(n + 1, n_int),
                                  workgroupsize = 1)
   KernelAbstractions.synchronize(backend)
   csr_image_hat_combine_kernel!(backend)(image, rise, fall, dz;
-      ndrange = n, workgroupsize = cpu_workgroupsize(n, T))
+      ndrange = n)
   KernelAbstractions.synchronize(backend)
   return image, s_source
 end

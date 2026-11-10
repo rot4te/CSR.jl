@@ -12,7 +12,7 @@ Default: `Δpz = ΔE / (β² E)` with `ΔE = |q| e E_z ds` and `E_z =
 m_e`). `bmad_compat = true`: Bmad's `ds * r_c / (rel_mass * e * |q| *
 γ)` with `r_c = r_e q² / rel_mass`, i.e. `β²/rel_mass` times the
 default (docs, "Physics decisions", V2). Errors unless `gamma > 1`
-(primal value; NaN fails).
+(NaN fails).
 
 # Arguments
 - `species`: particle species, an AtomicAndPhysicalConstants
@@ -24,14 +24,18 @@ default (docs, "Physics decisions", V2). Errors unless `gamma > 1`
   the kick element.
 - `bmad_compat`: callers pass `params.bmad_compat` (`CSRParams`).
 
-Plain, `Dual` or TPS `gamma` and `ds` (see `csr_kick_pz`).
+`gamma` and `ds` may be ForwardDiff `Dual` or GTPSA TPS: they are
+scalarized (`Beamlines.scalarize`), and the prefactor is a real
+number.
 
 # Returns
 - the prefactor (a number).
 """
 function csr_kick_coef(species::Species, gamma, ds;
                        bmad_compat::Bool = false)
-  Beamlines.scalarize(gamma) > 1 || error("csr_kick_coef: gamma must be > 1 (got $(Beamlines.scalarize(gamma)))")
+  gamma = Beamlines.scalarize(gamma)
+  ds = Beamlines.scalarize(ds)
+  gamma > 1 || error("csr_kick_coef: gamma must be > 1 (got $gamma)")
   rel_mass = massof(species) / M_ELECTRON
   q = chargeof(species)
   q == 0 && error("csr_kick_coef: species has zero charge")

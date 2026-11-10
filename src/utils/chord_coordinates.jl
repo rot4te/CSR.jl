@@ -9,16 +9,14 @@ Distance along the centroid chord corresponding to reference position
 Straight elements (`|g| ≤ 1e-5`): `s_ref * L_chord / L`, as Bmad.
 Bends: the chord coordinate where the centroid spline crosses the
 reference normal plane at `s_ref` (`chord_normal_offset` = 0; Newton
-steps on primal values, then `root_tangent`); `0` and `L_chord` at the
-element ends. `bmad_compat = true`: Bmad's formula `|ρ| atan(s_ref
-cos dθ, |ρ + x + s_ref sin dθ|)`, which on an on-axis bend gives
-`ρ atan(s/ρ)` instead of the chord coordinate (docs, "Physics
-decisions", V3).
+steps); `0` and `L_chord` at the element ends. `bmad_compat = true`:
+Bmad's formula `|ρ| atan(s_ref cos dθ, |ρ + x + s_ref sin dθ|)`,
+which on an on-axis bend gives `ρ atan(s/ρ)` instead of the chord
+coordinate (docs, "Physics decisions", V3).
 
 # Arguments
 - `s_ref`: reference position [m] from the entrance of the element
-  (e.g. `s_kick` in `CSRKickPoint`). Plain, `Dual` or TPS; the
-  result carries its derivatives and those of `e`.
+  (e.g. `s_kick` in `CSRKickPoint`).
 - `e`: the element's centroid geometry, `geom.ele[i]` of a
   `CSRGeometry`.
 - `bmad_compat`: `CSRKickPoint` passes `geom.bmad_compat`.
@@ -28,10 +26,9 @@ decisions", V3).
 """
 function s_ref_to_s_chord(s_ref, e::CSRElementInfo;
                           bmad_compat::Bool = false)
-  abs(Beamlines.scalarize(e.g)) > 1e-5 || return s_ref *
-      e.L_chord / e.L
+  abs(e.g) > 1e-5 || return s_ref * e.L_chord / e.L
   # Zero-length chord: no spline (CSRGeometry), Bmad's formula
-  if bmad_compat || abs(Beamlines.scalarize(e.L_chord)) < 1e-8
+  if bmad_compat || abs(e.L_chord) < 1e-8
     rho = 1 / e.g
     dtheta = e.floor0.theta - e.ref_floor0.theta
     dr = e.ref_floor0.r - e.floor0.r
@@ -41,28 +38,31 @@ function s_ref_to_s_chord(s_ref, e::CSRElementInfo;
                            abs(rho + x + s_ref * sin(dtheta)))
   end
   ref = advance_floor(e.ref_floor0, s_ref, e.g)
-  e0, ref0 = Beamlines.scalarize(e), Beamlines.scalarize(ref)
-  slope(u) = dot3(z_axis(e0.theta_chord) + spline_d1(e0.spline,
-      u) * x_axis(e0.theta_chord), z_axis(ref0.theta))
-  s0 = Beamlines.scalarize(s_ref)
-  if s0 == 0
+  slope(u) = dot3(z_axis(e.theta_chord) + spline_d1(e.spline,
+      u) * x_axis(e.theta_chord), z_axis(ref.theta))
+  if s_ref == 0
     u = 0.0
-  elseif s0 == e0.L
-    u = e0.L_chord
+  elseif s_ref == e.L
+    u = e.L_chord
   else
-    u = s0 * e0.L_chord / e0.L
+    u = s_ref * e.L_chord / e.L
     converged = false
     for _ in 1:20
-      du = chord_normal_offset(u, e0, ref0) / slope(u)
+      du = chord_normal_offset(u, e, ref) / slope(u)
       u -= du
       # Quadratic convergence: the error left is ~du²/L
-      converged = abs(du) <= 1e-12 * abs(e0.L_chord)
+      converged = abs(du) <= 1e-12 * abs(e.L_chord)
       converged && break
     end
-    converged || error("s_ref_to_s_chord: Newton iteration did not converge (s_ref = $s0)")
+    converged || error("s_ref_to_s_chord: Newton iteration did not converge (s_ref = $s_ref)")
   end
-  f = u -> chord_normal_offset(u, e, ref)
-  return root_tangent(f, u, f(u), slope(u))
+  # Return the root in the number type promoted with the offset's:
+  # u is the literal 0.0 (Float64) at s_ref = 0, e.g. for a BigFloat
+  # geometry, and the offset is Float64 for a Float32 geometry (the
+  # 0.0 in z_axis and x_axis), whose u = e.L_chord at s_ref = L is a
+  # Float32.
+  f0 = chord_normal_offset(u, e, ref)
+  return convert(promote_type(typeof(u), typeof(f0)), u)
 end
 
 """

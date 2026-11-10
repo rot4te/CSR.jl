@@ -17,16 +17,13 @@ order (and the last bits of the bin charges) can vary between runs
 with several threads. Other element types are deposited serially on
 the CPU.
 
-The grid (`dz`, `z0_edge`, `z_center`) and `n_particle` are built from
-primal values (`Beamlines.scalarize`): with ForwardDiff Duals only
-`charge` and `edge_dcharge_density_dz` carry derivatives, and the grid
-is held constant.
+`z` and `q` may hold ForwardDiff `Dual` or GTPSA TPS numbers: they
+are scalarized (`Beamlines.scalarize`), and the bins hold real
+numbers.
 
 # Arguments
-- `z`: longitudinal particle positions [m] (user array). `Dual` or
-  TPS allowed.
-- `q`: macroparticle charges [C], same length. `Dual` or TPS
-  allowed.
+- `z`: longitudinal particle positions [m] (user array).
+- `q`: macroparticle charges [C], same length.
 - `alive`: live-particle mask (`AbstractVector{Bool}`), same
   length.
 - `params`: `CSRParams` (uses `n_bin`, `particle_bin_span`).
@@ -37,7 +34,8 @@ is held constant.
 function csr_bin_particles(z::AbstractVector, q::AbstractVector,
                            alive::AbstractVector{Bool},
                            params::CSRParams)
-  check_descriptors("csr_bin_particles"; z, q)
+  z = scalar_array(z)
+  q = scalar_array(q)
   length(z) == length(q) == length(alive) ||
     error("csr_bin_particles: z, q, alive must have equal lengths (got $(length(z)), $(length(q)), $(length(alive)))")
   n_bin = params.n_bin
@@ -46,10 +44,10 @@ function csr_bin_particles(z::AbstractVector, q::AbstractVector,
   backend = get_backend(z)
 
   any(alive) || error("csr_bin_particles: no live particles")
-  z_maxval = Beamlines.scalarize(mapreduce((zi,
-      a) -> a ? zi : oftype(zi, -Inf), max, z, alive))
-  z_minval = Beamlines.scalarize(mapreduce((zi,
-      a) -> a ? zi : oftype(zi, Inf), min, z, alive))
+  z_maxval = mapreduce((zi, a) -> a ? zi : oftype(zi, -Inf), max, z,
+                       alive)
+  z_minval = mapreduce((zi, a) -> a ? zi : oftype(zi, Inf), min, z,
+                       alive)
   isfinite(z_maxval) && isfinite(z_minval) ||
       error("csr_bin_particles: non-finite z of a live particle")
   z_maxval > z_minval ||
@@ -91,9 +89,7 @@ function csr_bin_particles(z::AbstractVector, q::AbstractVector,
     end
   end
   csr_edge_gradient_kernel!(backend)(bins.edge_dcharge_density_dz,
-                                     bins.charge, dz; ndrange = n_bin,
-                                    workgroupsize = cpu_workgroupsize(
-      n_bin, Tq))
+                                     bins.charge, dz; ndrange = n_bin)
   KernelAbstractions.synchronize(backend)
   Array(n_outside)[1] == 0 || error(
     "csr_bin_particles: particle outside bin range (internal error)")

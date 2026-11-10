@@ -5,23 +5,22 @@
     kick_cell(zp, z_center, dz) -> (i0, inside)
 
 Interpolation cell of a particle at `zp` for
-`csr_apply_kicks_kernel!`: `i0` from the primal `zp` (Fortran `int`
-truncation toward zero, as Bmad), and `inside = true` if `1 ≤ i0 <
-n_bin` and the primal `r1 = (zp - z_center[i0]) / dz` lies in `[-0.01,
-1.01]`. A non-finite primal `zp` (NaN, ±Inf) or one at least `n_bin
-+ 1` bins from `z_center[1]` gives `(0, false)`. Computed from primal
-values only, so the count (`csr_count_outside_kernel!`) and the kick
-agree for every number type.
+`csr_apply_kicks_kernel!`: `i0` from the scalar value of `zp`
+(`Beamlines.scalarize`; Fortran `int` truncation toward zero, as
+Bmad), and `inside = true` if `1 ≤ i0 < n_bin` and `r1 = (zp -
+z_center[i0]) / dz` lies in `[-0.01, 1.01]`. A non-finite `zp` (NaN,
+±Inf) or one at least `n_bin + 1` bins from `z_center[1]` gives `(0,
+false)`. The count (`csr_count_outside_kernel!`) and the kick use the
+same cells.
 
 # Arguments
-- `zp`: longitudinal position [m] of one particle, `z[i]`; any
-  number type (`Dual`, TPS: only the primal is used).
+- `zp`: longitudinal position [m] of one particle, `z[i]`.
 - `z_center`: bin centres [m], `bins.z_center` (`CSRBins`);
   `n_bin = length(z_center)`.
-- `dz`: bin width [m], `bins.dz` (primal).
+- `dz`: bin width [m], `bins.dz`.
 
 # Returns
-- `i0::Int`: `trunc(Int, (zp - z_center[1]) / dz) + 1` (primal).
+- `i0::Int`: `trunc(Int, (zp - z_center[1]) / dz) + 1`.
   If `inside`, the lower bin of the interpolation cell
   (`z_center[i0]`, `z_center[i0+1]`); otherwise it may lie outside
   `1:n_bin-1`. `0` in the early-return `(0, false)` cases above.
@@ -47,11 +46,13 @@ end
                             dz, pz_scale)
 
 One work item per particle: `pz += pz_scale (r0 kick[i0] + r1
-kick[i0+1])`, linear interpolation between the bin centres around `z`,
-with the cell and the range test from `kick_cell` (primal `z`, so TPS
-or `Dual` `z` expands within the cell). Particles outside the table
-are counted in `n_outside` (`Int32`: no 64-bit atomics on some GPUs).
-Launched by `apply_kicks_outside!`.
+kick[i0+1])`, linear interpolation between the bin centres around the
+scalar value of `z` (`Beamlines.scalarize`), with the cell and the
+range test from `kick_cell`. The added term is a real number, so only
+the value of `pz` changes (a `Dual` or TPS `pz` keeps its partials or
+higher coefficients). Particles outside the table are counted in
+`n_outside` (`Int32`: no 64-bit atomics on some GPUs). Launched by
+`apply_kicks_outside!`.
 
 # Arguments
 - `pz`: particle momentum deviations (modified for live particles
@@ -63,14 +64,14 @@ Launched by `apply_kicks_outside!`.
 - `z_center`: bin centres [m], `bins.z_center` (`CSRBins`).
 - `kick`: Δpz per bin, `st.kick` of `csr_binned_kick` or
   `csr_bins_kick`.
-- `dz`: bin width [m], `bins.dz` (primal).
+- `dz`: bin width [m], `bins.dz`.
 - `pz_scale`: factor on the applied kick (as in `csr_kick!`).
 """
 @kernel function csr_apply_kicks_kernel!(pz, n_outside, @Const(z),
     @Const(alive), @Const(z_center), @Const(kick), dz, pz_scale)
   i = @index(Global)
   @inbounds if alive[i]
-    zp = z[i]
+    zp = Beamlines.scalarize(z[i])
     i0, inside = kick_cell(zp, z_center, dz)
     if inside
       r1 = (zp - z_center[i0]) / dz
@@ -96,7 +97,7 @@ Launched by `count_outside`.
 - `z`: particle longitudinal positions [m].
 - `alive`: live-particle mask (`Bool`).
 - `z_center`: bin centres [m], `bins.z_center` (`CSRBins`).
-- `dz`: bin width [m], `bins.dz` (primal).
+- `dz`: bin width [m], `bins.dz`.
 """
 @kernel function csr_count_outside_kernel!(n_outside, @Const(z),
     @Const(alive), @Const(z_center), dz)

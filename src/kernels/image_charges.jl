@@ -65,11 +65,11 @@ function image_charge_kick(k::CSRKick1, geom::CSRGeometry,
 end
 
 """
-    csr_image_kernel!(image, s_source, geom, kp, dz, n_lag, search)
+    csr_image_kernel!(image, s_source, geom, kp, dz, n_lag)
 
 Image kick for lags i = -n_bin:n_bin, stored at index i + n_bin + 1.
 One work item per block of `n_lag` consecutive lags, warm-started
-within a block as csr_wake_kernel!. `search` as in `s_source_calc`.
+within a block as csr_wake_kernel!.
 
 # Arguments
 - `image`: vector of length `2n_bin + 1` (modified), allocated by
@@ -81,17 +81,15 @@ within a block as csr_wake_kernel!. `search` as in `s_source_calc`.
 - `dz`: bin width [m]; lag `i` is `i * dz`.
 - `n_lag`: lags per work item (`csr_image_table`: `cld(2n_bin + 1,
   n_block)`).
-- `search`: `nothing` or a `ScalarizeAllSearch`, from
-  `scalarize_all_search`.
 """
 @kernel function csr_image_kernel!(image, s_source, geom, kp, dz,
-                                   n_lag, search)
+                                   n_lag)
   b = @index(Global)
   n_bin = (length(image) - 1) ÷ 2
   k = CSRKick1(geom, kp)
   for j in (b - 1) * n_lag + 1:min(b * n_lag, length(image))
     k, s_chord = s_source_calc(with_fields(k;
-        dz_particles = (j - n_bin - 1) * dz), geom, kp, search)
+        dz_particles = (j - n_bin - 1) * dz), geom, kp)
     @inbounds begin
       image[j] = image_charge_kick(k, geom, kp)
       s_source[j] = source_s(geom, k.ix_ele_source, s_chord)
@@ -100,10 +98,10 @@ within a block as csr_wake_kernel!. `search` as in `s_source_calc`.
 end
 
 """
-    image_kernel_at(k, u, geom, kp, search = nothing) -> (k, K)
+    image_kernel_at(k, u, geom, kp) -> (k, K)
 
-Image kick at lag u (the source search starts from the element in `k`;
-`search` as in `s_source_calc`), and the work struct after the search.
+Image kick at lag u (the source search starts from the element in
+`k`), and the work struct after the search.
 
 # Arguments
 - `k`: work struct (`CSRKick1`) whose `ix_ele_source` starts the
@@ -111,29 +109,26 @@ Image kick at lag u (the source search starts from the element in `k`;
 - `u`: lag [m] (any sign).
 - `geom`: centroid geometry, from `CSRGeometry`.
 - `kp`: kick point with `kp.y_source ≠ 0`, from `CSRKickPoint`.
-- `search = nothing`: `nothing` or a `ScalarizeAllSearch`.
 
 # Returns
 - `(k, K)`: the work struct describing the source, and
   `K = image_charge_kick(k, geom, kp)`.
 """
 function image_kernel_at(k::CSRKick1, u, geom::CSRGeometry,
-                         kp::CSRKickPoint, search = nothing)
-  k, _ = s_source_calc(with_fields(k; dz_particles = u), geom, kp,
-                       search)
+                         kp::CSRKickPoint)
+  k, _ = s_source_calc(with_fields(k; dz_particles = u), geom, kp)
   return k, image_charge_kick(k, geom, kp)
 end
 
 """
     image_simpson(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol, h_min,
-                  depth, leaf = nothing, search = nothing) -> (k, S)
+                  depth) -> (k, S)
 
 Adaptive Simpson for S = (∫K, ∫K t) over [a, b], t = (u - u0) /
 dz; fa, fm, fb are K at a, (a + b)/2, b. Intervals not wider than
 `h_min` are not split (the kernel has round-off noise from the source
 search). Each accepted interval `[a, b]` contributes Boole's rule on
-its 5 nodes; `leaf(a, b)` is called for it unless `leaf === nothing`
-(`csr_kick_param_adjoint`). `search` as in `s_source_calc`.
+its 5 nodes.
 
 # Arguments
 - `k`: work struct (`CSRKick1`), warm start of the source searches.
@@ -146,71 +141,62 @@ its 5 nodes; `leaf(a, b)` is called for it unless `leaf === nothing`
 - `tol`: absolute tolerance on `S` (halved per split).
 - `h_min`: interval width [m] up to which there is no split.
 - `depth`: remaining splits (`image_segment` starts with 40).
-- `leaf = nothing`: `nothing` or a function `leaf(a, b)`
-  (`hat_nodes`).
-- `search = nothing`: `nothing` or a `ScalarizeAllSearch`.
 
 # Returns
 - `(k, S)`: the work struct after the last search, and `S` as an
   `SVector` of 2.
 """
 function image_simpson(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol,
-                       h_min, depth, leaf = nothing, search = nothing)
+                       h_min, depth)
   m = (a + b) / 2
-  k, fl = image_kernel_at(k, (a + m) / 2, geom, kp, search)
-  k, fr = image_kernel_at(k, (m + b) / 2, geom, kp, search)
+  k, fl = image_kernel_at(k, (a + m) / 2, geom, kp)
+  k, fr = image_kernel_at(k, (m + b) / 2, geom, kp)
   g(u, f) = SVector(f, f * (u - u0) / dz)
   h = b - a
   S1 = h / 6 * (g(a, fa) + 4g(m, fm) + g(b, fb))
   S2 = h / 12 * (g(a, fa) + 4g((a + m) / 2, fl) + 2g(m,
       fm) + 4g((m + b) / 2, fr) + g(b, fb))
-  if depth <= 0 || h <= h_min || maximum(abs,
-      Beamlines.scalarize.(S2 - S1)) <=
-          15Beamlines.scalarize(tol)
-    leaf === nothing || leaf(a, b)
+  if depth <= 0 || h <= h_min || maximum(abs, S2 - S1) <= 15tol
     return k, S2 + (S2 - S1) / 15
   end
   k, Sl = image_simpson(k, geom, kp, a, m, fa, fl, fm, u0, dz,
-                        tol / 2, h_min, depth - 1, leaf, search)
+                        tol / 2, h_min, depth - 1)
   k, Sr = image_simpson(k, geom, kp, m, b, fm, fr, fb, u0, dz,
-                        tol / 2, h_min, depth - 1, leaf, search)
+                        tol / 2, h_min, depth - 1)
   return k, Sl + Sr
 end
 
 """
-    image_segment(k, geom, kp, a, b, u0, dz, tol, h_min,
-                  leaf = nothing, search = nothing) -> (k, S)
+    image_segment(k, geom, kp, a, b, u0, dz, tol, h_min) -> (k, S)
 
 `S = (∫K, ∫K t)` over `[a, b]`, `t = (u - u0)/dz`, by
 `image_simpson` from the kernel at `a`, the midpoint and `b`.
 
 # Arguments
-- `k`, `geom`, `kp`, `a`, `b`, `u0`, `dz`, `tol`, `h_min`, `leaf`,
-  `search`: as in `image_simpson`.
+- `k`, `geom`, `kp`, `a`, `b`, `u0`, `dz`, `tol`, `h_min`: as in
+  `image_simpson`.
 
 # Returns
 - `(k, S)`: as `image_simpson`.
 """
-function image_segment(k, geom, kp, a, b, u0, dz, tol, h_min,
-                       leaf = nothing, search = nothing)
-  k, fa = image_kernel_at(k, a, geom, kp, search)
-  k, fm = image_kernel_at(k, (a + b) / 2, geom, kp, search)
-  k, fb = image_kernel_at(k, b, geom, kp, search)
+function image_segment(k, geom, kp, a, b, u0, dz, tol, h_min)
+  k, fa = image_kernel_at(k, a, geom, kp)
+  k, fm = image_kernel_at(k, (a + b) / 2, geom, kp)
+  k, fb = image_kernel_at(k, b, geom, kp)
   return image_simpson(k, geom, kp, a, b, fa, fm, fb, u0, dz, tol,
-                       h_min, 40, leaf, search)
+                       h_min, 40)
 end
 
 """
-    image_interval_moments(k, geom, kp, m, dz, tol, u_min,
-                           leaf = nothing, search = nothing) -> (k,
-                               moments)
+    image_interval_moments(k, geom, kp, m, dz, tol,
+                           u_min) -> (k, moments)
 
 Hat-function moments of the image kernel over lag interval m, [m dz,
 (m+1) dz]: (∫K t, ∫K (1 - t)), t = u/dz - m. `tol` is the absolute
 tolerance on the interval. The intervals touching u = 0 are split
 geometrically down to `u_min` first, so that structure finer than the
 first Simpson nodes is not missed (on a drift the kernel peaks at |u|
-= y/(√2 γ)). `leaf` and `search` as in `image_simpson`.
+= y/(√2 γ)).
 
 # Arguments
 - `k`: work struct (`CSRKick1`), warm start of the source searches,
@@ -221,14 +207,12 @@ first Simpson nodes is not missed (on a drift the kernel peaks at |u|
 - `tol`: absolute tolerance, from `image_hat_tol`.
 - `u_min`: lag [m] down to which the intervals touching 0 are split,
   from `image_u_min`; also `image_simpson`'s `h_min`.
-- `leaf = nothing`, `search = nothing`: as in `image_simpson`.
 
 # Returns
 - `(k, moments)`: the work struct after the last search, and
   `moments = SVector(∫K t, ∫K (1 - t))` (not divided by `dz`).
 """
-function image_interval_moments(k, geom, kp, m, dz, tol, u_min,
-                                leaf = nothing, search = nothing)
+function image_interval_moments(k, geom, kp, m, dz, tol, u_min)
   a = m * dz
   if m == 0 || m == -1
     sgn = m == 0 ? 1 : -1
@@ -237,28 +221,25 @@ function image_interval_moments(k, geom, kp, m, dz, tol, u_min,
     while x / 2 > u_min
       lo, hi = minmax(sgn * x / 2, sgn * x)
       k, S = image_segment(k, geom, kp, lo, hi, a, dz,
-                           tol * (x / 2) / dz, u_min, leaf, search)
+                           tol * (x / 2) / dz, u_min)
       acc += S
       x /= 2
     end
     lo, hi = minmax(0.0, sgn * x)
     k, S = image_segment(k, geom, kp, lo, hi, a, dz, tol * x / dz,
-                         u_min, leaf, search)
+                         u_min)
     acc += S
   else
-    k, acc = image_segment(k, geom, kp, a, a + dz, a, dz, tol, u_min,
-                           leaf, search)
+    k, acc = image_segment(k, geom, kp, a, a + dz, a, dz, tol, u_min)
   end
   return k, SVector(acc[2], acc[1] - acc[2])
 end
 
 """
-    csr_image_hat_kernel!(rise, fall, geom, kp, dz, tol, u_min, n_int,
-                          search)
+    csr_image_hat_kernel!(rise, fall, geom, kp, dz, tol, u_min, n_int)
 
 Moments for lag intervals m = -n_bin-1:n_bin (index m + n_bin + 2),
-blocks of `n_int` consecutive intervals. `search` as in
-`s_source_calc`.
+blocks of `n_int` consecutive intervals.
 
 # Arguments
 - `rise`, `fall`: vectors of length `2n_bin + 2` (modified),
@@ -268,17 +249,15 @@ blocks of `n_int` consecutive intervals. `search` as in
 - `tol`: absolute tolerance per interval, from `image_hat_tol`.
 - `u_min`: from `image_u_min` (see `image_interval_moments`).
 - `n_int`: intervals per work item.
-- `search`: `nothing` or a `ScalarizeAllSearch`, from
-  `scalarize_all_search`.
 """
 @kernel function csr_image_hat_kernel!(rise, fall, geom, kp, dz, tol,
-                                       u_min, n_int, search)
+                                       u_min, n_int)
   b = @index(Global)
   n_bin = (length(rise) - 2) ÷ 2
   k = CSRKick1(geom, kp)
   for j in (b - 1) * n_int + 1:min(b * n_int, length(rise))
     k, mom = image_interval_moments(k, geom, kp, j - n_bin - 2, dz,
-                                    tol, u_min, nothing, search)
+                                    tol, u_min)
     @inbounds rise[j] = mom[1]
     @inbounds fall[j] = mom[2]
   end

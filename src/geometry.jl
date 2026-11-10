@@ -12,16 +12,17 @@ reference curvature `g[i]`.
 coordinates `[x px y py z pz]`: row 1 at the start of the lattice, row
 `i+1` at the exit of element `i` (Bmad's `centroid(0:n)`).
 
-Dynamic-descriptor TPS arguments must be in GTPSA's current
-Descriptor.
+`L`, `g`, `centroid` and `ref_start` may hold ForwardDiff `Dual` or
+GTPSA TPS numbers: they are scalarized (`Beamlines.scalarize`), and
+the geometry holds real numbers.
 
 # Arguments
 - `L`: element (reference) lengths [m], one per element (user
-  input). `Dual` or TPS allowed.
+  input).
 - `g`: reference curvatures [1/m] (0 for straight elements), same
-  length as `L`. `Dual` or TPS allowed.
+  length as `L`.
 - `centroid`: `(n+1) × 6` centroid matrix (above); only the `x`,
-  `px` and `pz` columns are used. `Dual` or TPS allowed.
+  `px` and `pz` columns are used.
 - `ref_start`: reference `FloorPosition` at the start of the
   lattice; the reference exits are `planar_survey(L, g; start =
   ref_start)`.
@@ -37,7 +38,10 @@ function CSRGeometry(L::AbstractVector, g::AbstractVector,
                      centroid::AbstractMatrix;
                      ref_start::FloorPosition = FloorPosition(),
                      bmad_compat::Bool = false)
-  check_descriptors("CSRGeometry"; L, g, centroid, ref_start)
+  L = scalar_array(L)
+  g = scalar_array(g)
+  centroid = scalar_array(centroid)
+  ref_start = Beamlines.scalarize(ref_start)
   return CSRGeometry(L, g, planar_survey(L, g; start = ref_start),
                      centroid; ref_start, bmad_compat)
 end
@@ -57,7 +61,7 @@ at one end, against it at the other).
 - `L`, `g`, `centroid`, `ref_start`, `bmad_compat`: as above.
 - `ref_exit`: vector of reference `FloorPosition`s at the exit of
   each element, from `planar_survey`, `advance_floor` or
-  `advance_floor_patch`. `Dual` or TPS allowed.
+  `advance_floor_patch` (scalarized as `L`).
 
 # Returns
 - `CSRGeometry{T}`, `T` promoted from all arguments (as a float).
@@ -67,8 +71,11 @@ function CSRGeometry(L::AbstractVector, g::AbstractVector,
                      centroid::AbstractMatrix;
                      ref_start::FloorPosition = FloorPosition(),
                      bmad_compat::Bool = false)
-  check_descriptors("CSRGeometry"; L, g, ref_exit, centroid,
-                    ref_start)
+  L = scalar_array(L)
+  g = scalar_array(g)
+  ref_exit = scalar_array(ref_exit)
+  centroid = scalar_array(centroid)
+  ref_start = Beamlines.scalarize(ref_start)
   n = length(L)
   length(g) == n && length(ref_exit) == n ||
       error(
@@ -78,9 +85,11 @@ function CSRGeometry(L::AbstractVector, g::AbstractVector,
       promote_type, ref_exit; init = Float64),
                          eltype(centroid), number_type(ref_start)))
 
-  cfloor(ref, row) = centroid_floor(ref, centroid[row, 1],
-                                    centroid[row, 2], centroid[row,
-      6])
+  # let: the closure captures the scalarized centroid (no Core.Box)
+  cfloor = let centroid = centroid
+    (ref, row) -> centroid_floor(ref, centroid[row, 1],
+                                 centroid[row, 2], centroid[row, 6])
+  end
   start = cfloor(ref_start, 1)
 
   ele = Vector{CSRElementInfo{T}}(undef, n)
@@ -92,33 +101,23 @@ function CSRGeometry(L::AbstractVector, g::AbstractVector,
     floor1 = cfloor(ref_floor1, i + 1)
 
     dr = floor1.r - floor0.r
-    if Beamlines.scalarize(dr[1]) == 0 &&
-        Beamlines.scalarize(dr[3]) == 0
-      # Zero-length chord (e.g. a marker): TPS atan/sqrt abort at 0
-      # and Dual derivatives are not finite there. The chord is below
-      # the 1e-8 threshold below, so its primal direction is enough.
-      theta_chord = convert(T, atan(Beamlines.scalarize(dr[1]),
-                                    Beamlines.scalarize(dr[3])))
-      L_chord = zero(T)
-    else
-      theta_chord = atan(dr[1], dr[3])
-      L_chord = sqrt(dr[1]^2 + dr[3]^2)
-    end
+    theta_chord = atan(dr[1], dr[3])
+    L_chord = sqrt(dr[1]^2 + dr[3]^2)
     spline = zero(SVector{4,T})
     dL_s = zero(T)
 
     # Bmad's threshold for a zero-length chord
-    if abs(Beamlines.scalarize(L_chord)) >= 1e-8
+    if abs(L_chord) >= 1e-8
       # An element with a negative step (e.g. off-center beam in a
       # patch with only an x-pitch) can have floor%theta and
       # theta_chord 180° apart. Restrict theta0 and theta1 to [-π/2,
       # π/2).
       theta0 = modulo2(floor0.theta - theta_chord, pi / 2)
       theta1 = modulo2(floor1.theta - theta_chord, pi / 2)
-      parallel0 = abs(modulo2(Beamlines.scalarize(floor0.theta -
-          theta_chord), pi)) < pi / 2
-      parallel1 = abs(modulo2(Beamlines.scalarize(floor1.theta -
-          theta_chord), pi)) < pi / 2
+      parallel0 = abs(modulo2(floor0.theta - theta_chord, pi)) <
+          pi / 2
+      parallel1 = abs(modulo2(floor1.theta - theta_chord, pi)) <
+          pi / 2
       parallel0 == parallel1 || error(
         "CSRGeometry: inconsistent centroid direction in element $i")
       parallel0 || (L_chord = -L_chord)
@@ -144,7 +143,7 @@ position on the centroid spline), for a reference particle with
 Lorentz factor `gamma`. `y_source` is the height of the source
 particle (image charges; 0 in free space), `kick_factor` multiplies
 every kick computed with this point (half steps, image sign and
-weight). Errors unless `gamma > 1` (primal value; NaN fails).
+weight). Errors unless `gamma > 1` (NaN fails).
 
 # Arguments
 - `geom`: centroid geometry, from `CSRGeometry`.
@@ -156,17 +155,21 @@ weight). Errors unless `gamma > 1` (primal value; NaN fails).
   `ns * params.beam_chamber_height` for image layer `ns`.
 - `kick_factor`: kick multiplier (above).
 
-`s_kick`, `gamma`, `y_source`, `kick_factor` and `geom` may be
-`Dual` or TPS.
+`geom`, `s_kick`, `gamma`, `y_source` and `kick_factor` may hold
+ForwardDiff `Dual` or GTPSA TPS numbers: they are scalarized
+(`Beamlines.scalarize`), and the kick point holds real numbers.
 
 # Returns
 - `CSRKickPoint{T}`, `T` promoted from the arguments.
 """
 function CSRKickPoint(geom::CSRGeometry, ix_ele_kick, s_kick, gamma;
                       y_source = 0.0, kick_factor = 1.0)
-  check_descriptors("CSRKickPoint"; geom, s_kick, gamma, y_source,
-                    kick_factor)
-  Beamlines.scalarize(gamma) > 1 || error("CSRKickPoint: gamma must be > 1 (got $(Beamlines.scalarize(gamma)))")
+  geom = Beamlines.scalarize(geom)
+  s_kick = Beamlines.scalarize(s_kick)
+  gamma = Beamlines.scalarize(gamma)
+  y_source = Beamlines.scalarize(y_source)
+  kick_factor = Beamlines.scalarize(kick_factor)
+  gamma > 1 || error("CSRKickPoint: gamma must be > 1 (got $gamma)")
   e = geom.ele[ix_ele_kick]
   s_chord_kick = s_ref_to_s_chord(s_kick, e; geom.bmad_compat)
   x = spline_val(e.spline, s_chord_kick)
@@ -183,21 +186,26 @@ end
 """
     Beamlines.scalarize(f::FloorPosition),
     Beamlines.scalarize(e::CSRElementInfo),
-    Beamlines.scalarize(geom::CSRGeometry),
-    Beamlines.scalarize(kp::CSRKickPoint)
+    Beamlines.scalarize(geom::CSRGeometry)
 
-Copy with the primal value of every number (`Float64` from `Dual`s). A
-`CSRGeometry{Float64}` is returned as is.
+Copy with every number scalarized (`Beamlines.scalarize`: the value
+of a ForwardDiff `Dual`, the scalar part of a GTPSA TPS); `f` or
+`geom` itself (no copy) for an `AbstractFloat` number type. Used for
+entry-point scalarization: `CSRGeometry` and `planar_survey` apply
+them to `ref_exit` (via `scalar_array`), `ref_start` and `start`;
+`CSRKickPoint`, `csr_kick!`, `csr_kick_pz`, `csr_binned_kick`,
+`csr_bins_kick` and `csr_kick_reference!` to `geom`. The
+`CSRElementInfo` method serves the `CSRGeometry` one.
 
 # Arguments
-- `f`: a `FloorPosition`.
+- `f`: a `FloorPosition` (e.g. an element of `ref_exit`).
 - `e`: a `CSRElementInfo` (e.g. `geom.ele[i]`).
 - `geom`: a `CSRGeometry`, from `CSRGeometry`.
-- `kp`: a `CSRKickPoint`, from `CSRKickPoint(geom, ...)`.
 
 # Returns
-- an object of the same struct type with primal numbers.
+- an object of the same struct type with real numbers.
 """
+Beamlines.scalarize(f::FloorPosition{<:AbstractFloat}) = f
 Beamlines.scalarize(f::FloorPosition) =
   FloorPosition(Beamlines.scalarize.(f.r),
                 Beamlines.scalarize(f.theta))
@@ -213,17 +221,26 @@ Beamlines.scalarize(e::CSRElementInfo) =
                  Beamlines.scalarize(e.L_chord),
                  Beamlines.scalarize.(e.spline),
                  Beamlines.scalarize(e.dL_s))
-Beamlines.scalarize(geom::CSRGeometry{Float64}) = geom
+Beamlines.scalarize(geom::CSRGeometry{<:AbstractFloat}) = geom
 Beamlines.scalarize(geom::CSRGeometry) =
   CSRGeometry(Beamlines.scalarize(geom.start),
               map(Beamlines.scalarize, geom.ele),
               geom.bmad_compat)
-Beamlines.scalarize(kp::CSRKickPoint) =
-  CSRKickPoint(kp.ix_ele_kick, Beamlines.scalarize(kp.s_kick),
-               Beamlines.scalarize(kp.s_chord_kick),
-               Beamlines.scalarize(kp.floor_k),
-               Beamlines.scalarize(kp.gamma),
-               Beamlines.scalarize(kp.gamma2),
-               Beamlines.scalarize(kp.beta),
-               Beamlines.scalarize(kp.y_source),
-               Beamlines.scalarize(kp.kick_factor))
+
+"""
+    scalar_array(x)
+
+Entry-point scalarization of an array: `x` itself (no copy) for
+elements of an `AbstractFloat` type or `FloorPosition`s of one, else
+`Beamlines.scalarize(x)` (a new array of the scalarized elements).
+
+# Arguments
+- `x`: array of numbers (e.g. `z`, `q`, `L`, `centroid`) or of
+  `FloorPosition`s (`ref_exit`).
+
+# Returns
+- an array of real numbers or real `FloorPosition`s.
+"""
+scalar_array(x::AbstractArray{<:AbstractFloat}) = x
+scalar_array(x::AbstractArray{<:FloorPosition{<:AbstractFloat}}) = x
+scalar_array(x::AbstractArray) = Beamlines.scalarize(x)
