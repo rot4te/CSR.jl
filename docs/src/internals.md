@@ -12,12 +12,12 @@ Public = false
 Pages = ["src/CSR.jl", "src/types.jl", "src/geometry.jl"]
 ```
 
-## Host side: binning, tables, kick, adjoint
+## Host side: binning, tables, kick
 
 ```@autodocs
 Modules = [CSR]
 Public = false
-Pages = ["src/binning.jl", "src/tables.jl", "src/kick.jl", "src/adjoint.jl", "src/param_adjoint.jl"]
+Pages = ["src/binning.jl", "src/tables.jl", "src/kick.jl"]
 ```
 
 ## Kernels
@@ -62,14 +62,6 @@ Public = false
 Pages = ["kernels/convolve.jl", "kernels/kick.jl"]
 ```
 
-### Adjoint
-
-```@autodocs
-Modules = [CSR]
-Public = false
-Pages = ["kernels/adjoint.jl"]
-```
-
 ## Utilities
 
 ```@autodocs
@@ -84,23 +76,14 @@ Pages = ["utils/math.jl", "utils/backend.jl", "utils/spline.jl", "utils/floor.jl
 ```@autodocs
 Modules = [CSR]
 Public = false
-Pages = ["src/reference.jl", "src/interface.jl"]
+Pages = ["src/reference.jl"]
 ```
 
-## BeamTracking + Beamlines extension
+## BeamTracking extension
+
+`CSRBeamTrackingExt`, loaded with BeamTracking: the methods of `BeamTracking.effect_setup` and
+`BeamTracking.effect_kick!` for [`CSREffect`](@ref) and [`CSRReplay`](@ref), and their helpers.
 
 ```@autodocs
-Modules = [Base.get_extension(CSR, :CSRBeamTrackingBeamlinesExt)]
-```
-
-## ChainRulesCore extension
-
-```@autodocs
-Modules = [Base.get_extension(CSR, :CSRChainRulesCoreExt)]
-```
-
-## GTPSA extension
-
-```@autodocs
-Modules = [Base.get_extension(CSR, :CSRGTPSAExt)]
+Modules = [Base.get_extension(CSR, :CSRBeamTrackingExt)]
 ```

@@ -1,7 +1,8 @@
 # API
 
-Exported functions and types. `track_csr!`, `slice_element` and `csr_sliceable` have their methods in the
-BeamTracking + Beamlines extension; their extension docstrings are listed under [Internals](@ref).
+Exported functions and types. [`CSREffect`](@ref) and [`CSRReplay`](@ref) act as effects of BeamTracking's
+`track!`; their methods are in the extension `CSRBeamTrackingExt`, whose docstrings are listed under
+[Internals](@ref).
 
 ```@autodocs
 Modules = [CSR]

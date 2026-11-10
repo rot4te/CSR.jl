@@ -11,9 +11,9 @@ curves towards `-x` and θ decreases.
 
 ## Steps
 
-`track_csr!` divides every element into `n_step = max(1, round(L / ds_step))` slices. The bunch is tracked
-slice by slice with BeamTracking; at each slice boundary (and at the element ends, with half weight) one kick
-[`csr_kick!`](@ref) is applied:
+BeamTracking tracks every element in `n_slices` slices (a Beamlines element property, default 1). At the entrance
+of each slice of a kicked element (see [Usage](@ref)), [`CSREffect`](@ref) applies one kick [`csr_kick!`](@ref)
+that covers the slice length `ds = L / n_slices`:
 
 1. **Geometry.** The centroid orbit (tracked without CSR) defines, per element, the chord from the entrance to
    the exit centroid position and a cubic spline `x(t)` of the centroid offset from the chord
@@ -90,10 +90,10 @@ Two numerical aspects matter here:
 
 ## Reference energy
 
-γ for the kick is the reference particle's. It is constant inside elements, except in SaganCavity elements with
-`dE_ref` (lcavities), where it ramps linearly from `E_ref − dE_ref` to `E_ref` ([`CSR.csr_ref_energy`](@ref), Bmad). The
-particles' reference momentum there steps at each RF cell (BeamTracking), so the applied `Δpz` is rescaled from the
-linearly ramped reference momentum to the stepped one (`pz_scale`).
+γ for the kick is that of the bunch's reference momentum (`p_over_q_ref`) at the slice entrance. Elements tracked
+with `SaganCavity` get no kick, so there is no CSR inside cavities. The core function [`CSR.csr_ref_energy`](@ref)
+(Bmad's linear ramp from `E_ref − dE_ref` to `E_ref` in an lcavity) and the `pz_scale` keyword of `csr_kick!`
+remain, but the tracking driver uses neither.
 
 ## Limits of the model
 

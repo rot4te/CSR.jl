@@ -140,7 +140,7 @@ Bmad's `csr_struct`). Number type `T` as `FloorPosition`. Built by
 - `y_source`: height [m] of the source particle (image charges; 0
   for free space).
 - `kick_factor`: multiplies every kick computed with this point
-  (1/2 at element ends; image sign and weight).
+  (e.g. 1/2 for a half kick; image sign and weight).
 """
 struct CSRKickPoint{T<:Number}
   ix_ele_kick::Int           # Element containing the kick point
@@ -153,7 +153,7 @@ struct CSRKickPoint{T<:Number}
   beta::T
   # Height of the source particle (image charges; 0 for free space)
   y_source::T
-  kick_factor::T             # Scales the kick (1/2 at element ends)
+  kick_factor::T             # Scales the kick (e.g. 1/2: half kick)
 end
 
 function CSRKickPoint(ix_ele_kick::Integer, s_kick, s_chord_kick,

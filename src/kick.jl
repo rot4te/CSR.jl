@@ -349,13 +349,12 @@ tracked through the kick.
 - `species`: particle species (`Species`, AtomicAndPhysicalConstants;
   mass and charge enter `csr_kick_coef`).
 - `params`: `CSRParams`.
-- `kick_factor`: `1/2` at the first and last step of an element, `1`
-  otherwise.
+- `kick_factor`: scales the kick (e.g. `1/2` for a half kick at an
+  element end). `CSREffect` uses `1`.
 - `pz_scale`: multiplies the Δpz applied to the particles (not the
-  returned diagnostics). Used where the particles' reference momentum
-  differs from the one the kick is computed for (inside a SaganCavity,
-  whose reference momentum steps at each cell while γ ramps
-  linearly).
+  returned diagnostics), for particles whose reference momentum
+  differs from the one the kick is computed for. `CSREffect` uses
+  `1`.
 - `test_particles`: `(pz_t, z_t, alive_t)` or `nothing`. Test
   particles get the same kick (`pz_t` modified) without contributing
   to it, e.g. particles for a transfer map with the bunch's wake
