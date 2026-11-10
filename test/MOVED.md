@@ -113,3 +113,22 @@ before.
 Removed Float64 asserts of deleted functions (no code left to test): `device_number_type` (3 of the 4 W4 asserts
 had `Float64`/`Float32` arguments), `geometry_to_vector` round trip, `geometry_active_indices`,
 `widen_source_range`.
+
+## S7 (2026-11-10): CSR effect on BeamTracking's slicing
+
+New `effect_test.jl` (39 asserts): `CSREffect`/`CSRReplay` through
+`track!(bunch, bl; effects)`. Suite 586 → 625.
+
+The BeamTracking-level testsets listed above as going to S7
+(`track_csr_test.jl`, `track_tps_test.jl`,
+`track_tps_collective_test.jl`, lcavity/Branch, BT parts of
+`review_fixes_test.jl`) were written for `track_csr!` with half kicks
+at the element ends, `ds_step`, a `test_bunch` keyword, `Branch` and
+SaganCavity slices. Re-written for the new call in `effect_test.jl`:
+floor conventions, no-kick equals `track!`, steady state in a long
+bend, per-element selection and zero-length elements, linearity in
+charge, test particles (by record/replay). Not ported: lcavity,
+`Branch`, `pz_scale`, `csr_n_step`, `sliced_centroid`, descriptor and
+knob-type checks (removed in S2f), TPS maps of a test bunch (order ≥ 1
+through the kick was dropped in S2f; the order-0 check is the Dual
+replay assert).

@@ -300,8 +300,8 @@ end
 """
     csr_kick!(pz, z, q, alive, geom, ix_ele_kick, ds, s_kick, gamma,
               species, params; kick_factor = 1.0,
-              pz_scale = 1.0,
-              test_particles = nothing) -> CSRStepResult
+              pz_scale = 1.0, test_particles = nothing,
+              binned = nothing) -> CSRStepResult
 
 Apply one 1D CSR kick at reference position `s_kick` [m] from the
 entrance of element `ix_ele_kick`. Errors if `pz` (or `pz_t`) has an
@@ -363,6 +363,9 @@ tracked through the kick.
   so an error from `csr_apply_test_kicks!` (a live test particle
   outside the bin range, or arrays of different lengths, checked
   before the kick tables are built) leaves `pz` and `pz_t` unchanged.
+- `binned`: `nothing` or a function called with the named tuple of
+  `csr_binned_kick` (bins, kick per bin, tables) before the kick is
+  applied, e.g. to store it.
 
 # Returns
 - `CSRStepResult` with the per-bin diagnostics of this kick
@@ -373,7 +376,8 @@ function csr_kick!(pz::AbstractVector, z::AbstractVector,
                    geom::CSRGeometry, ix_ele_kick::Integer, ds,
                    s_kick, gamma, species::Species,
                    params::CSRParams; kick_factor = 1.0,
-                   pz_scale = 1.0, test_particles = nothing)
+                   pz_scale = 1.0, test_particles = nothing,
+                   binned = nothing)
   check_float_pz("csr_kick!", "pz", pz)
   z = scalar_array(z)
   q = scalar_array(q)
@@ -388,6 +392,7 @@ function csr_kick!(pz::AbstractVector, z::AbstractVector,
       test_particles...)
   st = csr_binned_kick(z, q, alive, geom, ix_ele_kick, ds, s_kick,
                        gamma, species, params; kick_factor)
+  binned === nothing || binned(st)
   test_particles === nothing ||
       csr_apply_test_kicks!(test_particles..., st.bins, st.kick;
                             pz_scale)

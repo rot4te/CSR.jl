@@ -15,7 +15,7 @@ import Atomix
 import Beamlines
 
 export CSRParams, FloorPosition, CSRGeometry, CSRElementInfo, CSRBins,
-    CSRKickPoint, CSRStepResult
+    CSRKickPoint, CSRStepResult, CSREffect, CSRRecord, CSRReplay
 export planar_survey, csr_bin_particles, csr_kick!, csr_kick_pz,
     csr_kick_coef, dspline_len
 

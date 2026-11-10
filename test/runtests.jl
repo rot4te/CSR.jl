@@ -2,6 +2,7 @@ using CSR
 using Test
 using StaticArrays
 using Beamlines, ForwardDiff, GTPSA
+using BeamTracking
 
 include("utils.jl")
 
@@ -16,4 +17,5 @@ include("utils.jl")
   include("tps_collective_test.jl")
   include("type_stability_test.jl")
   include("review_fixes_test.jl")
+  include("effect_test.jl")
 end

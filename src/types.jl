@@ -462,3 +462,88 @@ Base.@kwdef struct CSRParams
                all_bin_quadrature, bmad_compat)
   end
 end
+
+"""
+    CSRRecord()
+
+Storage for the kicks of one `track!` call with a `CSREffect`
+(`CSREffect(params; record = CSRRecord())`), replayed on other
+particles with `CSRReplay`. Emptied at the start of each `track!`
+call of its `CSREffect`.
+
+# Fields
+- `points`: one named tuple `(; ix, k, n_slices, bins, kick)` per
+  kick, in tracking order: element index, slice number, number of
+  slices of the element, the bunch's `CSRBins` and its Δpz per bin.
+"""
+struct CSRRecord
+  points::Vector{Any}
+end
+CSRRecord() = CSRRecord(Any[])
+
+"""
+    CSREffect(params; on = ele -> true, centroid_start = nothing,
+              diagnostics = nothing, record = nothing)
+
+1D CSR as an effect of BeamTracking's `track!` (needs BeamTracking
+loaded): `track!(bunch, bl; effects = (CSREffect(params),))`.
+
+Before tracking, the reference survey of `bl` and the centroid orbit
+(one particle tracked without CSR) give the `CSRGeometry`. Then one
+kick is applied at the entrance of each slice (`n_slices` of the
+element; a whole element is one slice), covering the slice length,
+computed for the reference energy of the bunch there. Kicked are the
+bending elements (nonzero `g_ref`) and every element after the first
+bend of the line, except zero-length elements, elements tracked with
+`SaganCavity`, and elements where `on(ele)` is false.
+
+Bunch coordinates and element parameters may be ForwardDiff `Dual`
+or GTPSA TPS; no derivatives are tracked through the kick (see
+`csr_kick!`). Bends out of the horizontal plane are an error. CPU
+arrays only.
+
+# Arguments
+- `params`: `CSRParams`.
+- `on`: `ele -> Bool`, further restricts the kicked elements.
+- `centroid_start`: initial centroid (6 coordinates), or `nothing`
+  for the charge-weighted mean of the live particles.
+- `diagnostics`: `nothing` or a function
+  `(ix, k, s0, result::CSRStepResult) -> Any` called after each
+  kick with the element index, the slice number and the slice
+  entrance [m] from the element entrance.
+- `record`: `nothing` or a `CSRRecord` that receives every kick.
+"""
+struct CSREffect{F,C,D,R<:Union{Nothing,CSRRecord}}
+  params::CSRParams
+  on::F
+  centroid_start::C
+  diagnostics::D
+  record::R
+end
+function CSREffect(params::CSRParams; on = ele -> true,
+                   centroid_start = nothing, diagnostics = nothing,
+                   record = nothing)
+  isnothing(centroid_start) || length(centroid_start) == 6 ||
+    error("CSREffect: centroid_start must have length 6 (got $(length(centroid_start)))")
+  return CSREffect(params, on, centroid_start, diagnostics, record)
+end
+
+"""
+    CSRReplay(record::CSRRecord)
+
+Effect of BeamTracking's `track!` that applies recorded CSR kicks to
+other particles (test particles: they get the bunch's kicks without
+contributing to them), after the bunch was tracked through the same
+`Beamline` with `CSREffect(params; record)`:
+`track!(test_bunch, bl; effects = (CSRReplay(record),))`. Each test
+particle gets the kick at its scalar `z` (`csr_apply_test_kicks!`).
+Errors if a recorded element has another number of slices than when
+it was recorded, or a live test particle is outside the bunch's bin
+range.
+
+# Arguments
+- `record`: the `CSRRecord` filled by the bunch's `CSREffect`.
+"""
+struct CSRReplay
+  record::CSRRecord
+end
