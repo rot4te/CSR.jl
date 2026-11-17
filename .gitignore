@@ -27,4 +27,14 @@ Manifest*.toml
 LocalPreferences.toml
 JuliaLocalPreferences.toml
 
+# ignore my planning docs
+# planning/
+
+# ignore my vscode architecture
 *.code-workspace
+.vscode
+
+# ignore my AI spec
+.claude
+
+.DS_Store

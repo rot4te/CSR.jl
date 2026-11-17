@@ -1,0 +1,2 @@
+Reference floor, CSR.jl − Bmad: max |Δr| = 4.44e-16 m, max |Δθ| = 3.05e-16 rad
+With Bmad's orbit: max over steps |I_csr − Bmad| / max over steps |Bmad| = 1.99e-06; s_source (per step): 7.58e-07
