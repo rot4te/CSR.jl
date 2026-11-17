@@ -20,8 +20,8 @@ By default CSR.jl corrects several approximations and errors found in Bmad's imp
 
 ## Installation
 
-CSR.jl is not registered. It needs Beamlines 0.12 and, for tracking, BeamTracking 0.9 with features that exist
-only on local development branches: BeamTracking `collective/stage-06-slice-effects` (the `effects` keyword of
+CSR.jl is not registered. It needs Beamlines 0.12 and, for tracking, BeamTracking 0.10 with features that exist
+only on local development branches: BeamTracking `collective/stage-09-newcallbacks` (the `effects` keyword of
 `track!`) and Beamlines `collective/stage-01b-restore-scalarize-test` (the recursive `Beamlines.scalarize`). Develop
 the checkouts into one environment:
 

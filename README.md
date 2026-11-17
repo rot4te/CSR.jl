@@ -22,10 +22,10 @@ Currently implemented and tested (CPU):
 
 ## Installation for development
 
-CSR.jl is not registered. It needs Beamlines 0.12 and BeamTracking 0.9 with features that exist only on local
+CSR.jl is not registered. It needs Beamlines 0.12 and BeamTracking 0.10 with features that exist only on local
 development branches, not in registered releases:
 
-- BeamTracking.jl, branch `collective/stage-06-slice-effects`: the `effects` keyword of `track!`.
+- BeamTracking.jl, branch `collective/stage-09-newcallbacks`: the `effects` keyword of `track!`.
 - Beamlines.jl, branch `collective/stage-01b-restore-scalarize-test`: the recursive `Beamlines.scalarize`.
 - AtomicAndPhysicalConstants.jl 0.12 (CSR's compat), if no registered 0.12 is available.
 

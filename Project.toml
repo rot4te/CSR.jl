@@ -19,7 +19,7 @@ CSRBeamTrackingExt = "BeamTracking"
 [compat]
 AtomicAndPhysicalConstants = "0.12"
 Atomix = "1.2.1"
-BeamTracking = "0.9"
+BeamTracking = "0.10"
 Beamlines = "0.12"
 ForwardDiff = "1.3.3"
 GTPSA = "~1.5.6"
